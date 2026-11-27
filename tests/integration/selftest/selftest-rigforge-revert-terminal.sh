@@ -78,8 +78,7 @@ for key in DONATION watchdog_interval_min max_temp_c; do
     done
 done
 
-echo "== DONATION revert gates the real watchdog caller =="
-# Drive the real DONATION -> watchdog caller, rather than manually ignoring a barrier's rc.
+echo "== the real leg posts only watchdog_interval_min, never DONATION (#4184) =="
 eval "$(declare -f _worker_detail | sed '1s/_worker_detail/_worker_detail_original/')"
 _worker_detail() {
     if [ ! -s "$TMP/applies" ]; then
@@ -97,9 +96,10 @@ for OUTCOME in applied rolled_back accepted ''; do
     run_rigforge_writable_keys rig1 >"$TMP/drive" 2>&1
     rc=$?
     IT_FAIL="$before"
-    case "$OUTCOME" in accepted | '') want_count=2 want_rc=1 ;; *) want_count=4 want_rc=0 ;; esac
-    assert_eq "[$OUTCOME] watchdog sent only after terminal predecessor" \
-        "$(wc -l <"$TMP/applies" | tr -d ' '),$rc,$(grep -c premature "$TMP/ledger")" "$want_count,$want_rc,0"
+    case "$OUTCOME" in accepted | '') want_rc=1 ;; *) want_rc=0 ;; esac
+    assert_eq "[$OUTCOME] leg posts only the watchdog probe and restore, terminal-gated, zero DONATION (#4184)" \
+        "$(wc -l <"$TMP/applies" | tr -d ' '),$rc,$(grep -c premature "$TMP/ledger"),$(grep -c DONATION "$TMP/applies")" \
+        "2,$want_rc,0,0"
 done
 echo "== terminal history with stale config retains cleanup =="
 # A terminal transaction allows sequencing even if config readback failed; never clear cleanup.

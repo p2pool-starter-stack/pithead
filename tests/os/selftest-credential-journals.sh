@@ -58,6 +58,7 @@ echo 'selftest-credential-journals: PASS (clean, six leaks, two errors, two empt
         case "$*" in
         'bash -s') bash -s ;;
         *'podman ps'*) echo 'caddy dashboard' ;;
+        *'podman inspect dashboard'*) printf '%s\n' DONATION_ENABLED=false DONATION_PERCENT=0 DONATION_TOR_ENABLED=true ;;
         *'jq -e'*) return 0 ;;
         *) return 1 ;;
         esac

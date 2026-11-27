@@ -180,6 +180,10 @@ parse_args() {
             RUN_AUTH_FAIL_CLOSED=1
             shift
             ;;
+        --svc-restart)
+            RUN_SVC_RESTART=1
+            shift
+            ;;
         --hardening)
             RUN_HARDENING=1
             shift
@@ -194,6 +198,10 @@ parse_args() {
             ;;
         --rigforge-control)
             RUN_RIGFORGE_CONTROL=1
+            shift
+            ;;
+        --failover-view)
+            RUN_FAILOVER_VIEW=1
             shift
             ;;
         --rig-host)

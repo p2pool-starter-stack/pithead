@@ -54,10 +54,15 @@ Inspection:
                               --json           machine-readable report on stdout (the human
                                                report moves to stderr); same checks, same
                                                non-zero exit on critical failures.
-  support-bundle            Collect a chmod-600 diagnostics tarball for a bug report: host
-                            facts, doctor (prose + JSON), masked config, redacted .env, and
-                            the last 200 log lines per container (launch-line credentials
-                            scrubbed). Read-only; nothing leaves the box — review, then share.
+  support-bundle            Collect a chmod-600 .zip for a bug report: host facts, doctor
+                            (prose + JSON), masked config, redacted .env, every container's
+                            log for the window and the DIY pithead units' journal, with a
+                            manifest. [--since TIME] [--until TIME] (RFC 3339, UTC) or
+                            [--hours N, default 72]. Read-only; nothing leaves the box.
+  recovery-bundle           Appliance only: collect the same redacted bundle from the journal
+                            alone — no dashboard, no container engine, no network — for a box
+                            whose stack is down. Prints the archive path under /data.
+                            [--hours N, default 72].
   version, -V, --version    Print the installed stack version (offline; no update check).
 
 Maintenance:

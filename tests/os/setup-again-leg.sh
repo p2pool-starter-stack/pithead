@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154  # ip, token, jar and SERIAL are run.sh's — the guest address, the session, the console log
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 #
 # The boot menu's "Set up again" entry, tier 4 (#1318). Sourced by tests/os/run.sh and run inside
 # phase_rig on the guest the reboot leg just left: a provisioned rig, mining, slot A committed.
@@ -218,6 +220,16 @@ rig_setup_again_coordinator_leg() {
     *pithead.setup=1*rauc.slot=B* | *rauc.slot=B*pithead.setup=1*) ok "after the update the setup entry followed the default to slot B" ;;
     *) bad "the setup entry did not follow the default to slot B — cmdline: $(printf '%s' "$cmd" | cut -c1-160)" ;;
     esac
+    n=0
+    while [ "$n" -lt 12 ]; do
+        case "$(_ssh 'grub-editenv /boot/efi/grub/grubenv list' 2>/dev/null | tr -d '\r' | tr '\n' ' ')" in
+        *"B_OK=1 "*"B_TRY=0"* | *"B_TRY=0"*"B_OK=1"*) break ;;
+        esac
+        sleep 5
+        n=$((n + 1))
+    done
+    [ "$n" -lt 12 ] && ok "with the page open the updated slot stays committed (B_OK=1 B_TRY=0): abandoning it boots B again (#3960)" ||
+        bad "slot B is not committed 60 s into the set-up-again page — a reboot would fall back to A (#3960)"
     _setup_again_session || return
     scode=$(curl -sSk -b "$jar" --data "monero_wallet=$HARNESS_WALLET&tari_wallet=$HARNESS_TARI&pool=mini&role=pithead" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
     [ "$scode" = "200" ] || {
@@ -231,7 +243,7 @@ rig_setup_again_coordinator_leg() {
         tries=$((tries + 1))
     done
     [ "$tries" -lt 24 ] && ok "a coordinator's credentials card appeared on the set-up-again page" ||
-        bad "no coordinator card appeared — the config was not accepted (error: $(_ssh "cat $SA_SPOOL/error.txt" 2>/dev/null | cut -c1-160))"
+        bad "no coordinator card appeared — the config was not accepted (error: $(_ssh "cat $SA_SPOOL/error.txt" 2>/dev/null | os_redact_addr | cut -c1-160))"
     curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null 2>/dev/null || true
     rm -f "$jar"
     while [ "$n" -lt 18 ]; do

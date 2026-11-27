@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/redact-addr.sh"
 # shellcheck source=tests/os/control-request-evidence.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/control-request-evidence.sh"
 wizard_state_poll() {
@@ -46,7 +48,7 @@ provision_browser_submit() { # <ip> <jar> [field=value]...
 # The page's own error line, for a red that names the refusal instead of a timeout. Empty when
 # the page shows none (or cannot be reached).
 provision_page_error() { # <ip> <jar>
-    curl -sSk -b "$2" -m 5 "https://$1/api/wizard-state" 2>/dev/null | jq -r '.error // ""' 2>/dev/null
+    curl -sSk -b "$2" -m 5 "https://$1/api/wizard-state" 2>/dev/null | jq -r '.error // ""' 2>/dev/null | os_redact_addr
 }
 node_preflight_refused() { # <response-json> <state-json> <wallet> <host> <reason> <error-substring>
     printf '%s' "$1" | jq -e --arg reason "$5" --arg err "$6" '
@@ -164,8 +166,10 @@ control_result_payload() { # <result-json> [landed]
         fi
         return 0
     }
-    printf '%s' "$1" | jq -r '"status=\(.status // "none") error=\(.error // "none") id=\(.id // "none")"' 2>/dev/null ||
-        printf 'unparseable result: %.200s' "$1"
+    {
+        printf '%s' "$1" | jq -r '"status=\(.status // "none") error=\(.error // "none") id=\(.id // "none")"' 2>/dev/null ||
+            printf 'unparseable result: %s' "$1"
+    } | os_redact_addr | head -c 400
 }
 
 phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
@@ -198,7 +202,7 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
     # No re-read and no emptiness guard: reaching this line means the row above parsed $live as
     # JSON carrying 0.17, so it cannot be empty here. The `case` below is the real guard on the
     # value, and it reports rather than returning silently.
-    old=$(printf '%s' "$live" | jq -r '.monero.out_peers // 48')
+    old=$(printf '%s' "$live" | jq -r '.monero.out_peers // 24')
     case "$old" in *[!0-9]* | "" | ?????*)
         bad "post-provision approved setting returned an unsafe current value"
         return

@@ -55,6 +55,16 @@ class TestWonRoundHold:
 
         assert since == pytest.approx(now - XVB_WIN_ROUND_HOLD_S)
 
+    def test_future_dated_win_does_not_hold(self, algo):
+        win = self._live_win()[0]
+        algo.state_manager.get_raffle_wins.return_value = [{**win, "ts": time.time() + 86400}]
+        assert algo._won_round_live() is False
+
+    def test_a_win_dated_just_ahead_of_the_local_clock_still_holds(self, algo):
+        win = self._live_win()[0]
+        algo.state_manager.get_raffle_wins.return_value = [{**win, "ts": time.time() + 30}]
+        assert algo._won_round_live() is True
+
     def test_liveness_fails_open_on_storage_error(self, algo):
         # A broken read must never freeze the controller: hold off, steer normally.
         algo.state_manager.get_raffle_wins.side_effect = RuntimeError("db locked")

@@ -31,7 +31,7 @@ This file tests a RigForge [rig](../README.md#glossary): installing one, adoptin
 - The rig mines.
 - The coordinator lists the worker badged `not adopted`.
 - `doctor` on the rig reports [MSR](../README.md#glossary) applied and HugePages reserved.
-- The coordinator's Worker Inspect shows RigForge 1.18.1 for it (#3817).
+- The coordinator's Worker Inspect shows RigForge 1.19.0 for it (#4230).
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 

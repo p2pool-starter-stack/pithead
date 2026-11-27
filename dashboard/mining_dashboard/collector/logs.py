@@ -59,7 +59,7 @@ def _log_cap(tail):
 _monero_client = MoneroClient()
 
 
-async def fetch_docker_logs(container_name, tail=None):
+async def fetch_docker_logs(container_name, tail=None, since=None):
     """
     Fetches logs from a container via the Docker Socket Proxy.
     Handles the Docker binary stream format (multiplexed stdout/stderr).
@@ -75,6 +75,8 @@ async def fetch_docker_logs(container_name, tail=None):
     # Docker Engine API: /containers/{id}/logs
     url = f"{base_url}/containers/{container_name}/logs"
     params = {"stdout": 1, "stderr": 1, "tail": tail}
+    if since is not None:
+        params["since"] = int(since)
 
     try:
         async with aiohttp.ClientSession() as session:

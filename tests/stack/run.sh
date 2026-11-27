@@ -86,6 +86,8 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-exposure-live.sh" && domain_ran test-dashboard-exposure-live.sh "$_d0" "$?" || domain_ran test-dashboard-exposure-live.sh "$_d0" "$?"
     # shellcheck source=tests/stack/dashboard/test-dashboard-onion.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-onion.sh" && domain_ran test-dashboard-onion.sh "$_d0" "$?" || domain_ran test-dashboard-onion.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/dashboard/test-dashboard-login.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-login.sh" && domain_ran test-dashboard-login.sh "$_d0" "$?" || domain_ran test-dashboard-login.sh "$_d0" "$?"
     # shellcheck source=tests/stack/dashboard/test-sync-progress-hold.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-sync-progress-hold.sh" && domain_ran test-sync-progress-hold.sh "$_d0" "$?" || domain_ran test-sync-progress-hold.sh "$_d0" "$?"
     # shellcheck source=tests/stack/dashboard/test-onion-apply-password.sh disable=SC2015
@@ -205,10 +207,8 @@ if in_block 2; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-boot.sh" && domain_ran test-tor-egress-boot.sh "$_d0" "$?" || domain_ran test-tor-egress-boot.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-tor-egress-check.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-check.sh" && domain_ran test-tor-egress-check.sh "$_d0" "$?" || domain_ran test-tor-egress-check.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/control/test-control-core.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-core.sh" && domain_ran test-control-core.sh "$_d0" "$?" || domain_ran test-control-core.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/secrets/test-secrets-masking.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/secrets/test-secrets-masking.sh" && domain_ran test-secrets-masking.sh "$_d0" "$?" || domain_ran test-secrets-masking.sh "$_d0" "$?"
 fi
@@ -222,14 +222,12 @@ if in_block 3; then
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-secret-and-dial-guards.sh" && domain_ran test-control-secret-and-dial-guards.sh "$_d0" "$?" || domain_ran test-control-secret-and-dial-guards.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-ssrf-host-local.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-ssrf-host-local.sh" && domain_ran test-control-ssrf-host-local.sh "$_d0" "$?" || domain_ran test-control-ssrf-host-local.sh "$_d0" "$?"
-
 fi
 
 # Keep the approval/SSRF dependency group together; independent round trips get their own budget.
 if in_block 4; then
     # shellcheck source=tests/stack/control/test-control-editable-allowlist.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-editable-allowlist.sh" && domain_ran test-control-editable-allowlist.sh "$_d0" "$?" || domain_ran test-control-editable-allowlist.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/test-worker-config.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-worker-config.sh" && domain_ran test-worker-config.sh "$_d0" "$?" || domain_ran test-worker-config.sh "$_d0" "$?"
 
@@ -279,6 +277,14 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-power-verbs.sh" && domain_ran test-control-power-verbs.sh "$_d0" "$?" || domain_ran test-control-power-verbs.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-diagnostics.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-diagnostics.sh" && domain_ran test-control-diagnostics.sh "$_d0" "$?" || domain_ran test-control-diagnostics.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/control/test-control-support-bundle.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-support-bundle.sh" && domain_ran test-control-support-bundle.sh "$_d0" "$?" || domain_ran test-control-support-bundle.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/control/test-support-bundle-diy.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/control/test-support-bundle-diy.sh" && domain_ran test-support-bundle-diy.sh "$_d0" "$?" || domain_ran test-support-bundle-diy.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/control/test-control-export-only.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-export-only.sh" && domain_ran test-control-export-only.sh "$_d0" "$?" || domain_ran test-control-export-only.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/control/test-support-bundle-snapshots.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/control/test-support-bundle-snapshots.sh" && domain_ran test-support-bundle-snapshots.sh "$_d0" "$?" || domain_ran test-support-bundle-snapshots.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-grub-hugepages.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-grub-hugepages.sh" && domain_ran test-grub-hugepages.sh "$_d0" "$?" || domain_ran test-grub-hugepages.sh "$_d0" "$?"
     bash "$HERE/test_setup_build_interrupt.sh"
@@ -329,6 +335,8 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-boot-stack-health.sh" && domain_ran test-appliance-boot-stack-health.sh "$_d0" "$?" || domain_ran test-appliance-boot-stack-health.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-cert-advisory.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-cert-advisory.sh" && domain_ran test-appliance-cert-advisory.sh "$_d0" "$?" || domain_ran test-appliance-cert-advisory.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/appliance/test-appliance-boot-network-advisory.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-boot-network-advisory.sh" && domain_ran test-appliance-boot-network-advisory.sh "$_d0" "$?" || domain_ran test-appliance-boot-network-advisory.sh "$_d0" "$?"
 
     # shellcheck source=tests/stack/appliance/test-appliance-boot-release.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-boot-release.sh" && domain_ran test-appliance-boot-release.sh "$_d0" "$?" || domain_ran test-appliance-boot-release.sh "$_d0" "$?"

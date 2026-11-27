@@ -13,6 +13,7 @@ append_bundle_sha256() { # <manifest> <bundle>
 publish() {
     require_appliance_draft
     stage "7/7  Create complete GitHub Release draft $TAG"
+    require_gated_commit
     local manifest="$WORKDIR/ingredients-$TAG.md"
     if [ "$DRY_RUN" -eq 0 ]; then
         [ "${COSIGN_ENABLED:-0}" -eq 1 ] || die "Release draft requires cosign signatures."
@@ -35,7 +36,7 @@ publish() {
         warn "Draft creation cancelled. Images are promoted; preserve the verified artifacts."
         return 0
     }
-    run git tag -a "$TAG" -m "Pithead $TAG"
+    run git tag -a "$TAG" "$GIT_COMMIT" -m "Pithead $TAG"
     run git push origin "$TAG"
     run git push origin "$GIT_COMMIT:refs/heads/main" ||
         warn "main was not fast-forwarded; the owner must reconcile it with the release tag."
@@ -102,6 +103,7 @@ write_manifest() {
         printf -- '- p2pool: `%s`\n' "$(pin p2pool)"
         printf -- '- monerod: `%s`\n' "$(pin monero)"
         printf -- '- xmrig-proxy: `%s`\n' "$(pin xmrig-proxy)"
+        printf -- '- tor: `%s`\n' "$(pin tor)"
         printf -- '- tor base: `%s`\n' "$(pin tor-base)"
         printf -- '- tari node: `%s`\n' "$(pin tari)"
         printf -- '- tari console wallet: `%s`\n' "$(pin tari-wallet)"

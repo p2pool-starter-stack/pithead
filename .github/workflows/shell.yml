@@ -133,6 +133,8 @@ jobs:
           bash tests/stack/standalone/test_tor_bootstrap_recovery.sh
           bash tests/stack/standalone/test_tor_heal_outage_recovery.sh
           bash tests/stack/standalone/test_tor_lifecycle_receipts.sh
+          bash tests/stack/standalone/test_tor_unsaturated_reset.sh
+          bash tests/stack/standalone/test_tor_reset.sh
       - name: Run onion runtime convergence contract
         run: bash tests/stack/standalone/test_onion_runtime.sh
       - name: Prove the interrupted-build diagnostic fails on RC3
@@ -203,6 +205,8 @@ jobs:
         run: python3 tests/stack/standalone/test_clearnet_attestation.py
       - name: Run stratum port preflight contract
         run: python3 tests/stack/standalone/test_stratum_port.py
+      - name: Run Quadlet image provenance contract
+        run: python3 tests/stack/standalone/test_quadlet_provenance.py
       - name: Test-inventory drift check
         run: bash tests/inventory.sh > /dev/null
       - name: Run integration harness self-test

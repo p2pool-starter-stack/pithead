@@ -354,7 +354,7 @@ gate_try "$C/cand.json"
 assert_eq "a commit on a config carrying a legacy xmrig_proxy block still applies" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
 assert_eq "the allowlisted xvb tier landed in config.json" "$(jq -r '.xvb.donation_level' "$C/config.json")" "whale"
 assert_eq "the legacy xmrig_proxy block is GONE after the migrating apply" "$(jq -r 'has("xmrig_proxy")' "$C/config.json")" "false"
-assert_eq "its url landed under the current xvb name" "$(jq -r '.xvb.url' "$C/config.json")" "na.xmrvsbeast.com:4247"
+assert_eq "its url landed under the current xvb name, moved to the EU host" "$(jq -r '.xvb.url' "$C/config.json")" "eu.xmrvsbeast.com:4247"
 assert_eq "the pre-migration copy is kept beside the config" "$(jq -r '.xmrig_proxy.url' "$C/config.json.bak-1x" 2>/dev/null)" "na.xmrvsbeast.com:4247"
 
 # Forged-flag bypass: the container tampers its visible copy of the preview result to

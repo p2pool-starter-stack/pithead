@@ -127,6 +127,7 @@ def _state_mgr():
     # Embedded directly in the payload (#249) — an unpinned MagicMock here is not JSON
     # serializable, unlike the list-shaped methods that iterate as empty. No standby held.
     sm.get_xvb_standby.return_value = None
+    sm.get_ping_failures.return_value = []
     return sm
 
 

@@ -71,6 +71,14 @@ phase_setup_defaults() {
         bad "fresh defaults provisioning did not finish successfully — $(provisioning_state)"
         return 1
     fi
+    dashboard_env=$(_ssh "podman inspect dashboard --format '{{range .Config.Env}}{{println .}}{{end}}'" 2>/dev/null)
+    if printf '%s\n' "$dashboard_env" | grep -qx 'DONATION_ENABLED=false' &&
+        printf '%s\n' "$dashboard_env" | grep -qx 'DONATION_PERCENT=0' &&
+        printf '%s\n' "$dashboard_env" | grep -qx 'DONATION_TOR_ENABLED=true'; then
+        ok "fresh defaults run the dashboard unit with the three DONATION_* settings at their off defaults (#3694)"
+    else
+        bad "fresh defaults dashboard unit lacks the DONATION_* settings (#3694)"
+    fi
     if _ssh "jq -e '.profile == \"balance\" and .tari.mode == \"off\" and .xvb.enabled == false and
         .dashboard.tari_required == false and .dashboard.host == \"pithead\" and
         .local_miner.enabled == true and

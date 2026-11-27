@@ -36,7 +36,9 @@ rb_seed() {
     printf 'ORDER="B A"\nA_OK=1\nA_TRY=0\nB_OK=1\nB_TRY=0\n' >"$RB/state"
     printf 'rauc.slot=B\n' >"$RB/cmdline"
     printf '%040d\n' 1 >"$RB/source"
-    rm -f "$RB/data/pithead/config.json" "$RB/data/pithead/.config-reset-good-slot"
+    rm -f "$RB/data/pithead/config.json" "$RB/data/pithead/.config-reset-good-slot" \
+        "$RB/data/pithead/machine-role" "$RB/data/pithead/VERSION"
+    rm -rf "$RB/data/pithead/data"
 }
 rb_unit_runs() { # Read triggering OR and ordinary AND conditions from the shipped unit.
     local path trigger=no trigger_ok=no
@@ -53,6 +55,7 @@ rb_unit_runs() { # Read triggering OR and ordinary AND conditions from the shipp
     [ "$trigger" = no ] || [ "$trigger_ok" = yes ]
 }
 rb_boot() {
+    local rb_entry="${1:-default}"
     (
         # shellcheck disable=SC1091 # generated from the real grub.cfg above
         source "$RB/state"
@@ -60,8 +63,11 @@ rb_boot() {
         source "$RB/select.sh"
         printf 'ORDER="%s"\nA_OK=%s\nA_TRY=%s\nB_OK=%s\nB_TRY=%s\n' "$ORDER" "$A_OK" "$A_TRY" "$B_OK" "$B_TRY" >"$RB/state"
         printf 'rauc.slot=%s\n' "$CURRENT_SLOT" >"$RB/cmdline"
+        if [ "$rb_entry" = setup-again ]; then printf 'pithead.setup=1\n' >>"$RB/cmdline"; fi
     )
-    if rb_unit_runs pithead-firstboot; then
+    if grep -qx 'pithead.setup=1' "$RB/cmdline" && rb_unit_runs pithead-setup-again; then
+        (PITHEAD_SETUP_AGAIN=1 rb_call setup_again_commit_slot engine >/dev/null 2>&1) || true
+    elif rb_unit_runs pithead-firstboot; then
         rb_call reset_slot_restore_good engine >/dev/null
     elif rb_unit_runs pithead-boot; then
         # Successful provisioned health gate: the real cleanup helper and RAUC adapter.
@@ -124,5 +130,33 @@ rm -f "$RB/data/pithead/config.json"
 printf 'rig\n' >"$RB/data/pithead/machine-role"
 rb_call reset_slot_restore_good engine
 assert_contains "retained authority cannot commit a provisioned setup-again rig" "$(cat "$RB/state")" B_TRY=1
+rb_seed
+printf 'rig\n' >"$RB/data/pithead/machine-role"
+rb_boot setup-again
+assert_contains "set up again commits a committed slot before the page (#3960)" "$(cat "$RB/state")" "B_TRY=0"
+rb_boot
+assert_eq "abandoning set up again boots the same committed slot (#3960)" "$(cat "$RB/cmdline")" rauc.slot=B
+assert_contains "the boot after an abandoned page holds it committed (#3960)" "$(cat "$RB/state")" "B_TRY=0"
+rb_seed
+printf 'rig\n' >"$RB/data/pithead/machine-role"
+printf '2.0.2\n' >"$RB/data/pithead/VERSION"
+mkdir -p "$RB/data/pithead/data/os-update"
+printf '{"from":"2.0.2","to":"2.0.3","gate":"started"}\n' >"$RB/data/pithead/data/os-update/in-flight.json"
+rb_boot setup-again
+assert_contains "an update in flight keeps the set-up-again slot uncommitted (#3960)" "$(cat "$RB/state")" "B_TRY=1"
+rb_boot
+assert_eq "abandoning set up again during an update falls back to A (#3960)" "$(cat "$RB/cmdline")" rauc.slot=A
+(
+    cd "$RB/data/pithead" || exit 1
+    export OS_INFLIGHT=data/os-update/in-flight.json OS_STATE_DIR=data/control/results
+    # shellcheck disable=SC1091 # ROOT is the suite's real tree
+    source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
+    os_update_rollback_verdict >/dev/null
+)
+rb_verdict="$RB/data/pithead/data/control/results/os-update-state.json"
+assert_eq "the fallback boot records the interrupted verdict (#3960)" \
+    "$(jq -r '.verdict.interrupted' "$rb_verdict")" true
+assert_eq "and names the unverified update rolled back (#3960)" \
+    "$(jq -r '.verdict.outcome' "$rb_verdict")" rolled_back
 unset RB PITHEAD_APPLIANCE PITHEAD_CMDLINE PITHEAD_BUILD_COMMIT_FILE PITHEAD_GRUBENV
 unset -f rb_call rb_seed rb_unit_runs rb_boot

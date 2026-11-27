@@ -105,7 +105,7 @@ confirm_scalar() { # <label> <jq-filter> <read-filter> <expected>
 echo "== black-box: each moved perimeter class confirms and applies (#1959) =="
 confirm_scalar "stratum password" '.p2pool.stratum_password="rotated-secret"' '.p2pool.stratum_password' "rotated-secret"
 confirm_scalar "stratum bind" '.p2pool.stratum_bind="127.0.0.1"' '.p2pool.stratum_bind' "127.0.0.1"
-confirm_scalar "XvB endpoint" '.xvb.url="eu.xmrvsbeast.com:4247"' '.xvb.url' "eu.xmrvsbeast.com:4247"
+confirm_scalar "XvB endpoint" '.xvb.url="us.xmrvsbeast.com:4247"' '.xvb.url' "us.xmrvsbeast.com:4247"
 confirm_scalar "XvB Tor route" '.xvb.tor=false' '.xvb.tor' "false"
 confirm_scalar "dashboard host" '.dashboard.host="confirmed.lan"' '.dashboard.host' "confirmed.lan"
 confirm_scalar "dashboard username" '.dashboard.auth.username="operator"' '.dashboard.auth.username' "operator"

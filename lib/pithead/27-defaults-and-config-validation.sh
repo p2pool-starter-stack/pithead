@@ -265,6 +265,34 @@ migrate_telegram_alert_level() {
     fi
 }
 
+readonly XVB_NA_URL_JQ='(.xvb | objects | .url | strings) | test("^na\\.xmrvsbeast\\.com(:[0-9]+)?$"; "i")'
+migrate_xvb_na_endpoint() {
+    local owner tmp="${CONFIG_FILE}.tmp"
+    [ -f "$CONFIG_FILE" ] || return 0
+    jq -e "$XVB_NA_URL_JQ" "$CONFIG_FILE" >/dev/null 2>&1 || return 0
+    if [ "$PITHEAD_DRY_RUN" -eq 1 ]; then
+        log "xvb.url would move from na.xmrvsbeast.com to eu.xmrvsbeast.com on apply."
+        return 0
+    fi
+    if ! cp -p "$CONFIG_FILE" "${CONFIG_FILE}.bak-xvb-na" 2>/dev/null; then
+        warn "Could not back up $CONFIG_FILE before moving xvb.url off na.xmrvsbeast.com — leaving it; change it to eu.xmrvsbeast.com by hand."
+        return 0
+    fi
+    owner=$(stat -c '%u:%g' "$CONFIG_FILE" 2>/dev/null || stat -f '%u:%g' "$CONFIG_FILE" 2>/dev/null) || owner=""
+    if (
+        umask 077
+        jq 'if (.xvb | type) == "object" then .xvb.url |= sub("^na\\.xmrvsbeast\\.com"; "eu.xmrvsbeast.com"; "i") else . end' "$CONFIG_FILE" >"$tmp" 2>/dev/null
+    ); then
+        mv "$tmp" "$CONFIG_FILE"
+        chmod 600 "$CONFIG_FILE"
+        if [ -n "$owner" ]; then chown "$owner" "$CONFIG_FILE" 2>/dev/null || true; fi
+        log "XvB retired its NA servers: xvb.url moved to eu.xmrvsbeast.com (same port) — the old copy is at ${CONFIG_FILE}.bak-xvb-na."
+    else
+        rm -f "$tmp"
+        warn "Could not move xvb.url off na.xmrvsbeast.com in $CONFIG_FILE — change it to eu.xmrvsbeast.com by hand."
+    fi
+}
+
 # Validate the dashboard.energy block for the energy/profit calculator (#260). Like the worker
 # descriptors, this renders nothing to .env — the dashboard reads it off the read-only config.json
 # bind mount — so validation exists only to fail an apply loudly on a typo. Prices are operator-set

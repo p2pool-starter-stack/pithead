@@ -273,7 +273,7 @@ IT_MODE=local
 IT_REMOTE_DIR=$FAKE
 BASELINE_CONFIG='{}'
 env_on_box() { case "$1" in NETWORK_PREFIX) echo 172.28.0 ;; *) echo true ;; esac; }
-wait_for() { return 0; }
+wait_for() { shift 3; "$@"; }
 _tor_probe_mining_sample() { echo 100; }
 push_config() { return 0; }
 pithead() { return 0; }

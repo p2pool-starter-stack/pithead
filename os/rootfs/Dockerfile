@@ -32,7 +32,7 @@ RUN /out/docker-compose version && /out/cosign version \
     && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/klauspost/compress[[:space:]]+v1\.18\.7[[:space:]]' \
     && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/go-jose/go-jose/v4[[:space:]]+v4\.1\.6[[:space:]]'
 
-FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -93,11 +93,6 @@ COPY --from=gobuild /out/docker-compose /out/cosign /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
     && touch /etc/containers/nodocker
 
-# The built-in miner (#796): a pinned RigForge tree plus everything it needs, baked at image
-# build because nothing can be installed later — apt cannot run on the read-only root, and even
-# a rw-remount install leaves its /etc state (alternatives, ld.so.cache) on the volatile overlay
-# where the first reboot breaks the compiler. RIGFORGE_REF pins the commit of RigForge
-# v1.18.1 (8f06cb8d); pin releases by commit.
 # v1.16.0 is the floor for the HugePages pool ceiling: hugepages_pool_ceiling_mb (rigforge#398,
 # filed from #1103) is absent from v1.15.1's tree entirely, and declaring it into one fails OPEN —
 # parse_config never reads the key, so the rendered config would look capped and behave as today.
@@ -111,15 +106,17 @@ RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
 # cpupower CLI as linux-cpupower (linux-tools-common is Ubuntu's name and does not exist here).
 # msr-tools gives doctor its rdmsr probe; gettext-base is envsubst, which renders the unit on
 # every boot and is the ONLY tool a prebuilt tree strictly needs. Unsupported RigForge tests and their extra tool dependencies are not baked.
-ARG RIGFORGE_REF=8f06cb8df791f3cb16d47bbee85fde92103cbe0b
-RUN curl -fsSL -o /tmp/rigforge.tar.gz \
-        "https://github.com/p2pool-starter-stack/rigforge/archive/${RIGFORGE_REF}.tar.gz" \
+COPY os/rootfs/fetch-archive.sh /usr/local/bin/fetch-archive
+ARG RIGFORGE_REF=04f8799955989120cf0a36121d3391cc5b5f5661
+RUN sh /usr/local/bin/fetch-archive \
+        "https://github.com/p2pool-starter-stack/rigforge/archive/${RIGFORGE_REF}.tar.gz" /tmp/rigforge.tar.gz \
     && mkdir -p /opt/rigforge \
     && tar -xzf /tmp/rigforge.tar.gz -C /opt/rigforge --strip-components=1 \
     && rm -rf /tmp/rigforge.tar.gz /opt/rigforge/tests \
     && chmod +x /opt/rigforge/rigforge.sh \
     && printf 'ref=%s version=%s\n' "$RIGFORGE_REF" "$(tr -d ' \t\r\n' </opt/rigforge/VERSION)" \
-        >/opt/rigforge/RIGFORGE_REF
+        >/opt/rigforge/RIGFORGE_REF \
+    && rm /usr/local/bin/fetch-archive
 # Prebuild XMRig at RigForge's own pin, read from the baked tree so the two cannot drift. The
 # appliance may be Tor-only, and RigForge's build step clones github over clearnet — so the
 # clone happens HERE, on the build host, and pithead-sync seeds the result into the workspace
@@ -155,7 +152,7 @@ RUN set -e \
 RUN printf 'PITHEAD_ENGINE=podman\n' >> /etc/environment \
     && printf 'vm.nr_hugepages=3072\n' > /etc/sysctl.d/99-pithead-hugepages.conf \
     && mkdir -p /etc/systemd/journald.conf.d \
-    && printf '[Journal]\nStorage=persistent\nSystemMaxUse=200M\n' > /etc/systemd/journald.conf.d/pithead.conf \
+    && printf '[Journal]\nStorage=persistent\nSystemMaxUse=400M\n' > /etc/systemd/journald.conf.d/pithead.conf \
     && mkdir -p /var/log/journal # bind-mount target for pithead-journal-persist.service (#1030)
 
 # Hardware/systemd watchdog: catch a soft-hung kernel or wedged init on an unattended headless

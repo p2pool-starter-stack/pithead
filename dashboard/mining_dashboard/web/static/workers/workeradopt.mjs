@@ -1,6 +1,10 @@
 import { Component, html } from "../app/preact.mjs";
 import { pollResult } from "../config/configview.mjs";
-import { controlCommitResult } from "../config/controlclient.mjs";
+import {
+  controlCommitResult,
+  controlFetch,
+  requirePreviewResponse,
+} from "../config/controlclient.mjs";
 import {
   buildAdoptedConfig,
   buildRemovedConfig,
@@ -68,8 +72,8 @@ export class AdoptRigForm extends Component {
     }
     this.setState({ busy: true, result: null, preview: null, confirmText: "" });
     try {
-      const cfgRes = await fetch("/api/config");
-      if (!cfgRes.ok) throw new Error(`HTTP ${cfgRes.status}`);
+      const cfgRes = await controlFetch("/api/config");
+      await requirePreviewResponse(cfgRes);
       const liveConfig = await cfgRes.json();
       if (host && hostIsInternal(host, liveConfig?.network?.subnet)) {
         this.setState({
@@ -83,12 +87,12 @@ export class AdoptRigForm extends Component {
         return;
       }
       const proposed = build(liveConfig);
-      const res = await fetch("/api/control/preview", {
+      const res = await controlFetch("/api/control/preview", {
         method: "POST",
         headers: CONTROL_HEADERS,
         body: JSON.stringify({ config: proposed }),
       });
-      if (!res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
+      await requirePreviewResponse(res);
       let out = await res.json();
       if (out.status === "pending") out = { id: out.id, ...(await pollResult(out.id)) };
       if (out.status === "rejected") {
@@ -113,12 +117,12 @@ export class AdoptRigForm extends Component {
     const { preview, confirmText } = this.state;
     this.setState({ busy: true });
     try {
-      const res = await fetch("/api/control/commit", {
+      const res = await controlFetch("/api/control/commit", {
         method: "POST",
         headers: CONTROL_HEADERS,
         body: JSON.stringify({ id: preview.id, confirm: confirmText }),
       });
-      if (!res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
+      await requirePreviewResponse(res);
       const committed = await controlCommitResult(res, preview.id, pollResult);
       this.setState({ busy: false, preview: null, confirmText: "", result: committed });
       if (committed.status === "applied" && this.props.onAdopted) this.props.onAdopted();

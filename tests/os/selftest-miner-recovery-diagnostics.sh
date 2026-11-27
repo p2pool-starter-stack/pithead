@@ -18,7 +18,8 @@ journalctl() {
     [ -e "$T3375/armed" ] || return 99
     case "$*" in
     '--no-pager -n 40 --since -20 minutes -u pithead-t3375-watcher.service') printf '%s\n' 'fixture watcher failure' ;;
-    '--no-pager -n 40 --since -20 minutes -u pithead-miner-recovery.service -u xmrig.service') printf '%s\n' 'fixture miner journal' ;;
+    '--no-pager -n 40 --since -20 minutes -u pithead-miner-recovery.service') printf '%s\n' 'fixture recovery journal' ;;
+    '--no-pager -n 40 --since -20 minutes -u xmrig.service') printf '%s\n' 'fixture xmrig journal' ;;
     *) return 99 ;;
     esac
     return "${JOURNAL_RC:-0}"
@@ -34,7 +35,8 @@ for journal_rc in 0 1; do
     grep -Fx 'pithead-t3375: local connections/accepted: [0,0]' "$work/log" >/dev/null
     grep -Fx 'Result=exit-code' "$work/log" >/dev/null
     grep -Fx 'fixture watcher failure' "$work/log" >/dev/null
-    grep -Fx 'fixture miner journal' "$work/log" >/dev/null
+    grep -Fx 'fixture recovery journal' "$work/log" >/dev/null
+    grep -Fx 'fixture xmrig journal' "$work/log" >/dev/null
 done
 systemctl() {
     case "$*" in

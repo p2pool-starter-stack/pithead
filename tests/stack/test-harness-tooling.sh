@@ -154,6 +154,8 @@ echo "== unit: image builds retry apt update (#1802) =="
 for image in monero p2pool xmrig-proxy; do assert_contains "image build retries apt update with delayed, bounded backoff (#1802)" "$(cat "$ROOT/build/$image/Dockerfile")" 'for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && exit 1; sleep "$((attempt * 5))"; }; done'; done
 echo "== unit: image builds pull base security fixes past the digest pin (#3923, #3929) =="
 for alpine_image in build/tor tests/integration/tor-client tests/netwatch; do assert_contains "alpine image build pulls the base's musl past the digest pin with the openssl libs (#3929)" "$(cat "$ROOT/$alpine_image/Dockerfile")" 'apk add --no-cache --upgrade libcrypto3 libssl3 musl musl-utils'; done
+assert_contains "tor image pins the apk tor package to an explicit version (#4125)" "$(cat "$ROOT/build/tor/Dockerfile")" '"tor=${TOR_VERSION}"'
+assert_contains "tor image build fails unless the installed tor reports the pinned version (#4125)" "$(cat "$ROOT/build/tor/Dockerfile")" 'tor --version | grep -F "Tor version ${TOR_VERSION%-r*}."'
 assert_contains "netwatch build pulls the base's zlib with the rest (#3929)" "$(cat "$ROOT/tests/netwatch/Dockerfile")" 'musl musl-utils zlib'
 for debian_image in build/monero build/p2pool build/xmrig-proxy dashboard os/rootfs; do assert_contains "debian image build lists apt to pull its security build (#3923)" "$(cat "$ROOT/$debian_image/Dockerfile")" 'apt \'; done
 for debian_image in dashboard os/rootfs; do assert_contains "debian image build lists zlib1g to pull its security build (#3923)" "$(cat "$ROOT/$debian_image/Dockerfile")" 'zlib1g'; done
@@ -195,6 +197,9 @@ assert_rc "#2871 serial match survives a large log under pipefail" "$?" "0"
 echo "== unit: #3049 floor-fallback staging self-test =="
 bash "$ROOT/tests/os/selftest-floor-staging.sh" >/dev/null 2>&1
 assert_rc "#3049 failed bundle staging never invokes os-update; success still does" "$?" "0"
+echo "== unit: #3299 floor-fallback host-cleanup self-test =="
+bash "$ROOT/tests/os/selftest-floor-cleanup.sh" >/dev/null 2>&1
+assert_rc "#3299 floor-fallback leg leaves no bundle, build log or rootfs tag on the host" "$?" "0"
 echo "== unit: #1676 version-aging helper self-test =="
 # tests/os/run.sh's leg 4 must make the guest claim a version OLDER than the bundle it is about to
 # install, and every minor release-prep tip is x.y.0 — the shape the helper used to refuse, which

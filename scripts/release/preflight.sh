@@ -297,6 +297,33 @@ check_registry_policy() {
     fi
 }
 
+check_release_tag_free() {
+    local remote_tags
+    if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+        die "Git tag $TAG already exists — bump VERSION before cutting a new release."
+    fi
+    if remote_tags="$(git ls-remote --tags origin "refs/tags/$TAG")"; then
+        [ -z "$remote_tags" ] || die "Git tag $TAG already exists on origin — bump VERSION before cutting a new release."
+    elif [ "$DRY_RUN" -eq 1 ]; then
+        warn "Could not read the tags on origin. [--dry-run: continuing]"
+    else
+        die "Could not read the tags on origin."
+    fi
+    if docker buildx imagetools inspect "$(image_for dashboard):$TAG" >/dev/null 2>&1; then
+        if [ "$DRY_RUN" -eq 1 ] || [ "${PITHEAD_REHEARSAL:-0}" = 1 ]; then
+            warn "$(image_for dashboard):$TAG already exists in the registry — promotion would overwrite it."
+        else
+            die "$(image_for dashboard):$TAG already exists in the registry — promotion would overwrite it."
+        fi
+    fi
+}
+
+require_gated_commit() {
+    [ "$(git rev-parse HEAD)" = "$GIT_COMMIT" ] ||
+        die "HEAD moved since preflight: the gated commit is $GIT_COMMIT. Check it out again and rerun; nothing was tagged."
+    require_clean_release_tree
+}
+
 preflight() {
     check_registry_policy
     stage "1/7  Preflight"
@@ -337,14 +364,7 @@ preflight() {
     BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     [ "$GIT_BRANCH" = "develop" ] || warn "Releasing from '$GIT_BRANCH', not develop."
 
-    if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
-        die "Git tag $TAG already exists — bump VERSION before cutting a new release."
-    fi
-    # Best-effort: warn if the promoted tag already exists in the registry (needs auth; non-fatal).
-    if docker buildx imagetools inspect "$(image_for dashboard):$TAG" >/dev/null 2>&1; then
-        warn "$(image_for dashboard):$TAG already exists in the registry — promotion would overwrite it."
-    fi
-
+    check_release_tag_free
     log "Version:   $STACK_VERSION  (tag $TAG, staging $STAGING_TAG)"
     log "Commit:    $GIT_COMMIT ($GIT_BRANCH)"
     log "Registry:  $REGISTRY  prefix '$IMAGE_PREFIX'"

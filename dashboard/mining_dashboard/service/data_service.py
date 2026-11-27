@@ -312,16 +312,12 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     monero_sync["stale"] = monero_stale
                     self._observe_monero(monero_sync)
 
-                    # 4. Sync gate (Issue #35): hold p2pool + xmrig-proxy until the required
-                    # chain(s) first sync, then release. monerod must be synced; Tari must be
-                    # synced too unless it's non-blocking. #31's runtime failover only applies
-                    # once released — before that there are no workers to fail over, and it
-                    # keeps the two features from both driving xmrig-proxy.
                     await self._apply_sync_gate(
                         monero_synced
                         and (tari_synced or not TARI_REQUIRED or self.sync_gate_monero_only)
                     )
                     if self.miner_released:
+                        await self._update_mining_guard(monero_sync, p2pool_stats)
                         await self._apply_worker_rejection(
                             worker_monero_down if self.monero_backups.nodes else monero_down,
                             tari_down,
@@ -475,6 +471,8 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                             "global_sync": global_sync,
                             "tari_syncing_passive": tari_syncing_passive,
                             "workers_rejected": self.workers_rejected,
+                            "stratum_closed": self.workers_rejected,
+                            "mining_pause": self.mining_guard.pause,
                             "miner_released": self.miner_released,
                             "sync_gate_monero_only": self.sync_gate_monero_only,
                             "miner_held": self.miner_held,
@@ -565,20 +563,9 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                             )
                         self._last_worker_capture = now_ts
 
-                    # 6b. Healthchecks.io dead-man's switch (Issue #79). Ping each cycle so the
-                    # external monitor alerts on the *absence* of a ping if the host ever dies
-                    # (power loss, crash, NIC death) — a pure "is the stack alive" liveness signal.
-                    # Node-health alerting (a node down while the box is up) is out of scope here;
-                    # that's the Telegram alerter's job (#121). The client throttles and fails
-                    # silently; `enabled` is just "a ping URL is set", so an unconfigured stack
-                    # never pings.
-                    if self.healthchecks.enabled:
-                        await asyncio.to_thread(self.healthchecks.ping)
-
-                    # 6c. Tor guard self-heal (#424): when opted in, probe Tor clearnet egress
-                    # (self-throttled) and restart tor if it's stuck on a failing guard —
-                    # bounded, cooled-down, loud. Off (the default) this is a plain no-op.
                     await self.tor_healer.check()
+                    await self.p2pool_healer.check(p2pool_stats)
+                    await self.monerod_redial.check(monero_sync.get("health"))
 
                     # 7. External XvB stats sync over Tor (#163), throttled to every 10th iteration,
                     # and ONLY when XvB is enabled — disabling XvB must stop the egress entirely.

@@ -118,7 +118,7 @@ Compose project. At boot, the LAN guard runs first and Pithead reinstalls the eg
 its LAN-port jumps before starting containers, so the guard's return path still reaches the DROP.
 Until the host attests a selected first sync's Tor transition, a failed live firewall readback
 prevents Compose startup. A selected
-P2Pool or XvB exception also refuses startup on refresh failure; after a choice is disabled, its
+P2Pool, XvB or donation exception also refuses startup on refresh failure; after a choice is disabled, its
 marker keeps that refusal through firewall opt-out until an enabled refresh proves the stale rule
 gone. Ordinary startup retains the firewall warning. Before Docker creates its first network,
 the absent `FORWARD` jump is allowed only when Docker confirms the mining network is absent and no
@@ -195,7 +195,7 @@ What the running stack sends to the internet, connection by connection.
 | Dashboard **XvB stats** fetch | `xmrvsbeast.com` | your Monero **wallet** | `performance`: direct; `balance`/`privacy`: Tor (`socks5h`, #163) | on, only if XvB enabled | `XVB_ENABLED=false` stops it; profile governs routing |
 | Dashboard **XvB raffle registration** (#263) | `xmrvsbeast.com` | your Monero **wallet** | `performance`: direct; `balance`/`privacy`: Tor (`socks5h`) | on, only if XvB enabled; fires once you have a PPLNS share | `XVB_ENABLED=false`, or set `XVB_SUBMIT_URL` to `off`, to stop it |
 | Dashboard **XvB winners fetch** (raffle-wins display) | `xmrvsbeast.com` | nothing — the winners file is public | `performance`: direct; `balance`/`privacy`: Tor (`socks5h`) | on, only if XvB enabled | `XVB_ENABLED=false` stops it |
-| **XvB donation mining** (only while donating) | `na.xmrvsbeast.com:4247` | — | `performance`: direct; `balance`/`privacy`: ✅ Tor (per-pool `socks5`) | on while donating | explicit `xvb.tor` wins; `xvb.enabled: false` stops it entirely |
+| **XvB donation mining** (only while donating) | `eu.xmrvsbeast.com:4247` | — | `performance`: direct; `balance`/`privacy`: ✅ Tor (per-pool `socks5`) | on while donating | explicit `xvb.tor` wins; `xvb.enabled: false` stops it entirely |
 | **Project donation mining** (only while donating) | Project stratum endpoint; destination pending publication | Connection timing, shares and hashrate; public IP only when direct clearnet routing is chosen; no donor payout address, worker names or per-donor label | Tor by default; onion uses no exit, clearnet uses an exit | **off**, hidden while destination constants are empty | `donation.enabled: false` stops slices within one 10-minute cycle; `donation.tor: false` chooses direct routing for clearnet only → [disclosure](#project-donation-mining) |
 | Dashboard **XvB warm-standby pull** (#249) | the primary stack you named | nothing about you — the primary sees a **Tor exit**, not your IP | ✅ Tor (`socks5h`) for an onion or any source not provably private; only a private, loopback or link-local IP *literal* dials direct as a LAN hop (a hostname can't be proven private without DNS, so it rides Tor) | opt-in (`xvb.standby.source`; off until set) | unset `xvb.standby.source` to stop it |
 | Dashboard **update check** (#224, plus the per-worker RigForge badge #596) | `api.github.com` | nothing about you | `performance`: direct; `balance`/`privacy`: Tor (`socks5h`) | **on** | `dashboard.check_for_updates: false` opts out of both; cached, fails silently offline |
@@ -354,14 +354,18 @@ change (#165), not a v1.0 default. The opt-out works with the default egress fir
 
 ### XvB donation mining (#166)
 
-When the optimizer donates to XMRvsBeast (XvB), it points the proxy at `na.xmrvsbeast.com:4247`.
+When the optimizer donates to XMRvsBeast (XvB), it points the proxy at `eu.xmrvsbeast.com:4247`.
 `balance` and `privacy` route that connection through Tor; `performance` uses direct egress. XvB
 stats, raffle registration, and winners requests follow the same profile routing.
 
 An explicit `xvb.tor` value overrides the profile. With `xvb.tor: false`, the donation connection
 dials direct. The firewall exempts only xmrig-proxy while XvB is enabled and this choice is active;
 switching Tor back on or disabling XvB removes the exemption at apply. The XvB pool sees your
-home IP while donating. To stop the egress entirely instead, disable XvB (`"xvb": { "enabled": false }`), which also
+home IP while donating. The exception is per container address, not per destination, so while it
+is active it also opens whatever else xmrig-proxy dials directly. The same holds for the project
+donation: with `donation.enabled` true and `donation.tor` false, the firewall exempts xmrig-proxy
+(the same address, one rule even when both choices are active) and the project endpoint sees your
+home IP; each choice keeps its own boot marker, so turning one off leaves the other's exemption. To stop the egress entirely instead, disable XvB (`"xvb": { "enabled": false }`), which also
 stops the profile-routed stats fetch.
 
 > NOTE: the xmrig-proxy dev-fee `--donate-level` is pinned to `0` by default (`proxy.donate_level`,
@@ -413,7 +417,7 @@ no local daemon here to sync, so the matching rendered flag is false.
 
 | | `balance`/`privacy` | `performance` or explicit clearnet override |
 |---|---|---|
-| **Monero** P2P | over Tor (`proxy=172.28.0.25:9050`) | **direct to clearnet seed nodes** (proxy line dropped), `out-peers` 48 → **32** + P2Pool v4.18's recommended **priority nodes** (`p2pmd.xmrvsbeast.com`, `nodes.hashvault.pro`) for fast, reliable sync |
+| **Monero** P2P | over Tor (`proxy=172.28.0.25:9050`) | **direct to clearnet seed nodes** (proxy line dropped), `out-peers` 24 → **32** + P2Pool v4.18's recommended **priority nodes** (`p2pmd.xmrvsbeast.com`, `nodes.hashvault.pro`) for fast, reliable sync |
 | **Monero** tx broadcast | over Tor (`tx-proxy=`) | direct under Performance; still Tor for an explicit first-sync override |
 | **Tari** transport | Tor SOCKS (`type = "socks5"`) | **TCP** (`type = "tcp"`) |
 | **Tari** seeds | onion `peer_seeds`, `dns_seeds = []` | **`dns_seeds = ["seeds.tari.com"]`** (onion seeds are unreachable without Tor), onion `public_addresses` dropped |

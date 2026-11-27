@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # The address watch (#2463): an IPv6 address acquired after provisioning must reach the dashboard
 # certificate without an apply or a reboot.
 
@@ -163,10 +165,10 @@ phase_provision_address_watch() {
         ok "$verdict"
     else
         bad "$verdict"
-        printf '%s' "$doctor" | jq -r '.checks[]? | select(.message | test("certificate")) | "\(.status): \(.message)"' 2>/dev/null | sed 's/^/     doctor: /'
+        printf '%s' "$doctor" | jq -r '.checks[]? | select(.message | test("certificate")) | "\(.status): \(.message)"' 2>/dev/null | os_redact_addr | sed 's/^/     doctor: /'
         _ssh "echo hostname-I: \$(hostname -I); openssl x509 -in /data/pithead/data/tls/wizard.crt -noout -ext subjectAltName | tr '\n' ' '" 2>/dev/null | tr ':' '_' | sed 's/^/     /'
         echo "     address watch service runs: $ADDRESS_WATCH_ATTEMPTS"
-        printf '%s\n' "$ADDRESS_WATCH_JOURNAL" | sed 's/^/     | /'
+        printf '%s\n' "$ADDRESS_WATCH_JOURNAL" | os_redact_addr | sed 's/^/     | /'
         return 1
     fi
     phase_provision_dashboard_recovery "$1" "$2"

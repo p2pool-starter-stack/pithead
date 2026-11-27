@@ -49,6 +49,8 @@ async def test_real_healer_branch_receipts_include_failed_calls_and_retries(capl
         healer = await _heal_to_restart(docker, AsyncMock(return_value={}))
     rows = receipts(caplog)
     assert [(row["action"], row["result"]) for row in rows] == [
+        ("recover", "requested"),
+        ("recover", "confirmed"),
         ("stop", "requested"),
         ("stop", "unconfirmed"),
         ("start", "requested"),
@@ -56,7 +58,7 @@ async def test_real_healer_branch_receipts_include_failed_calls_and_retries(capl
         ("start", "requested"),
         ("start", "confirmed"),
     ]
-    assert len({row["operation"] for row in rows}) == 1
+    assert len({row["operation"] for row in rows[2:]}) == 1
     assert all(row["container"] == "a" * 64 for row in rows)
     assert all(
         set(row) == {"timestamp", "caller", "operation", "container", "action", "result"}

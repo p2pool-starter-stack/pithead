@@ -264,7 +264,7 @@ restore_all() {
     # STACK_VERSION=dev for any source checkout (export_build_provenance), so baseline and branch SHARE the
     # `:dev` tag, which deploy_branch's build has already overwritten. `apply && up` then brings the BRANCH
     # back up under the baseline's name; a failed upgrade must not fall back to apply/up.
-    local restore_cmd="./pithead apply -y && ./pithead up"
+    local restore_cmd="./pithead apply -y && ./pithead up" restore_ready=0
     if on_bench "test -f '$RESTORE_DIR/dashboard/Dockerfile'"; then
         step "$RESTORE_DIR is a source checkout — restoring with 'pithead upgrade' so ITS images are rebuilt, not the branch's reused (#272)"
         restore_cmd="./pithead upgrade"
@@ -278,7 +278,7 @@ restore_all() {
         fi
         # Job 1677: status passed before the sync gate stopped p2pool. Wait for its release.
         if wait_synced 1500 restore && wait_bench_healthy 300 && wait_restore_mining_ready 1500; then
-            ok "baseline stack healthy again"
+            restore_ready=1
         else
             warn "baseline stack did not regain synced chains and running mining services before restore proof"
             RESTORE_PROOF_FAILED=1
@@ -307,6 +307,9 @@ restore_all() {
         warn "  This is separate from the credential proof above and needs a different repair — see the lines above."
         [ "$CONTROL_VERDICT_BEFORE" = "stranded" ] &&
             warn "  This run DID strand them (verdict before the restore: stranded), and the restore did not put them back."
+    fi
+    if [ "$restore_ready" = 1 ] && [ "$RESTORE_PROOF_FAILED" != 1 ] && [ "$CONTROL_PROOF_FAILED" != 1 ]; then
+        if recheck_restore_mining 600; then ok "baseline stack healthy again"; else RESTORE_PROOF_FAILED=1; fi
     fi
     if [ "$RESTORE_PROOF_FAILED" = "1" ] || [ "$CONTROL_PROOF_FAILED" = "1" ]; then
         if [ "$RESTORE_PROOF_FAILED" = "1" ]; then
@@ -586,20 +589,16 @@ run_harness() {
     [ "$MODE" = "check" ] && target_dir="$RESTORE_DIR"
     case "$MODE" in
     check) phases="--check" ;;
-    targeted) phases="${TARGETED_SCENARIO_ARGS---scenario local-pruned-main-secure-tari}${HARNESS_PHASE_ARGS:- --auth-fail-closed --lifecycle}" ;; # readiness/check run inline first (below); NOT here — run.sh returns after --readiness
-    matrix) phases="${SCENARIO:+--scenario $(quote_arg "$SCENARIO")}${HARNESS_PHASE_ARGS:- --safety-backup --lifecycle --reset-dashboard --fault-injection --auth-fail-closed --hardening --subnet}" ;;
+    targeted) phases="${TARGETED_SCENARIO_ARGS---scenario local-pruned-main-secure-tari}${HARNESS_PHASE_ARGS:- --auth-fail-closed --lifecycle --svc-restart}" ;;
+    matrix) phases="${SCENARIO:+--scenario $(quote_arg "$SCENARIO")}${HARNESS_PHASE_ARGS:- --safety-backup --lifecycle --reset-dashboard --fault-injection --auth-fail-closed --svc-restart --hardening --subnet}" ;;
     esac
     [ "${#REMOTE_NODE_ARGS[@]}" -eq 0 ] || printf -v remote_args ' %q' "${REMOTE_NODE_ARGS[@]}"
-    # RigForge read (#185/#235/#260) + the WRITE paths (#513/#514/#516/#517/#1002b/#1236): both need a
-    # REAL rig, both self-skip loudly without one. The write half was matrix-only until #1364. rig_supply
     if [ "$BORROW_MINER" = "1" ] && [ "$MODE" != "check" ]; then
         rig_supply
         [ -n "$RIG_NAME" ] || die "Borrowed rig NAME unavailable from $RIGFORGE_CONFIG."
-        [ -n "${HARNESS_PHASE_ARGS:-}" ] || phases="$phases --rigforge --rigforge-control" # hand-picked phases replace these too (bench-ci#878)
+        [ -n "${HARNESS_PHASE_ARGS:-}" ] || phases="$phases --rigforge --rigforge-control"
         phases="$phases --rig-name $(quote_arg "$RIG_NAME")${RIG_HOST:+ --rig-host $(quote_arg "$RIG_HOST") --rig-control-port $(quote_arg "$RIG_CONTROL_PORT")}${RIGFORGE_BOOTSTRAP_VERSION:+ --rigforge-bootstrap-version $(quote_arg "$RIGFORGE_BOOTSTRAP_VERSION")}"
     fi
-    # #905: no borrowed miner means no worker will ever appear — tell the harness to SKIP its two
-    # mining assertions (workers online, stratum hashes) instead of failing a healthy stack.
     local no_mining=""
     [ "$BORROW_MINER" = "1" ] || no_mining="--no-mining-asserts"
     phases="$phases${HARNESS_SCENARIO_ARGS:-}$remote_args $no_mining"

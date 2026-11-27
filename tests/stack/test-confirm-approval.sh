@@ -8,6 +8,7 @@ ensure_control_fixture
 echo "== black-box: confirm-gate — an in-scope disruptive change needs a typed APPLY (#719) =="
 assert_eq "reference default leaves XvB off for new installs" "$(jq -r '.xvb.enabled' "$ROOT/config.reference.json")" "false"
 assert_eq "a config without xvb.enabled renders XvB off" "$(grep '^XVB_ENABLED=' "$C/.env" | cut -d= -f2-)" "false"
+assert_eq "a config without xvb.url renders the EU endpoint" "$(grep '^XVB_POOL_URL=' "$C/.env" | cut -d= -f2-)" "eu.xmrvsbeast.com:4247"
 UUID3="33333333-3333-4333-8333-333333333333"
 # Clean baseline: pool mini, clearnet off, the host's egress firewall off (only then does a clearnet flag reach .env, #2649), applied.
 control_config mini && jq '.network.tor_egress_firewall=false' "$C/config.json" >"$C/cand.json" && mv "$C/cand.json" "$C/config.json"

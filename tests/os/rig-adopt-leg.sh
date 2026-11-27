@@ -16,16 +16,16 @@ _rig_adopt_state() {
 }
 
 _rig_adopt_snapshot() {
-    local donation pools ip="${rig_address:-$ip}"
-    donation=$(_ssh "jq -er 'if has(\"DONATION\") then .DONATION | select(type == \"number\" and . >= 0 and . <= 100) else \"unset\" end' /data/rigforge/config.json") || return 1
+    local interval pools ip="${rig_address:-$ip}"
+    interval=$(_ssh "jq -er 'if has(\"watchdog_interval_min\") then .watchdog_interval_min | select(type == \"number\" and . >= 1 and . <= 1440) else \"unset\" end' /data/rigforge/config.json") || return 1
     pools=$(_ssh "set -o pipefail; jq -ceS '.pools | select(type == \"array\" and length > 0)' /data/rigforge/config.json | sha256sum") || return 1
-    printf '%s %s\n' "$donation" "${pools%% *}"
+    printf '%s %s\n' "$interval" "${pools%% *}"
 }
 
 _rig_adopt_apply() {
     local value="$1" pools="$2" result snapshot deadline change_id status detail
     result=$(dashboard_control_request worker-apply "$(jq -nc --argjson value "$value" \
-        '{worker:"kvm-rig-share",changes:{DONATION:$value}}')" 240) || return 1
+        '{worker:"kvm-rig-share",changes:{watchdog_interval_min:$value}}')" 240) || return 1
     printf '%s' "$result" | jq -e '.status | IN("accepted", "applied")' >/dev/null || return 1
     change_id=$(printf '%s' "$result" | jq -er '.change_id | strings | select(test("^[0-9a-f]{16}$"))') || return 1
     deadline=$(($(date +%s) + 90))
@@ -76,7 +76,7 @@ rig_adopt_leg() {
     }
     ok "M12: the coordinator shows the rig as not adopted (#3069)"
     baseline=$(_rig_adopt_snapshot) || {
-        bad "M12: original donation and pools could not be recorded (#3069)"
+        bad "M12: original watchdog interval and pools could not be recorded (#3069)"
         return 1
     }
     read -r original pools <<<"$baseline"
@@ -114,20 +114,20 @@ mv "$staging" config.json
     local ip="$coord_ip"
     if [ "$original" = unset ]; then
         result=$(dashboard_curl -fsSk -m 10 "https://$ip/api/worker?name=kvm-rig-share" 2>/dev/null) &&
-            original=$(printf '%s' "$result" | jq -er '.rig_config.DONATION | select(type == "number" and . >= 0 and . <= 100)') || {
-            bad "M12: the rig did not report its effective DONATION default (#3069)"
+            original=$(printf '%s' "$result" | jq -er '.rig_config.watchdog_interval_min | select(type == "number" and . >= 1 and . <= 1440)') || {
+            bad "M12: the rig did not report its effective watchdog_interval_min default (#3069)"
             return 1
         }
     fi
-    probe=$(jq -nr --argjson value "$original" 'if $value > 0 then 0 else 1 end') || return 1
+    probe=$(jq -nr --argjson value "$original" 'if $value >= 1440 then $value - 1 else $value + 1 end') || return 1
     flags=$(_rig_adopt_round_trip) || trip_rc=$?
     case "$flags" in *changed*) changed=1 ;; esac
     case "$flags" in *restored*) restored=1 ;; esac
     ip="$rig_address"
-    [ "$changed" = 1 ] && ok "M12: coordinator DONATION write applied on the rig with unchanged pools (#3069)" ||
-        bad "M12: coordinator DONATION write or unchanged pools assertion failed (#3069)"
-    [ "$restored" = 1 ] && ok "M12: original DONATION restored with unchanged pools (#3069)" ||
-        bad "M12: original DONATION restoration failed (#3069)"
+    [ "$changed" = 1 ] && ok "M12: coordinator watchdog_interval_min write applied on the rig with unchanged pools (#3069/#4184)" ||
+        bad "M12: coordinator watchdog_interval_min write or unchanged pools assertion failed (#3069/#4184)"
+    [ "$restored" = 1 ] && ok "M12: original watchdog_interval_min restored with unchanged pools (#3069)" ||
+        bad "M12: original watchdog_interval_min restoration failed (#3069)"
     local code
     code=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' "http://$rig_address:8082/status" 2>/dev/null) || true
     if [ "$code" != 000 ]; then

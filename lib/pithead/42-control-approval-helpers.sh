@@ -129,6 +129,10 @@ control_validate_data_dir_overlaps() { # <staged-file>
             printf 'a staged data directory cannot be resolved safely. %s' "$(_control_host_remedy)"
             return 1
         }
+        if [ -e "$real" ] && [ ! -d "$real" ]; then
+            printf 'a staged data directory points at a path that is not a folder. %s' "$(_control_host_remedy)"
+            return 1
+        fi
         lexes+=("$lex")
         reals+=("$real")
     done
@@ -163,9 +167,10 @@ control_validate_data_dir_overlaps() { # <staged-file>
     [ -n "$caddy_dir" ] || caddy_dir="$PWD/data/caddy-logs"
     [ -n "$proxy_tls_dir" ] || proxy_tls_dir="$PWD/data/proxy-tls"
     [ -n "$pithead_tls_dir" ] || pithead_tls_dir="$PWD/data/tls"
-    protected_names=(live.monero live.tari live.p2pool live.tor live.dashboard control.state clearnet.state caddy.logs live.proxy-tls staged.proxy-tls caddy.tls)
+    protected_names=(live.monero live.tari live.p2pool live.tor live.dashboard control.state clearnet.state caddy.logs live.proxy-tls staged.proxy-tls caddy.tls os-update.staging lan-guard.marker firstboot.spool)
     protected_paths=("$monero_current" "$tari_current" "$p2pool_current" "$tor_current" "$current_dashboard"
-        "$control_dir" "$clearnet_dir" "$caddy_dir" "$proxy_tls_dir" "$data_root/proxy-tls" "$pithead_tls_dir")
+        "$control_dir" "$clearnet_dir" "$caddy_dir" "$proxy_tls_dir" "$data_root/proxy-tls" "$pithead_tls_dir" "$(os_update_staging_dir)"
+        "$PWD/${LAN_GUARD_MARKER%/*}" "$PWD/data/firstboot")
     for path in "${protected_paths[@]}"; do
         lex=$(realpath -ms -- "$path" 2>/dev/null) || lex=""
         real=$(realpath -m -- "$path" 2>/dev/null) || real=""
@@ -351,6 +356,6 @@ control_audit() { # <audit-file> <id> <actor> <action> <status> [keys] [approver
         "$(printf '%s' "$3" | tr -cd 'A-Za-z0-9._@-')" \
         "$(printf '%s' "$4" | tr -cd 'a-z-')" \
         "$(printf '%s' "$5" | tr -cd 'a-z-')" \
-        "$(printf '%s' "${6:-}" | tr -cd 'A-Za-z0-9._ ')" \
+        "$(printf '%s' "${6:-}" | tr -cd 'A-Za-z0-9._ -')" \
         "$(printf '%s' "${7:-}" | tr -cd 'A-Za-z0-9._@-')" >>"$1"
 }

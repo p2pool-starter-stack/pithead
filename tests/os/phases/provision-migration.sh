@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 # shellcheck source=tests/os/migration-same-version-fallback.sh
 source "$SCRIPT_DIR/migration-same-version-fallback.sh" || return $?
@@ -47,7 +49,7 @@ _phase_provision_migration_space_refusal() {
     if printf '%s' "$out" | grep -qE "GiB free on $mount \(Tari's data.mdb plus a 5 GiB margin\), and it has [01] GiB free"; then
         ok "the refusal names the volume, the size needed and the size free"
     else
-        bad "the refusal does not name the volume, the size needed and the size free: $(printf '%s' "$out" | tail -1)"
+        bad "the refusal does not name the volume, the size needed and the size free: $(printf '%s' "$out" | os_redact_addr | tail -1)"
     fi
     rauc_after=$(_ssh "rauc status --detailed --output-format=shell 2>/dev/null" |
         grep -E '^RAUC_(BOOT_PRIMARY|SLOT_STATUS_(BUNDLE_HASH|INSTALLED_TIMESTAMP|ACTIVATED_TIMESTAMP)_[0-9]+)=')
@@ -129,10 +131,7 @@ _phase_provision_migration() {
         bad "guest never returned after booting the migration bundle"
         return 1
     }
-    # Poll through the boot. The release line is logged at the commit boundary, BEFORE the
-    # post-commit up — so any monerod observed running before that line is a chain service
-    # beating the fallback decision, the exact ordering this rule exists to forbid.
-    local chain_ran_early=0 released=0 recovery_allowed=1 candidate_commit
+    local recovery_allowed=1 candidate_commit
     candidate_commit=$(_ssh 'cat /opt/pithead/BUILD_COMMIT' | tr -d '\r\n')
     if [[ "$candidate_commit" =~ ^[0-9a-f]{40}$ ]] && [ "$candidate_commit" = "$(git rev-parse HEAD)" ]; then
         ok "migration candidate BUILD_COMMIT $candidate_commit matches the tested head"
@@ -140,18 +139,7 @@ _phase_provision_migration() {
         bad "the migration boot did not load the tested candidate source"
         recovery_allowed=0
     fi
-    for _ in $(seq 120); do
-        if _ssh "journalctl -u pithead-boot -b 2>/dev/null | grep -q 'chain services released'"; then
-            released=1
-            break
-        fi
-        if _ssh "podman ps --format '{{.Names}}' 2>/dev/null | grep -qx monerod" &&
-            ! _ssh "journalctl -u pithead-boot -b 2>/dev/null | grep -q 'chain services released'"; then
-            chain_ran_early=1
-        fi
-        sleep 5
-    done
-    if [ "$released" = 1 ]; then
+    if migration_release_wait; then
         if [ "$(_marker)" = vmig ] && _ssh 'slot=$(sed -n "s/.*rauc.slot=\([AB]\).*/\1/p" /proc/cmdline); test -n "$slot" && grub-editenv /boot/efi/grub/grubenv list | grep -qx "${slot}_OK=1"'; then
             ok "the migrating slot committed unattended and released the chain services"
         else
@@ -161,10 +149,15 @@ _phase_provision_migration() {
         # shellcheck disable=SC2154 # pv_user/pv_pass are set by the initial leg (phase-level locals).
         assert_appliance_hostname_identity fixture-next "A/B update" "$pv_user" "$pv_pass"
     else
-        bad "the migrating slot never reached the post-commit release — the hold deadlocked the gate it was built not to"
+        migration_release_deadline_evidence
+        if [ -n "$migration_release_line" ]; then
+            bad "the migrating slot never reached the post-commit release — the boot journal ended the wait at round $migration_release_rounds with [$migration_release_line] — read the guest evidence above before blaming the hold"
+        else
+            bad "the migrating slot never reached the post-commit release — the hold deadlocked the gate it was built not to (waited at least $((migration_release_rounds * 5))s of polls for the release line; guest evidence above)"
+        fi
         return 1
     fi
-    if [ "$chain_ran_early" = 0 ]; then
+    if [ "$migration_release_early" = 0 ]; then
         ok "monerod never ran while the slot was uncommitted"
     else
         bad "monerod ran BEFORE the commit — the migration would beat the fallback decision"

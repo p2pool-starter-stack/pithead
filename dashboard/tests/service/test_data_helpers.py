@@ -348,7 +348,7 @@ class TestMergeDirectStats:
         # A successful probe carries api_ok=True (injected by get_stats); enrichment applies.
         extra = {"api_ok": True, "kind": "proxy", "uptime": 120, "hashrate": {"total": [1, 2, 3]}}
         [w] = _merge_direct_stats([self._worker()], [extra], "3333")
-        assert (w["h10"], w["h60"], w["h15"]) == (1000, 2000, 3000)
+        assert (w["telemetry_h10"], w["telemetry_h60"], w["telemetry_h15"]) == (1000, 2000, 3000)
         assert w["uptime"] == 120
         assert w["active_pool"] == "3333"
         assert w["api_ok"] is True
@@ -356,7 +356,7 @@ class TestMergeDirectStats:
     def test_xmrig_kind_not_scaled(self):
         extra = {"api_ok": True, "uptime": 99, "hashrate": {"total": [10, 20, 30]}}
         [w] = _merge_direct_stats([self._worker()], [extra], "3344")
-        assert (w["h10"], w["h60"], w["h15"]) == (10, 20, 30)
+        assert (w["telemetry_h10"], w["telemetry_h60"], w["telemetry_h15"]) == (10, 20, 30)
         assert w["active_pool"] == "3344"
         assert w["api_ok"] is True
 

@@ -99,7 +99,7 @@ safety_secret_drift_categories() { # <baseline category=hash lines> <actual cate
 }
 
 safety_restore_exact() {
-    local restored_secrets restore_output restore_rc=0
+    local restored_secrets restore_output restore_rc=0 sr_dir="${OUT_DIR:-}/safety-restore"
     pithead down >/dev/null 2>&1 || true
     SAFETY_RESTORE_FAIL_REASON=""
     restore_output="$(pithead restore -y "$SAFETY_ARCHIVE" 2>&1)" || restore_rc=$?
@@ -108,9 +108,9 @@ safety_restore_exact() {
         printf '%s\n' "$restore_output" | redact | tail -c 65536 >"$OUT_DIR/safety-restore.log" || true
     fi
     if [ "$restore_rc" -ne 0 ]; then
-        SAFETY_RESTORE_FAIL_REASON="pithead restore failed"
-    elif ! baseline_up >/dev/null 2>&1; then
-        SAFETY_RESTORE_FAIL_REASON="stack did not come back up"
+        SAFETY_RESTORE_FAIL_REASON="pithead restore returned non-zero (rc $restore_rc)${OUT_DIR:+; see $OUT_DIR/safety-restore.log}"
+    elif ! it_run_logged "$sr_dir" up baseline_up; then
+        SAFETY_RESTORE_FAIL_REASON="stack did not come back up (rc $IT_STEP_RC)${IT_STEP_LOG:+; see $IT_STEP_LOG}"
     elif ! wait_status_ok 240; then
         SAFETY_RESTORE_FAIL_REASON="pithead status did not become healthy within 240s"
     elif [ "$(rx 'cat config.json' 2>/dev/null)" != "$BASELINE_CONFIG" ]; then
@@ -239,9 +239,21 @@ restore_baseline() {
     it_log "Restoring original config.json and re-applying…"
     # A restore that reports a warning and moves on leaves the next run on an unknown baseline.
     # Every step is binding, and the config/secret state is re-read and compared afterwards.
-    if ! push_config "$BASELINE_CONFIG" || ! pithead apply -y >/dev/null 2>&1 || ! wait_status_ok 240; then
+    local br_dir="${OUT_DIR:-}/baseline-restore"
+    if ! it_run_logged "$br_dir" config-write push_config "$BASELINE_CONFIG"; then
         SAFETY_RESTORE_FAILED=1
-        it_fail "restore original config and healthy stack" "config write, apply, or health wait failed; safety archive retained"
+        it_fail "restore original config and healthy stack" \
+            "config write returned non-zero (rc $IT_STEP_RC)${IT_STEP_LOG:+; see $IT_STEP_LOG}; safety archive retained"
+        return 1
+    elif ! it_run_logged "$br_dir" apply pithead apply -y; then
+        SAFETY_RESTORE_FAILED=1
+        it_fail "restore original config and healthy stack" \
+            "pithead apply returned non-zero (rc $IT_STEP_RC)${IT_STEP_LOG:+; see $IT_STEP_LOG}; safety archive retained"
+        return 1
+    elif ! wait_status_ok 240; then
+        SAFETY_RESTORE_FAILED=1
+        it_fail "restore original config and healthy stack" \
+            "pithead status did not become healthy within 240s${IT_STEP_LOG:+; see $IT_STEP_LOG for the apply}; safety archive retained"
         return 1
     fi
     if [ "$(rx 'cat config.json')" != "$BASELINE_CONFIG" ] ||

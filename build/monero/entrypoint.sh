@@ -9,24 +9,6 @@ CONFIG_PATH="${CONFIG_PATH:-/home/ubuntu/.bitmonero/bitmonero.conf}"
 # sync already completed — come up on Tor." Default matches the compose mount; overridable for tests.
 CLEARNET_MARKER="${CLEARNET_MARKER:-/clearnet-state/monero.synced}"
 
-# Optional clearnet initial sync (#183). DEFAULT OFF. For the fast clearnet sync window only, this
-# makes monerod match the connectivity P2Pool v4.18 recommends for a clearnet node:
-#   - strip the single `proxy=` line that forces ALL P2P over Tor → monerod dials its compiled-in
-#     clearnet seed nodes (and the priority nodes below) directly, at clearnet speed instead of
-#     crawling over bandwidth-capped Tor circuits.
-#   - out-peers → 32 (P2Pool v4.18's clearnet recommendation; the Tor render uses 48, a circuit-
-#     bandwidth workaround). in-peers stays 64 — the open-files cap, which is the rec we always honor.
-#   - add P2Pool's recommended priority nodes for guaranteed-good peers + block templates. These are
-#     CLEARNET hostnames, so they're added ONLY here: in Tor mode their resolution would leak a
-#     clearnet DNS lookup tied to this host's IP (#161). Connections still arrive over clearnet,
-#     which is exactly the exposure this opt-in window already accepts.
-# `tx-proxy=tor,...` is LEFT IN PLACE so transaction broadcast stays on Tor (tx-origin privacy
-# preserved) — and there's no tx broadcast during a sync anyway. The DNS blocklist / DNS
-# checkpointing the rec also lists are MINING-time protections (bad-node bans, selfish-mining
-# defense) that don't apply to a download-only sync; in Tor mining mode they'd leak DNS (#161), so
-# we keep them off and rely on monerod's compiled-in checkpoints. The Tor render (the untouched
-# template) restores every private default the moment the dashboard flips back.
-# Kept as a function (portable sed, no in-place -e) so the shell test suite can exercise it directly.
 apply_clearnet_initial_sync() {
     local cfg="$1" tmp="$1.tmp"
     sed -e '/^proxy=/d' -e 's/^out-peers=.*/out-peers=32/' "$cfg" >"$tmp" && mv "$tmp" "$cfg"

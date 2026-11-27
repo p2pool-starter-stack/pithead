@@ -274,14 +274,12 @@ stack_down() {
     mutation_lock_acquire down
     log "Stopping stack..."
     if [ -f "$ENV_FILE" ]; then
-        remove_tor_egress_firewall
         docker compose down || error "Stack failed to stop — see the error above."
     else
         configless_stack_down
-        remove_tor_egress_firewall
     fi
-    # After the stop (#2749): the nodes never listen on a LAN port without the rule, and a failed
-    # stop leaves it in place.
+    remove_tor_egress_when_idle ||
+        warn "A stack container is still active or could not be checked, so the Tor-only egress rules stay. See what runs with 'docker ps', stop it, then run '$0 down' again to remove them."
     lan_guard_teardown down
     log "Stack stopped."
     mutation_lock_release
@@ -299,7 +297,6 @@ stack_down() {
 stack_down_except_caddy() {
     mutation_lock_acquire down
     log "Stopping the stack for the backup (caddy — the reverse proxy — stays up; nothing of its own is in the archive)..."
-    remove_tor_egress_firewall
     local services
     # Split the listing from the filter (the #2059 trap, documented in 02-tor-egress.sh): under
     # `set -Eeuo pipefail` a grep that matches nothing fails the whole assignment and errexit
@@ -313,11 +310,25 @@ stack_down_except_caddy() {
     if ! docker compose stop $services; then
         error "Stack failed to stop — see the error above."
     fi
-    # After the stop, as in stack_down (#2749). If a node still runs or the marker stays, the rule
-    # stays too, and the backup goes on: the archive does not depend on it.
+    remove_tor_egress_when_idle caddy ||
+        warn "A stack container other than caddy is still active or could not be checked, so the Tor-only egress rules stay and the backup goes on. See what runs with 'docker ps'; '$0 down' removes the rules once nothing is active."
     remove_lan_guard || warn "lan-guard:rule-kept — monerod or tari may still run, or $LAN_GUARD_MARKER could not be deleted; the LAN-only source rule stays."
     log "Stack stopped (caddy left running)."
     mutation_lock_release
+}
+
+stack_redial_monerod() {
+    local i polls="${PITHEAD_TOR_REDIAL_POLLS:-60}" tor_health
+    for ((i = 0; i <= polls; i++)); do
+        tor_health=$(docker inspect tor --format '{{.State.Health.Status}}' 2>/dev/null) || tor_health=
+        [ "$tor_health" = healthy ] && break
+        [ "$i" -lt "$polls" ] && sleep "${PITHEAD_TOR_REDIAL_POLL_S:-5}"
+    done
+    [ "$tor_health" = healthy ] || error "Tor did not report bootstrapped within the wait (or its health could not be read), so monerod was not restarted and may hold dead peer connections. Once Tor is healthy, run './pithead restart monerod'."
+    if [ "$(docker inspect monerod --format '{{.State.Running}}' 2>/dev/null)" = true ]; then
+        log "Tor is bootstrapped; restarting monerod so it re-dials its peers through Tor..."
+        docker compose restart monerod
+    fi
 }
 
 stack_restart() { # [tor|monerod]
@@ -337,18 +348,13 @@ stack_restart() { # [tor|monerod]
     "")
         log "Restarting stack..."
         docker compose restart
+        stack_redial_after_restart
         log "Stack restarted."
         ;;
     tor)
-        # Manual leg of the #424 guard self-heal: restart ONLY tor so it rebuilds circuits
-        # when clearnet exits are stuck (the doctor Tor clearnet-egress check WARNs on this).
-        # Tor takes no args from .env, so a plain restart is safe (other containers go
-        # through apply/upgrade, whose recreate applies current args, #273). Compose then
-        # restarts monerod right after tor is healthy again (depends_on restart: true, #972):
-        # monerod does NOT re-peer on its own after a tor restart kills its SOCKS
-        # connections — it can sit at 0 in / 0 out peers for hours; p2pool re-peers fine.
-        log "Restarting the tor container to rebuild circuits — ALL Tor circuits drop and rebuild (mining onions included; p2pool re-peers on its own, and a local monerod is restarted alongside so it re-dials)..."
+        log "Restarting the tor container to rebuild circuits — ALL Tor circuits drop and rebuild (mining onions included; p2pool re-peers on its own, and a local monerod is restarted once Tor is bootstrapped so it re-dials)..."
         docker compose restart tor
+        stack_redial_monerod
         log "tor restarted. Verify egress recovered: './pithead doctor' (Tor clearnet-egress check)."
         ;;
     monerod)

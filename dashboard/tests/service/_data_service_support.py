@@ -82,7 +82,7 @@ class _RecordingSession:
     def __init__(self):
         self.urls = []
 
-    def get(self, url, headers=None, timeout=None):
+    def get(self, url, headers=None, timeout=None, allow_redirects=True):
         self.urls.append(url)
         return _RecordingGet()
 

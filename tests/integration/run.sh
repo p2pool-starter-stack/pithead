@@ -62,10 +62,12 @@ RUN_FAULTS=0
 FAULT_SSH=0
 FAULT_SSH_DEST=""
 RUN_AUTH_FAIL_CLOSED=0
+RUN_SVC_RESTART=0
 RUN_HARDENING=0
 RUN_ROTATE_ONION=0
 RUN_RIGFORGE=0
 RUN_RIGFORGE_CONTROL=0
+RUN_FAILOVER_VIEW=0
 RUN_SUBNET=0
 RUN_ROTATE_SECRETS=0
 RUN_IMAGE_UPGRADE=0
@@ -146,12 +148,16 @@ source "$HERE/lib/run-reset-dashboard.sh" || exit $?
 source "$HERE/lib/run-rotate-secrets.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-monero-backups.sh
 source "$HERE/lib/run-monero-backups.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-fault-helpers.sh
+source "$HERE/lib/run-fault-helpers.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-faults.sh
 source "$HERE/lib/run-faults.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-pool-sync-fault.sh
 source "$HERE/lib/run-pool-sync-fault.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-tor-probe-fault.sh
 source "$HERE/lib/run-tor-probe-fault.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-pool-peer-loss.sh
+source "$HERE/lib/run-pool-peer-loss.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-egress-status.sh
 source "$HERE/lib/run-egress-status.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-webhook-validation.sh
@@ -161,6 +167,10 @@ source "$HERE/lib/run-auth-probe.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$HERE/lib/run-hardening.sh" || exit $?
 source "$HERE/lib/run-tari-off-preview.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-stack-actions.sh
+source "$HERE/lib/run-stack-actions.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-svc-restart.sh
+source "$HERE/lib/run-svc-restart.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rotate-onion.sh
 source "$HERE/lib/run-rotate-onion.sh" || exit $?
 # shellcheck source=tests/integration/lib/tor-lifecycle-receipts.sh
@@ -185,6 +195,8 @@ source "$HERE/lib/run-tari-stranded.sh" || exit $?
 source "$HERE/lib/run-monero-stranded.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-mergemine-localnet.sh
 source "$HERE/lib/run-mergemine-localnet.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-failover-view.sh
+source "$HERE/lib/run-failover-view.sh" || exit $?
 # --- Main -------------------------------------------------------------------
 
 main() {
@@ -303,9 +315,9 @@ main() {
     local lifecycle_ok=1 _gated
     LIFECYCLE_STACK_INTACT=0
     if [ "$rig_control_ok" != 1 ]; then
-        for _gated in LIFECYCLE:lifecycle RESET_DASHBOARD:reset-dashboard ROTATE_SECRETS:rotate-secrets FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed HARDENING:hardening ROTATE_ONION:rotate-onion \
+        for _gated in LIFECYCLE:lifecycle RESET_DASHBOARD:reset-dashboard ROTATE_SECRETS:rotate-secrets FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed SVC_RESTART:svc-restart HARDENING:hardening ROTATE_ONION:rotate-onion \
             XVB_ROUTING:xvb-routing ALERT_EGRESS:alert-egress MERGEMINE_SUBMIT:mergemine-submit TARI_STRANDED:tari-stranded MONERO_STRANDED:monero-stranded \
-            MERGEMINE_LOCALNET:mergemine-localnet SUBNET:subnet; do
+            MERGEMINE_LOCALNET:mergemine-localnet FAILOVER_VIEW:failover-view SUBNET:subnet; do
             local _flag="RUN_${_gated%%:*}"
             [ "${!_flag}" = 1 ] && it_skip_phase "${_gated#*:}" "the rigforge-control phase failed, so the rig is not back on its baseline"
         done
@@ -334,6 +346,7 @@ main() {
     [ "$rig_control_ok" = 1 ] && [ "$RUN_RESET_DASHBOARD" = "1" ] && run_reset_dashboard
     [ "$rig_control_ok" = 1 ] && [ "$RUN_ROTATE_SECRETS" = "1" ] && run_rotate_secrets
     [ "$rig_control_ok" = 1 ] && [ "$RUN_AUTH_FAIL_CLOSED" = "1" ] && run_auth_fail_closed
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_SVC_RESTART" = "1" ] && run_svc_restart
     [ "$rig_control_ok" = 1 ] && [ "$RUN_HARDENING" = "1" ] && run_hardening
     [ "$rig_control_ok" = 1 ] && [ "$RUN_ROTATE_ONION" = "1" ] && run_rotate_onion
     [ "$rig_control_ok" = 1 ] && [ "$RUN_XVB_ROUTING" = "1" ] && run_xvb_routing_smoke
@@ -342,6 +355,7 @@ main() {
     [ "$rig_control_ok" = 1 ] && [ "$RUN_TARI_STRANDED" = "1" ] && run_tari_stranded
     [ "$rig_control_ok" = 1 ] && [ "$RUN_MONERO_STRANDED" = "1" ] && run_monero_stranded
     [ "$rig_control_ok" = 1 ] && [ "$RUN_MERGEMINE_LOCALNET" = "1" ] && run_mergemine_localnet
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_FAILOVER_VIEW" = "1" ] && run_failover_view
 
     # An image gate always returns the exact old release and its quiesced writable state. Other runs
     # roll back only on failure, then put config.json back where it started. Drop the archive only

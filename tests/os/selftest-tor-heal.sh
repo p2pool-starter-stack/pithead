@@ -248,8 +248,8 @@ printf 'apply completed\n'
 STUB
     chmod +x pithead
     printf 'omitted-log-prefix\n' >"$work/diagnostic.log"
-    head -c 5000 /dev/zero | tr '\0' x >>"$work/diagnostic.log"
-    printf '\nretained-log-tail\n' >>"$work/diagnostic.log"
+    head -c 5000 /dev/zero | tr '\0' _ >>"$work/diagnostic.log"
+    printf '\nretained-log-tail --wallet 4%s\n' "$(head -c 94 /dev/zero | tr '\0' A)" >>"$work/diagnostic.log"
     # shellcheck disable=SC2034 # extracted restore() reads this guest global.
     sink_started=$3
     systemctl() {
@@ -261,7 +261,7 @@ STUB
         if [ "$*" = 'compose stop tor' ]; then return "$stop_rc"; fi
     }
     stop_rc=$2
-    eval "$(sed -n '/^restore() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
+    eval "$(sed -n '/^scrub() {/p;/^restore() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
     trap restore EXIT
     exit "$1"
 )
@@ -273,6 +273,8 @@ grep -q 'Guest restoration exit: 0; original exit: 17' "$work/restore-original-f
 grep -q 'Guest command log: restore.log' "$work/restore-original-failure"
 grep -q 'retained-log-tail' "$work/restore-original-failure"
 if grep -q 'omitted-log-prefix' "$work/restore-original-failure"; then exit 1; fi
+if grep -q 'AAAAAAAAAAAAAAAAAAAA' "$work/restore-original-failure"; then exit 1; fi
+grep -q '\[redacted-address\]' "$work/restore-original-failure"
 [ ! -e "$work/restore-17-0/sink-stopped" ]
 if restore_case 0 19 1 >"$work/restore-failure"; then exit 1; else [ "$?" = 1 ]; fi
 grep -q 'Guest restoration exit: 1; original exit: 0' "$work/restore-failure"
@@ -284,6 +286,35 @@ sink_stop_rc=21
 if restore_case 0 0 1 >"$work/restore-sink-failure"; then exit 1; else [ "$?" = 1 ]; fi
 grep -q 'Guest restoration exit: 1; original exit: 0' "$work/restore-sink-failure"
 unset sink_stop_rc
+poison_case() (
+    mode=$1
+    data="$work/poison-$mode"
+    work="$work/poison-$mode"
+    mkdir -p "$work"
+    printf 'TotalBuildTimes 42\nCircuitBuildTimeBin 60000 7\nData 1\n' >"$work/original-state"
+    docker() {
+        case "$*" in
+        'compose stop tor') return 0 ;;
+        'compose start tor')
+            if [ "$mode" = repaired ]; then
+                printf 'TotalBuildTimes 5\nCircuitBuildTimeBin 60000 5\n' >"$data/state"
+            fi
+            ;;
+        'exec tor sh -c '*) printf '250 OK\r\n250 OK\r\n' ;;
+        *) return 0 ;;
+        esac
+    }
+    sleep() { :; }
+    eval "$(sed -n '/^saturated() {/,/^}/p;/^write_poison() {/,/^}/p;/^poison() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
+    poison
+    saturated "$data/state"
+)
+poison_case repaired
+poison_case preserving
+grep -E '^stage=(recovery-stop|host-recovery)$' "$ROOT/tests/os/tor-heal-guest.sh" |
+    tr '\n' ' ' | grep -qx 'stage=recovery-stop stage=host-recovery '
+grep -Fq 'newnym_applied "$started")" -lt 2' "$ROOT/tests/os/tor-heal-guest.sh"
+
 # Run the actual preamble in a child: failures inside helpers must identify the stage.
 sed '/^cd \/data\/pithead/,$d' "$ROOT/tests/os/tor-heal-guest.sh" >"$work/failure-preamble.sh"
 cat >>"$work/failure-preamble.sh" <<'STUB'

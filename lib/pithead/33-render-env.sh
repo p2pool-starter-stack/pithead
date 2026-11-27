@@ -75,13 +75,8 @@ render_env() {
         [ "$prep_threads" -gt 8 ] && prep_threads=8
     fi
 
-    # Outbound peer target (#595): over Tor, each outbound peer is roughly one long-lived circuit,
-    # so out-peers is the biggest steady-state knob on Tor's CPU (circuit maintenance + rebuild).
-    # The default STAYS 48 — more peers means more aggregate bandwidth during a Tor initial sync,
-    # and a new operator's first run is exactly that. Once synced, 32 (P2Pool's clearnet
-    # recommendation) cuts monerod's circuit count by a third with no mining impact.
     local out_peers
-    out_peers=$(jq -r '.monero.out_peers // 48' "$CONFIG_FILE")
+    out_peers=$(jq -r '.monero.out_peers // 24' "$CONFIG_FILE")
     if ! [[ "$out_peers" =~ ^[0-9]+$ ]] || [ "$out_peers" -lt 8 ] || [ "$out_peers" -gt 1024 ]; then
         error "monero.out_peers must be an integer between 8 and 1024 (got \"$out_peers\")."
     fi
@@ -125,7 +120,7 @@ render_env() {
     xvb_enabled=$(config_get .xvb.enabled)
     xvb_tor=$(normalize_bool "$(config_bool '.xvb.tor' true)")
     xvb_url=$(jq -r '.xvb.url // empty' "$CONFIG_FILE")
-    [ -z "$xvb_url" ] && xvb_url="na.xmrvsbeast.com:4247"
+    [ -z "$xvb_url" ] && xvb_url="eu.xmrvsbeast.com:4247"
     xvb_donor=$(jq -r '.xvb.donor_id // empty' "$CONFIG_FILE")
     case "$xvb_donor" in
     "" | auto | DYNAMIC_ID) xvb_donor="${MONERO_WALLET:0:8}" ;;

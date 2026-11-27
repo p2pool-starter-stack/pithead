@@ -18,7 +18,7 @@
     },
     "xvb": {
       "enabled": false,
-      "url": "na.xmrvsbeast.com:4247",
+      "url": "eu.xmrvsbeast.com:4247",
       "donor_id": "auto",
       "donation_level": "auto",
       "tor": true,
@@ -48,7 +48,7 @@
         "zmq_port": 18083
       },
       "prep_blocks_threads": "auto",
-      "out_peers": 48,
+      "out_peers": 24,
       "data_dir": "auto",
       "mem_limit": "auto",
       "backup_nodes": []

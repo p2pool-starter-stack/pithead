@@ -102,7 +102,7 @@ control_upgrade() { # <request-file> <id> <actor> <control-dir>
     control_audit "$cdir/audit/control.log" "$id" "$actor" "upgrade" "started"
     # Bundle URL built from the HOST-derived tag only; fetched over the same Tor SOCKS.
     local bundle="$cdir/staged/.$id.tar.gz" logf="$cdir/staged/.$id.log"
-    if ! curl -fsSL --max-time 900 --max-filesize "$CURL_CAP_BUNDLE" --socks5-hostname "$GH_SOCKS" -o "$bundle" \
+    if ! curl -fsSL --proto =https --proto-redir =https --max-time 900 --max-filesize "$CURL_CAP_BUNDLE" --socks5-hostname "$GH_SOCKS" -o "$bundle" \
         "https://github.com/p2pool-starter-stack/pithead/releases/download/$tag/pithead.tar.gz" 2>/dev/null; then
         rm -f "$bundle"
         _upg_fail "could not download the $tag release bundle over Tor — the stack keeps running v$PITHEAD_VERSION."
@@ -115,7 +115,7 @@ control_upgrade() { # <request-file> <id> <actor> <control-dir>
     # TLS to GitHub plus tag pinning — with one loud line in the journal.
     if [ -f cosign.pub ]; then
         local sig="$cdir/staged/.$id.tar.gz.sig"
-        if ! curl -fsSL --max-time 120 --max-filesize "$CURL_CAP_SMALL" --socks5-hostname "$GH_SOCKS" -o "$sig" \
+        if ! curl -fsSL --proto =https --proto-redir =https --max-time 120 --max-filesize "$CURL_CAP_SMALL" --socks5-hostname "$GH_SOCKS" -o "$sig" \
             "https://github.com/p2pool-starter-stack/pithead/releases/download/$tag/pithead.tar.gz.sig" 2>/dev/null; then
             rm -f "$bundle" "$sig"
             _upg_fail "the $tag release carries no bundle signature (pithead.tar.gz.sig) — refusing to install it unverified; the stack keeps running v$PITHEAD_VERSION."
@@ -358,34 +358,28 @@ control_upgrade() { # <request-file> <id> <actor> <control-dir>
     fi
 }
 
-# Validate + dispatch one CLAIMED request file. Trusts no byte of it: must be JSON, only the keys
-# id/action/config/actor/version, the id must be a UUID (it becomes the result/staged FILENAME —
-# anything else is rejected before it can touch a path), and the action one of the three known verbs.
-# Lifecycle verbs for the Telegram control commands (#338): the only two host actions the bot can
-# trigger, both FIXED — `restart` runs `$0 restart` (recreate the running stack) and `apply` runs
-# `$0 apply -y` (re-render + re-apply the CURRENT on-disk config.json). The container's `action`
-# string only SELECTS between these two hardcoded commands; nothing from the request is ever
-# interpolated into a command, and `apply` here carries no config change (the default-deny config
-# allowlist is only relevant to a config-editing commit, not a re-apply of the source of truth).
-# Since #2076 removed the Telegram control commands, NOTHING produces a restart/apply intent: the
-# dashboard never submits either verb. The dispatch is kept because it is where "a spool writer
-# cannot run an arbitrary host command" is proven and tested (tests/stack/control/
-# test-control-lifecycle-verbs.sh), and because the spool already accepts the far more powerful
-# `commit`, so removing these two buys no boundary. This side records the actor and outcome in the
-# same tamper-evidence audit log.
 control_lifecycle() { # <verb: restart|apply> <id> <actor> <control-dir>
     local verb="$1" id="$2" actor="$3" cdir="$4" rc=0
-    local logf="$cdir/staged/.$id.log"
+    local logf="$cdir/staged/.$id.log" refusal=""
+    [ "$verb" != restart ] || refusal=$(control_restart_refusal "$cdir")
+    if [ -n "$refusal" ]; then
+        control_write_result "$cdir/results" "$id" "$(jq -n --arg a "$verb" --arg e "$refusal" '{status:"rejected",action:$a,error:$e,ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" "$verb" "rejected"
+        return 0
+    fi
+    [ "$verb" != restart ] || date +%s >"$cdir/restart-at"
     control_audit "$cdir/audit/control.log" "$id" "$actor" "$verb" "started"
-    # ${PITHEAD_SELF:-$0} is this script (run_chain uses the same handle); the verb is a FIXED
-    # literal picked by the case, never a string from the request.
     local self="${PITHEAD_SELF:-$0}"
     case "$verb" in
-    restart) "$self" restart >"$logf" 2>&1 || rc=$? ;;
+    restart) PITHEAD_LOCK_TIMEOUT=0 "$self" restart >"$logf" 2>&1 || rc=$? ;;
     apply) "$self" apply -y >"$logf" 2>&1 || rc=$? ;;
-    *) return 0 ;; # unreachable: the dispatch already gated the verb
+    *) return 0 ;;
     esac
-    if [ "$rc" -eq 0 ]; then
+    if [ "$verb" = restart ] && [ "$rc" -eq "$PITHEAD_EX_LOCK_TIMEOUT" ]; then
+        rm -f "$cdir/restart-at"
+        control_write_result "$cdir/results" "$id" "$(jq -n --arg a "$verb" '{status:"rejected",action:$a,error:"another host operation took the lock first — nothing was restarted; try again once it has finished.",ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" "$verb" "rejected"
+    elif [ "$rc" -eq 0 ]; then
         control_write_result "$cdir/results" "$id" "$(jq -n --arg a "$verb" '{status:"applied",action:$a,ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "$verb" "applied"
     else

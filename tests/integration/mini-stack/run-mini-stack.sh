@@ -174,14 +174,9 @@ compose up -d >/dev/null 2>&1
 
 log "waiting for the dashboard API"
 wait_dashboard_api && c_ok "dashboard API is up" || c_bad "dashboard API is up" "no /api/state after ~60s"
-assert_payout_control_roundtrip # 0a. payout address approval crosses the dashboard/host boundary (#1959)
+assert_payout_control_roundtrip
+assert_svc_restart_control_roundtrip
 
-# 0. The /api/state payload must carry the #170 Stack Topology & Egress contract, derived live
-#    from config by the REAL dashboard. The pure derivation is unit-tested (tests/service/
-#    test_egress.py); this proves it survives the trip through build_state -> /api/state on a
-#    running server: both sections present, their summary shared verbatim with the map (so the
-#    header badge can't disagree with it), the topology's node set is the canonical one, and every
-#    edge lands on a placeable node (an off-map endpoint would vanish silently from the diagram).
 log "scenario 0: /api/state exposes a well-formed #170 topology + egress contract"
 contract="$(
     compose exec -T dashboard python3 - <<'PY' 2>&1
@@ -309,6 +304,36 @@ set_monerod synced
 assert_stays "Monero recovery alone does not readmit while required Tari is down" itest-xmrig-proxy exited 8
 set_tari synced
 assert_state "readmitted after both required nodes recover" itest-xmrig-proxy running 90
+
+log "scenario 9b: P2Pool isolated past the grace rejects workers; recovery readmits"
+p2pool_stats() { docker exec itest-p2pool sh -c "mkdir -p /stats/local && printf '%s' '$1' > /stats/local/p2p"; }
+P2P_OK='{"connections":3,"incoming_connections":1,"peer_list_size":9,"uptime":900,"zmq_last_active":2}'
+P2P_ISOLATED='{"connections":0,"incoming_connections":0,"peer_list_size":0,"uptime":900,"zmq_last_active":2}'
+p2pool_stats "$P2P_OK"
+assert_stays "healthy P2Pool does not reject workers" itest-xmrig-proxy running 6
+p2pool_stats "$P2P_ISOLATED"
+sleep 3
+p2pool_stats "$P2P_OK"
+assert_stays "a P2Pool peer dip shorter than the grace does not reject workers" itest-xmrig-proxy running 10
+p2pool_stats "$P2P_ISOLATED"
+assert_state "rejected on P2Pool with no sidechain peers: itest-xmrig-proxy stopped" itest-xmrig-proxy exited 90
+p2pool_stats "$P2P_OK"
+assert_state "readmitted after P2Pool regains peers: itest-xmrig-proxy running" itest-xmrig-proxy running 90
+p2pool_stats '{"connections":3,"incoming_connections":1,"peer_list_size":9,"uptime":900,"zmq_last_active":900}'
+assert_state "rejected on P2Pool with no ZMQ messages: itest-xmrig-proxy stopped" itest-xmrig-proxy exited 90
+p2pool_stats "$P2P_OK"
+assert_state "readmitted after P2Pool ZMQ resumes: itest-xmrig-proxy running" itest-xmrig-proxy running 90
+docker exec itest-p2pool rm -f /stats/local/p2p
+
+log "scenario 9c: a monerod that reports not synchronized past the grace rejects workers"
+set_monerod syncing
+sleep 3
+set_monerod synced
+assert_stays "a monerod sync dip shorter than the grace does not reject workers" itest-xmrig-proxy running 10
+set_monerod syncing
+assert_state "rejected on monerod not synchronized: itest-xmrig-proxy stopped" itest-xmrig-proxy exited 90
+set_monerod synced
+assert_state "readmitted after monerod synchronizes: itest-xmrig-proxy running" itest-xmrig-proxy running 90
 
 # 10. Dashboard restart after release → the one-way latch is persisted, so the miner is NOT
 #     re-held: both containers stay running across the restart. (#35 persistence)

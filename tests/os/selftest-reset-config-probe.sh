@@ -42,6 +42,34 @@ for stop_rc in 0 125; do
         if _reset_config_shutdown_passed "$result" "$output"; then exit 1; fi
     fi
 done
+mkdir -p "$work/retry-bin"
+cat >"$work/retry-bin/docker" <<'STUB'
+#!/usr/bin/env bash
+n=$(($(cat "$RETRY_COUNT" 2>/dev/null || echo 0) + 1))
+echo "$n" >"$RETRY_COUNT"
+if [ "$n" -le "$FAIL_CALLS" ]; then
+    printf '%s\n' "$FAIL_TEXT" >&2
+    exit 125
+fi
+printf 'compose down ok\n' >&2
+STUB
+chmod +x "$work/retry-bin/docker"
+while IFS='|' read -r fail_calls fail_text want_rc want_calls; do
+    touch "$work/config.json"
+    rm -f "$work/retry-count"
+    (
+        umask 077
+        FAIL_CALLS="$fail_calls" FAIL_TEXT="$fail_text" RETRY_COUNT="$work/retry-count" \
+            PITHEAD_RESET_PROBE_DIR="$work" PATH="$work/retry-bin:$work/bin:$PATH" \
+            bash "$SCRIPT_DIR/reset-config-probe.sh" >"$work/reset-output" 2>&1
+    )
+    [ "$(cat "$work/.reset-compose.result")" = "$(printf 'compose_exit=%s\nconfig_present=yes' "$want_rc")" ]
+    [ "$(cat "$work/retry-count")" = "$want_calls" ]
+done <<'CASES'
+1|Error: unmounting container abc storage: device busy|0|2
+2|Error: unmounting container abc storage: device busy|125|2
+1|Error: network not found|125|1
+CASES
 for result in '' unavailable $'compose_exit=0\nconfig_present=no' $'compose_exit=0\nconfig_present=yes\ncompose_exit=0'; do
     if _reset_config_shutdown_passed "$result" 'reset completed'; then exit 1; fi
 done

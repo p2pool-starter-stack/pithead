@@ -23,6 +23,9 @@ render_quadlet_units() (
     tor_profiles=$(_qenv TOR_COMPOSE_PROFILES)
     reg=$(_qenv PITHEAD_REGISTRY)
     ver=$(_qenv STACK_VERSION)
+    reg="${reg:-${PITHEAD_REGISTRY:-}}"
+    ver="${ver:-${STACK_VERSION:-}}"
+    [ -n "$reg" ] && [ -n "$ver" ] || error "render-quadlet: PITHEAD_REGISTRY and STACK_VERSION need build provenance or nonempty env-file values."
     prefix=$(_qenv NETWORK_PREFIX)
     subnet=$(_qenv NETWORK_SUBNET)
     cat >"$outdir/mining.network" <<EOF
@@ -294,7 +297,7 @@ EOF
 Description=pithead caddy
 [Container]
 ContainerName=caddy
-Image=docker.io/library/caddy:2.11.7@sha256:36c24ad91a7ff7bc4c87fe22bfa8df3c4b18da0773d73fc12ee2c52b98c0bb7e
+Image=docker.io/library/caddy:2.11.9@sha256:4851e54a46b206517c574821bb5cc67f170d2156041e9fbc4c9193b45e84a75b
 Network=host
 Volume=$(_qenv QUADLET_CADDYFILE):/etc/caddy/Caddyfile:ro
 Volume=pithead-caddy-data:/data
@@ -375,7 +378,7 @@ ContainerName=dashboard
 Environment=$(_qenvq PROXY_STRATUM_PASSWORD) $(_qenvq PROXY_STRATUM_TLS) $(_qenvq STRATUM_TLS_FINGERPRINT)
 Image=$reg/pithead-dashboard:$ver
 Network=host
-Environment=$(_qenvq PITHEAD_PROFILE) $(_qenvq HOST_IP) $(_qenvq TZ DASHBOARD_TZ) $(_qenvq TARI_EXPLORER_URL) $(_qenvq MONERO_NODE_HOST) $(_qenvq MONERO_RPC_URL) $(_qenvq MONERO_BACKUP_NODES) $(_qenvq MONERO_ZMQ_PORT) $(_qenvq MONERO_NODE_USERNAME) $(_qenvq MONERO_NODE_PASSWORD) $(_qenvq MONERO_PRUNE) $(_qenvq MONERO_CLEARNET_SYNC) $(_qenvq TARI_CLEARNET_SYNC) CLEARNET_STATE_DIR=/clearnet-state $(_qenvq TOR_EGRESS_FIREWALL) $(_qenvq TOR_AUTO_HEAL) $(_qenvq P2POOL_CLEARNET) $(_qenvq P2POOL_URL) $(_qenvq MONERO_WALLET_ADDRESS) $(_qenvq TARI_WALLET_ADDRESS) $(_qenvq STRATUM_PORT) $(_qenvq STRATUM_BIND) $(_qenvq TARI_REQUIRED) $(_qenvq TARI_GRPC_ADDRESS) $(_qenvq XVB_ENABLED) $(_qenvq XVB_TOR_ENABLED) $(_qenvq XVB_DONATION_LEVEL) PROXY_HOST=$prefix.29 $(_qenvq PROXY_API_PORT) $(_qenvq PROXY_AUTH_TOKEN) DOCKER_PROXY_URL=tcp://127.0.0.1:12375 DOCKER_CONTROL_URL=tcp://127.0.0.1:12376 LOCAL_MONERO_HOST=$prefix.26 MINING_NET_CIDR=$subnet TOR_SOCKS_PROXY=socks5h://$prefix.25:9050${payout_env} $(_qenvq DASHBOARD_CHECK_UPDATES) $(_qenvq DASHBOARD_CONTROL_ENABLED) $(_qenvq DASHBOARD_MODE) $(_qenvq PITHEAD_DIAG_CONTAINERS) $(_qenvq DASHBOARD_FAIL_CLOSED) $(_qenvq DASHBOARD_ONION_ENABLED) $(_qenvq DASHBOARD_ONION_ADDRESS) $(_qenvq DASHBOARD_ONION_CLIENT_AUTH) $(_qenvq TELEGRAM_LEVEL)
+Environment=$(_qenvq PITHEAD_PROFILE) $(_qenvq HOST_IP) $(_qenvq TZ DASHBOARD_TZ) $(_qenvq TARI_EXPLORER_URL) $(_qenvq MONERO_NODE_HOST) $(_qenvq MONERO_RPC_URL) $(_qenvq MONERO_BACKUP_NODES) $(_qenvq MONERO_ZMQ_PORT) $(_qenvq MONERO_NODE_USERNAME) $(_qenvq MONERO_NODE_PASSWORD) $(_qenvq MONERO_PRUNE) $(_qenvq MONERO_CLEARNET_SYNC) $(_qenvq TARI_CLEARNET_SYNC) CLEARNET_STATE_DIR=/clearnet-state $(_qenvq TOR_EGRESS_FIREWALL) $(_qenvq TOR_AUTO_HEAL) $(_qenvq P2POOL_CLEARNET) $(_qenvq P2POOL_URL) $(_qenvq MONERO_WALLET_ADDRESS) $(_qenvq TARI_WALLET_ADDRESS) $(_qenvq STRATUM_PORT) $(_qenvq STRATUM_BIND) $(_qenvq TARI_REQUIRED) $(_qenvq TARI_GRPC_ADDRESS) $(_qenvq XVB_ENABLED) $(_qenvq XVB_TOR_ENABLED) $(_qenvq XVB_DONATION_LEVEL) $(_qenvq DONATION_ENABLED) $(_qenvq DONATION_PERCENT) $(_qenvq DONATION_TOR_ENABLED) PROXY_HOST=$prefix.29 $(_qenvq PROXY_API_PORT) $(_qenvq PROXY_AUTH_TOKEN) DOCKER_PROXY_URL=tcp://127.0.0.1:12375 DOCKER_CONTROL_URL=tcp://127.0.0.1:12376 LOCAL_MONERO_HOST=$prefix.26 MINING_NET_CIDR=$subnet TOR_SOCKS_PROXY=socks5h://$prefix.25:9050${payout_env} $(_qenvq DASHBOARD_CHECK_UPDATES) $(_qenvq DASHBOARD_CONTROL_ENABLED) $(_qenvq DASHBOARD_MODE) $(_qenvq PITHEAD_DIAG_CONTAINERS) $(_qenvq DASHBOARD_FAIL_CLOSED) $(_qenvq DASHBOARD_ONION_ENABLED) $(_qenvq DASHBOARD_ONION_ADDRESS) $(_qenvq DASHBOARD_ONION_CLIENT_AUTH) $(_qenvq TELEGRAM_LEVEL)
 Environment=$(_qenvq TARI_MODE)
 Volume=$(_qenv P2POOL_DATA_DIR)/stats:/app/stats:ro
 Volume=$(_qenv DASHBOARD_DATA_DIR):/data

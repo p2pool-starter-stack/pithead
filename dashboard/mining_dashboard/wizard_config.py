@@ -12,7 +12,7 @@ from mining_dashboard.config.migration import (
 
 _XVB_ALIASES = ("enabled", "url", "donor_id")
 _XVB_ALIAS_V1_DEFAULTS = {"enabled": True, "url": "na.xmrvsbeast.com:4247", "donor_id": "auto"}
-_WORKER_FIELDS = {"name", "host", "port", "control_port", "token", "watts"}
+_WORKER_FIELDS = {"name", "host", "port", "control_port", "token", "api_token", "watts"}
 
 MACHINE_NAME_RULE = (
     "Name this machine: 1–63 lowercase letters, digits or hyphens, starting and ending "

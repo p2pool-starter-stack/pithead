@@ -7,6 +7,8 @@ import pytest
 from mining_dashboard.service.health.tor_heal import (
     BROKEN_AFTER_SEC,
     COOLDOWN_SEC,
+    EXHAUSTED_PROBE_SEC,
+    FIRST_ACTION_AFTER_SEC,
     MAX_ATTEMPTS,
     PROBE_INTERVAL_SEC,
     RECOVERY_CONFIRM_PROBES,
@@ -77,18 +79,17 @@ class TestDecide:
         clock = _Clock()
         h = _healer(clock)
         h.decide(False, clock.t)
-        clock.t += BROKEN_AFTER_SEC - 1
+        clock.t += FIRST_ACTION_AFTER_SEC - 1
         assert h.decide(False, clock.t) is None
 
     def test_blip_that_recovers_resets_the_streak(self):
         clock = _Clock()
         h = _healer(clock)
         h.decide(False, clock.t)
-        clock.t += BROKEN_AFTER_SEC - 1
-        assert h.decide(True, clock.t) is None  # recovered on its own: no heal, no alert
-        # A new failure starts a fresh streak — the old one must not carry over.
+        clock.t += FIRST_ACTION_AFTER_SEC - 1
+        assert h.decide(True, clock.t) is None
         assert h.decide(False, clock.t) is None
-        clock.t += BROKEN_AFTER_SEC - 1
+        clock.t += FIRST_ACTION_AFTER_SEC - 1
         assert h.decide(False, clock.t) is None
 
     def test_no_second_heal_during_cooldown(self):
@@ -186,7 +187,7 @@ class TestDecide:
             assert docker.start.await_count == (2 if started else 3)
             h._probe = lambda: (True, "fresh circuit answered")
             for _ in range(RECOVERY_CONFIRM_PROBES):
-                clock.t += PROBE_INTERVAL_SEC
+                clock.t += EXHAUSTED_PROBE_SEC
                 await h.check()
         assert any(f"recovered following {expected}:" in r.message for r in caplog.records)
         assert not any("refunded" in r.message for r in caplog.records)
@@ -238,7 +239,7 @@ class TestCheck:
             caplog.at_level("WARNING", logger="TorHeal"),
         ):
             await h.check()
-            for _ in range(MAX_ATTEMPTS):
+            for _ in range(MAX_ATTEMPTS + 1):
                 clock.t += COOLDOWN_SEC
                 await h.check()
         assert docker.calls == [
@@ -269,7 +270,7 @@ class TestCheck:
             ),
         ):
             await h.check()
-            for _ in range(MAX_ATTEMPTS):
+            for _ in range(MAX_ATTEMPTS + 1):
                 clock.t += COOLDOWN_SEC
                 await h.check()
         assert docker.calls == [("stop", "tor"), ("start", "tor")]
@@ -291,7 +292,7 @@ class TestCheck:
             ),
         ):
             await h.check()
-            for _ in range(MAX_ATTEMPTS):
+            for _ in range(MAX_ATTEMPTS + 1):
                 clock.t += COOLDOWN_SEC
                 await h.check()
         assert docker.calls == [("stop", "tor"), ("start", "tor")]
@@ -318,7 +319,7 @@ class TestCheck:
             caplog.at_level("WARNING", logger="TorHeal"),
         ):
             await h.check()
-            for _ in range(MAX_ATTEMPTS):
+            for _ in range(MAX_ATTEMPTS + 1):
                 clock.t += COOLDOWN_SEC
                 await h.check()
         assert ("stop", "monerod") in docker.calls
@@ -339,7 +340,7 @@ class TestCheck:
             ),
         ):
             await h.check()
-            for _ in range(MAX_ATTEMPTS):
+            for _ in range(MAX_ATTEMPTS + 1):
                 clock.t += max(BROKEN_AFTER_SEC, COOLDOWN_SEC)
                 await h.check()
             assert len(docker.calls) == 4  # two circuit refreshes and one container restart

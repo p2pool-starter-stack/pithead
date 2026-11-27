@@ -49,6 +49,7 @@ def build_app() -> web.Application:
         app["algo_task"] = asyncio.create_task(algo_service.run())
         app["telegram_task"] = asyncio.create_task(telegram_bot.run())
         app["xvb_standby_task"] = asyncio.create_task(xvb_standby.run())
+        app["healthchecks_task"] = asyncio.create_task(data_service.healthchecks.run())
 
     async def cleanup_background_tasks(app):
         """Stops background tasks and closes resources on shutdown."""
@@ -56,11 +57,13 @@ def build_app() -> web.Application:
         app["algo_task"].cancel()
         app["telegram_task"].cancel()
         app["xvb_standby_task"].cancel()
+        app["healthchecks_task"].cancel()
         await asyncio.gather(
             app["data_task"],
             app["algo_task"],
             app["telegram_task"],
             app["xvb_standby_task"],
+            app["healthchecks_task"],
             return_exceptions=True,
         )
         if "state_manager" in app:

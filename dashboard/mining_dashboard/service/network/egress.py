@@ -123,7 +123,7 @@ def compute_egress_posture(
             "firewalled": True,
             "conns": [
                 {"to": "upstream pool (local p2pool stratum)", "route": LOCAL},
-                # XvB donation mining dials na.xmrvsbeast.com via the proxy's per-pool socks5 (#166).
+                # XvB donation mining dials eu.xmrvsbeast.com via the proxy's per-pool socks5 (#166).
                 {"to": "XvB donation pool", "route": xvb},
                 {"to": "dev donation", "route": INACTIVE},  # --donate-level 0 (#166)
             ],

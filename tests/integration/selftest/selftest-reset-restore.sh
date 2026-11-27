@@ -125,6 +125,7 @@ drive_reset_restore() (
             printf '%s\n%s' "$body" "$code"
             ;;
         'ss -ltnp; docker logs --tail 40 caddy') : ;;
+        'systemctl start pithead-address-watch.service'*) : ;;
 
         ls*) [ "$fault" != archive ] && printf 'backups/fixture.tar.gz.enc' ;;
         'set -e; stage=census;'*)

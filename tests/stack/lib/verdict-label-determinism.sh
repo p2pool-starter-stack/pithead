@@ -137,6 +137,7 @@ test-cli.sh|_sb
 test-cli.sh|_sw
 test-cli.sh|first_run_case
 test-config-document.sh|raw
+test-config-document.sh|sec
 test-config-document.sh|verb
 test-config.sh|2
 test-config.sh|bad_port
@@ -155,6 +156,7 @@ test-control-editable-allowlist.sh|1
 test-control-editable-allowlist.sh|inactive_guidance
 test-control-editable-allowlist.sh|k
 test-control-editable-allowlist.sh|target_profile
+test-control-lifecycle-verbs.sh|1
 test-control-perimeter-tier3.sh|gate_who
 test-control-perimeter-tier3.sh|label
 test-control-secret-and-dial-guards.sh|EDIT
@@ -191,6 +193,7 @@ test-secrets.sh|host_ram_mb
 test-secrets.sh|mem
 test-spool-audit.sh|audit_lines
 test-spool-audit.sh|audit_size
+test-spool-audit.sh|entry
 test-suite-blocks.sh|1
 test-suite-blocks.sh|arg
 test-tor-network.sh|v

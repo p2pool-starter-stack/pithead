@@ -25,17 +25,23 @@ miner_delete_table() {
 }
 sleep() {
     attempt=$((attempt + 1))
-    SECONDS=$((SECONDS + 300))
+    SECONDS=$((SECONDS + 20))
 }
 mkdir "$T3375"
 touch "$T3375/armed" "$T3375/table"
 attempt=0 SECONDS=0
 miner_watch watch fixture-rig
-[ "$(cat "$T3375/strand")" = recorded ] && [ ! -e "$T3375/table" ]
+[ "$(cat "$T3375/strand")" = recorded ]
+[ ! -e "$T3375/table" ]
 rm "$T3375/strand"
 touch "$T3375/table"
 miner_workers() { echo '[]'; }
+miner_delete_table() {
+    [ "$SECONDS" -ge 90 ] || return 99
+    rm "$T3375/table"
+}
 attempt=0 SECONDS=0
 miner_watch watch fixture-rig
-[ ! -e "$T3375/strand" ] && [ -e "$T3375/table" ]
-echo 'PASS: watcher retries absent/unreadable rig and zero aggregate; absent rig never records'
+[ "$(cat "$T3375/strand")" = recorded ]
+[ ! -e "$T3375/table" ]
+echo 'PASS: watcher retries absent/unreadable rig and zero aggregate, then removes the injection on a bounded timeout'
