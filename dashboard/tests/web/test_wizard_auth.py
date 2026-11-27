@@ -1,4 +1,6 @@
 # ruff: noqa: F403, F405
+import hmac
+
 from tests.web._wizard_support import *  # noqa: F403
 
 
@@ -126,3 +128,45 @@ async def test_failure_tracking_is_bounded_without_resetting_existing_peer(
     for _ in range(wizard.MAX_FAILURES - 2):
         assert (await _auth(operator, "pit-WRONGX")).status == 403
     assert (await _auth(operator, "pit-WRONGX")).status == 429
+
+
+def _derived(code):
+    return hmac.new(code.encode(), b"wizard_session", "sha256").hexdigest()
+
+
+async def _state_with(client, value):
+    return (await client.get("/api/wizard-state", cookies={wizard.COOKIE: value})).status
+
+
+async def test_session_cookie_holds_a_value_derived_from_the_code(client):
+    r = await _auth(client, "x7km2q")
+    value = r.cookies[wizard.COOKIE].value
+    assert value == _derived("pit-X7KM2Q")
+    assert "X7KM2Q" not in value.upper()
+    assert "HttpOnly" in r.headers["Set-Cookie"]
+    assert (await client.get("/api/wizard-state")).status == 200
+
+
+async def test_raw_code_cookie_is_not_a_session(client):
+    assert await _state_with(client, "pit-X7KM2Q") == 401
+    assert await _state_with(client, "X7KM2Q") == 401
+
+
+async def test_session_cookie_is_bound_to_the_current_code(client, monkeypatch):
+    assert await _state_with(client, _derived("pit-X7KM2Q")) == 200
+    assert await _state_with(client, _derived("pit-OTHER2")) == 401
+    monkeypatch.setenv("WIZARD_TOKEN", "pit-OTHER2")
+    assert await _state_with(client, _derived("pit-X7KM2Q")) == 401
+    assert await _state_with(client, _derived("pit-OTHER2")) == 200
+    monkeypatch.setenv("WIZARD_TOKEN", "")
+    assert await _state_with(client, _derived("")) == 401
+
+
+async def test_session_cookie_stays_valid_across_a_restart_with_the_same_code(client):
+    value = (await _auth(client)).cookies[wizard.COOKIE].value
+    async with TestClient(TestServer(wizard.make_app())) as restarted:
+        assert await _state_with(restarted, value) == 200
+
+
+async def test_session_value_is_not_accepted_as_the_code(client):
+    assert (await _auth(client, _derived("pit-X7KM2Q"))).status == 403
