@@ -193,9 +193,13 @@ def _disks() -> list[dict]:
     return disk_inventory(_spool_read("disks.tsv") or "")
 
 
+def _session_value(tok: str) -> str:
+    return hmac.new(tok.encode(), COOKIE.encode(), "sha256").hexdigest()
+
+
 def _authed(request: web.Request) -> bool:
     tok = os.environ.get("WIZARD_TOKEN", "")
-    return bool(tok) and hmac.compare_digest(request.cookies.get(COOKIE, ""), tok)
+    return bool(tok) and hmac.compare_digest(request.cookies.get(COOKIE, ""), _session_value(tok))
 
 
 async def index(request: web.Request) -> web.Response:
@@ -230,7 +234,7 @@ async def auth(request: web.Request) -> web.Response:
         resp = web.HTTPFound("/")
         resp.set_cookie(
             COOKIE,
-            tok,
+            _session_value(tok),
             httponly=True,
             secure=request.app["secure_cookie"],
             samesite="Strict",
@@ -648,10 +652,6 @@ def main() -> None:
     bind = os.environ.get("WIZARD_BIND", "0.0.0.0:8000")
     cert = os.environ.get("WIZARD_TLS_CERT", "")
     key = os.environ.get("WIZARD_TLS_KEY", "")
-    # TLS because this page carries real secrets — node passwords, a Telegram bot token, a
-    # view key if one is pasted into the config. A self-signed certificate warns the browser,
-    # which is the honest tradeoff: the alternative is those secrets in clear on the LAN. The
-    # console prints the fingerprint so the warning can actually be checked.
     if cert and key and os.path.exists(cert) and os.path.exists(key):
         tls_bind = os.environ.get("WIZARD_BIND_TLS", "0.0.0.0:8443")
         asyncio.run(_run_both(bind, tls_bind, cert, key))
