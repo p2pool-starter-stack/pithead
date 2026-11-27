@@ -28,6 +28,7 @@ import {
   parseJsonChanges,
   rigforgeReportsTarget,
 } from "./workerlogic.mjs";
+import { applyRequest, POOLS_HOLD, PoolsConfirm, poolsHeld } from "./workerpools.mjs";
 import {
   CONTROL_HEADERS,
   pollWorkerResult,
@@ -105,11 +106,7 @@ export class WorkerInspect extends Component {
       jsonError: null,
       busy: false,
       result: null,
-      poolsPending: false,
       poolsConfirm: "",
-      // Per-worker hashrate chart (#1013): its own range preference (persisted, like the editor
-      // mode above) and its own loading flag — a range switch refetches ONLY the chart data
-      // (loadChart), never the full load(), so it can't wipe an in-progress config edit.
       chartRange: loadPref("dashboardWorkerChartRange", ["24h", "1w", "all"], "24h"),
       chartLoading: false,
       waitVersion: null,
@@ -246,27 +243,18 @@ export class WorkerInspect extends Component {
       this.setState({ result: { status: "error", error: "No changes to apply." } });
       return;
     }
-    const poolsChange = "pools" in changes;
-    if (poolsChange && this.state.poolsConfirm !== "APPLY") {
-      this.setState({
-        poolsPending: true,
-        result: { status: "error", error: "This changes the rig's pools. Type APPLY to confirm." },
-      });
-      return;
-    }
-    const request = { worker: this.props.name, changes };
-    if (poolsChange) request.confirm = "APPLY";
+    if (poolsHeld(changes, this.state)) return this.setState(POOLS_HOLD);
     this.setState({ busy: true, result: { status: "running" } });
     try {
       const res = await fetch("/api/control/worker-apply", {
         method: "POST",
         headers: CONTROL_HEADERS,
-        body: JSON.stringify(request),
+        body: JSON.stringify(applyRequest(this.props.name, changes)),
       });
       let out = await res.json();
       if (out.status === "pending") out = await pollWorkerResult(out.id);
-      this.setState({ busy: false, result: out, poolsPending: false, poolsConfirm: "" });
-      this.load(); // refresh telemetry + history with the new row
+      this.setState({ busy: false, result: out });
+      this.load();
     } catch (e) {
       this.setState({ busy: false, result: { status: "error", error: String(e) } });
     }
@@ -346,14 +334,7 @@ export class WorkerInspect extends Component {
             }
             <div class="mt-1">
                 <button class="btn-toggle" disabled=${busy} onClick=${() => this.apply()}>${busy ? "Applying…" : "Apply to rig"}</button>
-            ${
-              this.state.poolsPending
-                ? html`<label class="config-confirm-type">Type <code>APPLY</code> to change this rig's pools:
-                    <input type="text" autocomplete="off" spellcheck="false" disabled=${busy}
-                           value=${this.state.poolsConfirm}
-                           onInput=${(e) => this.setState({ poolsConfirm: e.target.value })} /></label>`
-                : null
-            }
+                <${PoolsConfirm} view=${this} />
             </div>
             ${!busy && this.isDirty() ? html`<p class="text-muted text-xs">Unsaved — Apply before closing, or the change is lost.</p>` : null}
             <${StatusLine} result=${result} />`

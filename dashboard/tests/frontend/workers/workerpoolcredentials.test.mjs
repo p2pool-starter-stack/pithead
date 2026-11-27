@@ -14,6 +14,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { POOLS_HELD } from "../../../mining_dashboard/web/static/workers/workerpools.mjs";
 import { WorkerInspect } from "../../../mining_dashboard/web/static/workers/workerview.mjs";
 
 const SENTINEL = { __secret__: true };
@@ -96,7 +97,7 @@ test("table mode: editing the pools row without a real password strips the senti
       { url: "pool.example:3333", user: "wallet.rig1", pass: SENTINEL, keepalive: true },
     ]),
   };
-  inst.state.poolsConfirm = "APPLY";
+  Object.assign(inst.state, { result: POOLS_HELD, poolsConfirm: "APPLY" });
   let posted = null;
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, opts) => {

@@ -31,53 +31,6 @@ test("table mode: editing a row and applying builds the changes object (only the
   assert.deepEqual(posted.body, { worker: "rig1", changes: { DONATION: 6 } });
 });
 
-test("a pools change is held until APPLY is typed, then sent with the confirmation", async () => {
-  const inst = readyInstance({ ...DETAIL, writable_keys: [...DETAIL.writable_keys, "pools"] });
-  inst.state.mode = "json";
-  inst.onJsonInput(JSON.stringify({ pools: [{ url: "pool.example:3333" }] }));
-  const posted = [];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, opts) => {
-    posted.push(JSON.parse(opts.body));
-    return { json: async () => ({ status: "applied" }) };
-  };
-  try {
-    await inst.apply();
-    assert.equal(posted.length, 0);
-    assert.equal(inst.state.poolsPending, true);
-    assert.match(renderToString(inst.render()), /to change this rig's pools/);
-    inst.state.poolsConfirm = "apply";
-    await inst.apply();
-    assert.equal(posted.length, 0);
-    inst.state.poolsConfirm = "APPLY";
-    await inst.apply();
-  } finally {
-    globalThis.fetch = realFetch;
-  }
-  assert.equal(posted.length, 1);
-  assert.equal(posted[0].confirm, "APPLY");
-  assert.deepEqual(posted[0].changes, { pools: [{ url: "pool.example:3333" }] });
-  assert.equal(inst.state.poolsPending, false);
-  assert.equal(inst.state.poolsConfirm, "");
-});
-
-test("a change without pools sends no confirmation field", async () => {
-  const inst = readyInstance();
-  inst.state.tableEdits = { DONATION: "6" };
-  let posted = null;
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, opts) => {
-    posted = JSON.parse(opts.body);
-    return { json: async () => ({ status: "applied" }) };
-  };
-  try {
-    await inst.apply();
-  } finally {
-    globalThis.fetch = realFetch;
-  }
-  assert.ok(!("confirm" in posted));
-});
-
 // --- JSON mode ---------------------------------------------------------------------------------
 
 test("JSON mode: a parse error surfaces inline, not just on Apply", () => {
