@@ -96,8 +96,10 @@ compose_up() {
                 rmdir "$choice_marker" || return 1
             fi
         fi
+    elif [ "$(normalize_bool "$firewall_enabled")" = true ]; then
+        warn "Not starting containers: the Tor-only egress rules could not be installed. Fix the host firewall, or set network.tor_egress_firewall: false to start without them."
+        return 1
     elif clearnet_sync_active || [ -n "$selected_ips" ] || [ -e "$choice_marker" ] || [ -L "$choice_marker" ]; then
-        # Required egress protection failed; leave any stopped LAN nodes down.
         return 1
     fi
     local rc=0

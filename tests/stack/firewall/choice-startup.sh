@@ -42,7 +42,10 @@ assert_eq "failed refresh removes only the disabled XvB boot marker" "$([ -d "$L
 lg 'apply_lan_guard() { :; }; tor_egress_choice_active() { return 1; }; tor_egress_sync_ips() { :; }; apply_tor_egress_firewall() { :; }; compose_up -d' >/dev/null
 : >"$LG_ORDER"
 lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; tor_egress_sync_ips() { :; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; compose_up -d' >/dev/null
-assert_eq "ordinary startup keeps its warning-only firewall behavior" "$(cat "$LG_ORDER")" $'lan\negress:refresh\ncompose'
+assert_eq "ordinary startup refuses when the egress rules cannot be installed" "$(cat "$LG_ORDER")" $'lan\negress:refresh'
+: >"$LG_ORDER"
+lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; env_get() { [ "$1" != TOR_EGRESS_FIREWALL ] || echo false; }; tor_egress_sync_ips() { :; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; compose_up -d' >/dev/null
+assert_eq "firewall opt-out still starts when the refresh fails" "$(tail -n 2 "$LG_ORDER")" $'egress:refresh\ncompose'
 lg_real 'env_get() { case "$1" in DONATION_ENABLED) echo true ;; DONATION_TOR_ENABLED) echo false ;; esac; }; tor_egress_sync_ips() { echo 172.28.0.29; }; apply_tor_egress_iptables() { :; }; apply_tor_egress_firewall refresh' >/dev/null
 assert_eq "donation alone arms the choice marker" "$([ -d "$LGD/.pithead.lock.egress-choice-active" ] && echo yes)" yes
 assert_eq "donation has its own boot-time choice marker" "$([ -d "$LGD/.pithead.lock.egress-choice-active/donation" ] && echo yes)" yes
