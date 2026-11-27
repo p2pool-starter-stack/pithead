@@ -11,10 +11,11 @@ trap 'rm -rf "$w"' EXIT
 cd "$w"
 year=$(date +%Y)
 [ "$year" -ge 2026 ] || { echo "SIGNING_CLOCK_BAD $year"; exit 0; }
-    mkroot() { openssl req -x509 -newkey rsa:2048 -nodes -keyout "$1.key" -out "$1.crt" -days 3650 -subj "/CN=signing-leg-$1" 2>/dev/null; }
+    mkroot() { openssl req -x509 -newkey rsa:2048 -nodes -keyout "$1.key" -out "$1.crt" -days 3650 -subj "/CN=signing-leg-$1" -addext "basicConstraints=critical,CA:TRUE" 2>/dev/null; }
     mkleaf() {
     openssl req -newkey rsa:2048 -nodes -keyout "$1.key" -out "$1.csr" -subj "/CN=signing-leg-$1" 2>/dev/null
     openssl x509 -req -in "$1.csr" -CA "$2.crt" -CAkey "$2.key" -CAcreateserial -out "$1.crt" \
+            -extfile <(printf "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\n") \
         -not_before "$3" -not_after "$4" 2>/dev/null
 }
     mkbundle() {
@@ -42,6 +43,14 @@ verdict old_leaf_transition_keyring transition.crt l1.raucb
 verdict old_leaf_old_keyring r1.crt l1.raucb
 verdict expired_leaf r1.crt lx.raucb
 grep -q "certificate has expired" expired_leaf.out && echo "SIGNING_EXPIRED_TEXT yes" || { echo "SIGNING_EXPIRED_TEXT no"; tail -3 expired_leaf.out; }
+mkdir bin
+printf '#!/bin/sh\nexec /usr/bin/rauc --keyring=%s/r1.crt "$@"\n' "$w" >bin/rauc
+chmod +x bin/rauc
+res=$(cd /data/pithead && PATH="$w/bin:$PATH" ./pithead os-update "$w/lx.raucb" --yes </dev/null 2>&1)
+echo "SIGNING_UPDATER_RC $?"
+printf '%s\n' "$res" | grep -q "signing certificate expired" && echo "SIGNING_UPDATER_MSG yes" || echo "SIGNING_UPDATER_MSG no: $(printf '%s' "$res" | tail -2 | tr '\n' ' ')"
+door=$(cd /data/pithead && PATH="$w/bin:$PATH" bash -c 'source ./pithead; os_verify_bundle_reason "$1" v0.0.1; echo "rc=$?"' _ "$w/lx.raucb" 2>&1 </dev/null)
+case "$door" in *"signing certificate expired"*"rc=3") echo "SIGNING_DOOR yes" ;; *) echo "SIGNING_DOOR no: $door" ;; esac
 reason=$(cd /data/pithead && bash -c 'source ./pithead; os_rauc_clock_reason "$1"' _ "$(cat "$w/expired_leaf.out")" 2>&1)
 case "$reason" in *"signing certificate expired"*) echo "SIGNING_MAPPED yes" ;; *) echo "SIGNING_MAPPED no: $reason" ;; esac
 GUEST
@@ -55,6 +64,9 @@ GUEST
         fi
     done
     printf '%s\n' "$out" | grep -qx 'SIGNING_EXPIRED_TEXT yes' && ok "leg 8: RAUC reports an expired certificate in the text the updater recognises" || bad "leg 8: RAUC's expired-certificate text is not 'certificate has expired'"
+    printf '%s\n' "$out" | grep -q '^SIGNING_UPDATER_RC [1-9]' && ok "leg 8: os-update refuses the expired-certificate bundle with a correct clock" || bad "leg 8: os-update did not refuse the expired-certificate bundle ($(printf '%s' "$out" | tail -3 | tr '\n' ' '))"
+    printf '%s\n' "$out" | grep -qx 'SIGNING_UPDATER_MSG yes' && ok "leg 8: the os-update refusal names the expired signing certificate" || bad "leg 8: the os-update refusal lacks the expired-certificate message"
+    printf '%s\n' "$out" | grep -qx 'SIGNING_DOOR yes' && ok "leg 8: the dashboard verify door keeps the bundle and names the expired certificate" || bad "leg 8: the dashboard verify door gave the wrong verdict for the expired certificate"
     printf '%s\n' "$out" | grep -qx 'SIGNING_MAPPED yes' && ok "leg 8: the updater turns RAUC's real expired verdict into the clock and rotation message" || bad "leg 8: the updater did not map RAUC's real expired verdict"
 }
 _update_wrong_clock_leg() {
@@ -63,11 +75,12 @@ _update_wrong_clock_leg() {
     out=$(
         _ssh bash -s 2>&1 <<'GUEST'
 set -u
+ntp=$(timedatectl show -p NTP --value 2>/dev/null || echo yes)
 start=$(date +%s)
 mark=$SECONDS
     restore() {
     date -s "@$((start + SECONDS - mark))" >/dev/null 2>&1
-    timedatectl set-ntp true >/dev/null 2>&1 || true
+    [ "$ntp" = no ] || timedatectl set-ntp true >/dev/null 2>&1 || true
     echo "CLOCK_RESTORED $(date +%Y)"
 }
 trap restore EXIT
@@ -75,7 +88,7 @@ timedatectl set-ntp false >/dev/null 2>&1 || true
 date -s '2001-01-01 00:00:00' >/dev/null 2>&1
 : >/data/clock-leg.bundle
 cd /data/pithead
-res=$(./pithead os-update /data/clock-leg.bundle --yes 2>&1)
+res=$(./pithead os-update /data/clock-leg.bundle --yes </dev/null 2>&1)
 echo "CLOCK_RC $?"
 printf '%s\n' "$res" | tail -3 | sed 's/^/CLOCK_OUT /'
 rm -f /data/clock-leg.bundle

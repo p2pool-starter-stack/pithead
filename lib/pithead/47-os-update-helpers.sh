@@ -89,11 +89,14 @@ os_epoch_text() {
 }
 
 os_keyring_not_before() {
-    local start
-    start=$(openssl x509 -in "${PITHEAD_RAUC_KEYRING_FILE:-/etc/rauc/keyring.pem}" -noout -startdate 2>/dev/null |
-        sed -n 's/^notBefore=//p') || return 0
-    [ -n "$start" ] || return 0
-    date -u -d "$start" +%s 2>/dev/null || true
+    local start epoch newest=0
+    while IFS= read -r start; do
+        epoch=$(date -u -d "$start" +%s 2>/dev/null) || continue
+        [ "$epoch" -le "$newest" ] || newest=$epoch
+    done < <(awk '/-----BEGIN/{b=""} {b=b $0 "\n"} /-----END/{c="openssl x509 -noout -startdate"; printf "%s", b | c; close(c)}' \
+        "${PITHEAD_RAUC_KEYRING_FILE:-/etc/rauc/keyring.pem}" 2>/dev/null | sed -n 's/^notBefore=//p')
+    [ "$newest" -eq 0 ] || printf '%s' "$newest"
+    return 0
 }
 
 os_clock_floor_reason() {

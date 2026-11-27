@@ -125,5 +125,35 @@ check_has "another signature failure still returns the delete verdict" "$out" "r
 out=$(run_cli PITHEAD_RAUC_KEYRING_FILE="$tmp/missing.pem" PITHEAD_CLOCK_EPOCH="$PAST")
 check_lacks "an unreadable keyring sets no floor and leaves the verdict to rauc" "$out" "clock reads"
 
+mkdir -p "$tmp/ca/new"
+: >"$tmp/ca/index.txt"
+printf '01\n' >"$tmp/ca/serial"
+cat >"$tmp/ca/ca.cnf" <<CNF
+[ca]
+default_ca = CA_default
+[CA_default]
+dir = $tmp/ca
+database = \$dir/index.txt
+new_certs_dir = \$dir/new
+serial = \$dir/serial
+default_md = sha256
+policy = pol
+unique_subject = no
+[pol]
+commonName = supplied
+CNF
+openssl req -new -key "$tmp/root.key" -out "$tmp/future.csr" -subj "/CN=pithead-clock-selftest-new-root" >/dev/null 2>&1
+openssl ca -batch -notext -selfsign -config "$tmp/ca/ca.cnf" -keyfile "$tmp/root.key" -in "$tmp/future.csr" \
+    -startdate 20300101000000Z -enddate 20400101000000Z -out "$tmp/future.crt" >/dev/null 2>&1 || {
+    echo "selftest-os-update-clock: could not mint a future-dated root" >&2
+    exit 1
+}
+cat "$tmp/keyring.pem" "$tmp/future.crt" >"$tmp/transition.pem"
+FUTURE_FLOOR=1893456001
+out=$(run_cli PITHEAD_RAUC_KEYRING_FILE="$tmp/transition.pem" PITHEAD_CLOCK_EPOCH="$NOW")
+check_has "the floor is the newest certificate of a transition keyring" "$out" "clock reads"
+out=$(run_cli PITHEAD_RAUC_KEYRING_FILE="$tmp/transition.pem" PITHEAD_CLOCK_EPOCH="$FUTURE_FLOOR")
+check_lacks "a clock past every certificate of the transition keyring is not refused" "$out" "clock reads"
+
 echo "selftest-os-update-clock: $PASSES passed, $FAILURES failed"
 [ "$FAILURES" -eq 0 ]
