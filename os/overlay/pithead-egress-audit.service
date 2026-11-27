@@ -1,0 +1,10 @@
+[Unit]
+Description=pithead log-only host egress audit table, loaded on every boot
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/pithead-egress-audit
+
+[Install]
+WantedBy=multi-user.target

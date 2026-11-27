@@ -110,6 +110,7 @@ stack_uninstall() {
     mutation_lock_acquire uninstall
     remove_tor_egress_firewall 2>/dev/null || true
     remove_tor_egress_boot_unit
+    remove_host_egress_audit
     for unit in remove_egress_check_units remove_lan_guard_check_units; do "$unit" || units_left=1; done
     docker compose down --remove-orphans -v 2>/dev/null ||
         warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_db"

@@ -147,6 +147,7 @@ chrun() {
     (cd "$SB" && PATH="$SB/bin:$PATH" CURL_LOG="$SB/curl.log" CH_API_RESPONSE="$SB/api.json" \
         CH_BUNDLE="$SB/fixture.raucb" PITHEAD_APPLIANCE=1 PITHEAD_OS_UPDATE_DIR="$DIR" \
         PITHEAD_VARIANT_FILE="$SB/variant-release" PITHEAD_RAUC_SYSTEM_CONF="$SB/system.conf" \
+        PITHEAD_TEST_MARKER_FILE="$SB/test-marker" \
         PITHEAD_OS_DL_ATTEMPT=60 env "$@" ./pithead control-run-pending 2>&1)
 }
 ch_intent() {
@@ -242,6 +243,7 @@ check_has "the regression is reported as a possible replay" "$(chresult .channel
 check "the regression keeps the high-water mark" "$(jq -r .tag "$DIR/channel.json" 2>/dev/null)" "v2.0.10"
 printf '1.3.1' >"$SB/VERSION"
 chreset
+printf 'selftest\n' >"$SB/test-marker"
 printf 'http://seam.invalid/os' >"$SB/os-update-test-base"
 ch_intent "$UC" os-check
 chrun CH_STUB_RC=63 >/dev/null
@@ -261,7 +263,43 @@ chreset
 ch_intent "$UC" os-check
 chrun CH_REDIRECT=inseam CH_HOPS="$SB/hops" >/dev/null
 check "a same-origin redirect still answers checked" "$(chresult .status)" "checked"
-rm -f "$SB/os-update-test-base" "$SB/hops"
+rm -f "$SB/os-update-test-base" "$SB/hops" "$SB/test-marker"
+chreset
+printf 'http://seam.invalid/os' >"$SB/os-update-test-base"
+seam_dials=$(grep -c 'seam.invalid' "$SB/curl.log" || true)
+ch_intent "$UC" os-check
+chrun >/dev/null
+check "a planted seam file dials nothing with no test marker" "$(grep -c 'seam.invalid' "$SB/curl.log")" "$seam_dials"
+check "the gated check resolves the release over the release hosts" "$(chresult .status)" "checked"
+check_has "the gated check dials the release API over Tor" "$(grep 'api.github.com' "$SB/curl.log" | tail -1)" "--socks5-hostname 10.9.0.25:9050"
+ch_intent "$UC" os-download "v9.9.9"
+chrun >/dev/null
+check "the gated download dials nothing on the seam" "$(grep -c 'seam.invalid' "$SB/curl.log")" "$seam_dials"
+check "the gated download completes over Tor" "$(chresult .status)" "downloaded"
+check "the gated bundle lands complete" "$(wc -c <"$DIR/pithead-os-v9.9.9.raucb" | tr -d ' ')" "1000"
+chan_lines=$(grep -c '' "$SB/curl.log" || true)
+# shellcheck source=/dev/null
+chan_rc=$(
+    set +u
+    cd "$SB" && source "$CLI"
+    set +e
+    PITHEAD_TEST_MARKER_FILE="$SB/no-marker" CURL_LOG="$SB/curl.log" PATH="$SB/bin:$PATH" os_channel_fetch get "http://seam.invalid/os/releases-latest.json" "$SB/chan.out" 1000 "" >/dev/null 2>&1
+    echo "$?"
+)
+check "flag off and an empty Tor proxy, the channel fetch refuses" "$chan_rc" "1"
+check "the refused channel fetch connected nowhere" "$(grep -c '' "$SB/curl.log" || true)" "$chan_lines"
+check "the refused channel fetch wrote no file" "$([ -f "$SB/chan.out" ] && echo present || echo absent)" "absent"
+printf 'selftest\n' >"$SB/test-marker"
+# shellcheck source=/dev/null
+chan_rc=$(
+    set +u
+    cd "$SB" && source "$CLI"
+    set +e
+    PITHEAD_TEST_MARKER_FILE="$SB/test-marker" CURL_LOG="$SB/curl.log" PATH="$SB/bin:$PATH" os_channel_fetch get "http://seam.invalid/os/releases-latest.json" "$SB/chan.out" 1000 "" >/dev/null 2>&1
+    echo "$?"
+)
+check "the marker alone lets an empty-proxy fetch dial the seam" "$(($(grep -c 'seam.invalid' "$SB/curl.log") - seam_dials))" "1"
+rm -f "$SB/os-update-test-base" "$SB/test-marker" "$SB/chan.out" "$DIR/pithead-os-v9.9.9.raucb"
 
 if [ "$FAILURES" -ne 0 ]; then
     echo "selftest-os-update-channel: $FAILURES failed, $PASSES passed" >&2

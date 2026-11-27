@@ -69,7 +69,7 @@ image_upgrade_certificate_continuity_leg() {
         rm -rf "$srv"
         return
     fi
-    _ssh "printf 'http://$host_addr:8931' > /data/pithead/os-update-test-base" || {
+    _ssh "printf '%s\n' certificate-continuity > /etc/pithead-test-marker && printf 'http://$host_addr:8931' > /data/pithead/os-update-test-base" || {
         bad "certificate-continuity update feed could not be configured"
         _image_upgrade_certificate_cleanup "$srv_pid" "$srv"
         return
