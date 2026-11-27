@@ -8,9 +8,9 @@ ensure_onion_password() {
     [ "$(config_bool '.dashboard.onion.enabled' false)" == "true" ] || return 0
     [ -z "$(jq -r '.dashboard.auth.password // ""' "$CONFIG_FILE")" ] || return 0
     local gen tmp
-    gen=$(generate_node_password) || return 1 # 32 alnum chars: clears the >=16 floor, no quotes, no weak pattern
+    gen=$(generate_node_password) || return 1
     tmp=$(mktemp) || error "Could not create a temp file to save the generated dashboard password."
-    jq --arg p "$gen" '.dashboard.auth.password = $p' "$CONFIG_FILE" >"$tmp" && mv "$tmp" "$CONFIG_FILE" ||
+    JQ_P="$gen" jq 'env.JQ_P as $p | .dashboard.auth.password = $p' "$CONFIG_FILE" >"$tmp" && mv "$tmp" "$CONFIG_FILE" ||
         error "Could not save the generated dashboard password to $CONFIG_FILE."
     log "Dashboard onion is on but no password was set — generated one and saved it to config.json (login: admin; see dashboard.auth.password)."
 }
@@ -344,10 +344,10 @@ ensure_appliance_dashboard_password() { # [spool-dir] [config, default $CONFIG_F
         return 0
     fi
     local gen tmp user
-    gen=$(generate_node_password) || return 1 # 32 alnum: clears the >=16 floor, no quotes, no weak pattern
+    gen=$(generate_node_password) || return 1
     user=$(jq -r '.dashboard.auth.username // "admin"' "$config")
     tmp=$(mktemp) || return 1
-    if jq --arg p "$gen" '.dashboard.auth.password = $p' "$config" >"$tmp" && mv "$tmp" "$config"; then
+    if JQ_P="$gen" jq '.dashboard.auth.password = env.JQ_P' "$config" >"$tmp" && mv "$tmp" "$config"; then
         _console "" "Dashboard login for this machine:" "    user: $user" "    password: $gen" \
             "Write this down — it is also in config.json on the machine."
         return 0
