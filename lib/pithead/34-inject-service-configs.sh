@@ -1,17 +1,18 @@
 inject_service_configs() {
     log "Injecting service configurations..."
     local tari_onion_short="${TARI_ONION%%.*}" tari_tmp
-    tari_tmp=$(mktemp -d build/.tari-render.XXXXXX) || error "Could not create a render folder in build/."
-    cp -P -- build/tari/config.toml.template "$tari_tmp/config.toml" && [ ! -L "$tari_tmp/config.toml" ] &&
-        chmod 644 "$tari_tmp/config.toml" &&
-        safe_sed "s/<your_tari_onion_address_no_extension>/$tari_onion_short/g" "$tari_tmp/config.toml" &&
-        safe_sed "s/172\.28\.0/$NETWORK_PREFIX/g" "$tari_tmp/config.toml" &&
-        mv -fT -- "$tari_tmp/config.toml" build/tari/config.toml || {
+    if tari_tmp=$(mktemp -d build/.tari-render.XXXXXX); then
+        cp -P -- build/tari/config.toml.template "$tari_tmp/config.toml" && [ ! -L "$tari_tmp/config.toml" ] &&
+            chmod 644 "$tari_tmp/config.toml" &&
+            safe_sed "s/<your_tari_onion_address_no_extension>/$tari_onion_short/g" "$tari_tmp/config.toml" &&
+            safe_sed "s/172\.28\.0/$NETWORK_PREFIX/g" "$tari_tmp/config.toml" &&
+            mv -fT -- "$tari_tmp/config.toml" build/tari/config.toml ||
+            warn "Could not render build/tari/config.toml from its template; the file was left as it was."
         rm -f "$tari_tmp/config.toml"
         rmdir "$tari_tmp" 2>/dev/null || true
-        error "Could not render build/tari/config.toml."
-    }
-    rmdir "$tari_tmp"
+    else
+        warn "Could not create a render folder in build/; build/tari/config.toml was left as it was."
+    fi
 
     local _csdir _cdir
     _csdir=$(clearnet_state_dir)

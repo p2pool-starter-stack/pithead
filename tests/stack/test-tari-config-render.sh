@@ -54,22 +54,21 @@ assert_eq "dangling link: the link target is not created" "$([ -e "$TCR/elsewher
 
 mv "$TCR/build/tari/config.toml.template" "$TCR/elsewhere/template"
 ln -s "$TCR/elsewhere/file" "$TCR/build/tari/config.toml.template"
-tcr_render
-assert_rc "a linked template is refused" "$?" "1"
+tcr_out=$(PATH="$TCR/bin:$PATH" TARI_ONION=tcronion.onion NETWORK_PREFIX=10.9.8 run_sourced "$TCR" inject_service_configs 2>&1)
+assert_contains "a linked template is not rendered, with a warning" "$tcr_out" "Could not render build/tari/config.toml from its template"
 assert_eq "a linked template leaves config.toml as it was" "$(cat "$TCR_CFG")" "$TCR_WANT"
 assert_eq "a linked template keeps the linked file's content and mode" "$(cat "$TCR/elsewhere/file") $(file_mode "$TCR/elsewhere/file")" "keep 600"
 assert_eq "a linked template leaves nothing behind in build" "$(find "$TCR/build" -mindepth 1 | wc -l | tr -d ' ')" "3"
 
 rm -f "$TCR/build/tari/config.toml.template"
-tcr_render
-assert_rc "a missing template fails the render" "$?" "1"
+tcr_out=$(PATH="$TCR/bin:$PATH" TARI_ONION=tcronion.onion NETWORK_PREFIX=10.9.8 run_sourced "$TCR" inject_service_configs 2>&1)
+assert_contains "a missing template is not rendered, with a warning" "$tcr_out" "Could not render build/tari/config.toml from its template"
 assert_eq "a missing template leaves config.toml as it was" "$(cat "$TCR_CFG")" "$TCR_WANT"
 assert_eq "a missing template leaves nothing behind in build" "$(find "$TCR/build" -mindepth 1 | wc -l | tr -d ' ')" "2"
 
 printf '#!/bin/sh\nexit 1\n' >"$TCR/bin/mktemp"
 tcr_out=$(PATH="$TCR/bin:$PATH" TARI_ONION=tcronion.onion NETWORK_PREFIX=10.9.8 run_sourced "$TCR" inject_service_configs 2>&1)
-assert_rc "a render folder that cannot be made fails the render" "$?" "1"
-assert_contains "a render folder that cannot be made is reported" "$tcr_out" "Could not create a render folder in build/."
+assert_contains "a render folder that cannot be made is reported" "$tcr_out" "Could not create a render folder in build/"
 assert_eq "a render folder that cannot be made leaves config.toml as it was" "$(cat "$TCR_CFG")" "$TCR_WANT"
 
 assert_eq "quadlet tari units mount build/tari read-only" \
