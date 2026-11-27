@@ -179,7 +179,7 @@ jq_assert "both socket proxies publish only to the host loopback" \
 jq_assert "mining services are not on proxy_net" \
     '[.services["monerod"], .services["tari"], .services["p2pool"], .services["xmrig-proxy"]] | all((.networks // {} | keys) | any(. == "proxy_net") | not)'
 jq_assert "p2pool disables its persistent file log (#1989)" '.services.p2pool.command | index("--no-log-file") != null'
-# The Tari probe uses the [m] bracket so grep can't match its own argv (a false-healthy bug).
+jq_assert "tari mounts build/tari read-only" '[.services.tari.volumes[] | select(.target == "/var/tari/config")] | length == 1 and .[0].type == "bind" and .[0].read_only == true'
 jq_assert "tari healthcheck uses the [m]inotari self-match guard" '(.services.tari.healthcheck.test | tostring) | contains("[m]inotari")'
 jq_assert "tari runs under an init that reaps and forwards signals (#2627)" '.services.tari.init == true'
 jq_assert "compose project name is pinned to pithead" '.name == "pithead"'

@@ -285,15 +285,9 @@ services:
       - /tmp:size=64m,mode=1777
     volumes:
       - ${TARI_DATA_DIR}:/var/tari/node
-      - ./build/tari:/var/tari/config
-      # pithead's "LAN-only source rule is live" marker (#2749), as for monerod.
+      - ./build/tari:/var/tari/config:ro
       - ./data/lan-guard:/lan-guard:ro
-      # Read-only view of the shared clearnet-state dir (#234): the wrapper entrypoint reads the
-      # dashboard-written "sync complete" marker to decide clearnet-vs-Tor at startup.
       - ${CLEARNET_STATE_DIR:-./data/clearnet-state}:/clearnet-state:ro
-    # Pithead wrapper (#183/#234): renders the runtime config (clearnet-vs-Tor, marker-gated) from
-    # pithead's canonical Tor config, then runs and supervises minotari_node, rewinding a database
-    # left on the dead 5.3.1 branch past the 350,000 fork first (#2618).
     entrypoint:
       - /var/tari/config/entrypoint.sh
     command:

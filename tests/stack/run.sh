@@ -18,11 +18,9 @@ if ! _audit=$(stack_blocks_audit "$HERE/run.sh" "$ROOT/.github/workflows/shell.y
     printf 'run.sh: the block layout is broken (#2631):\n%s\n' "$_audit" >&2
     exit 2
 fi
-# The full run's tally file, handed down by the loop below. Taken and unset at once, so a fragment
-# that starts run.sh itself cannot append to it.
 _tally="${STACK_TALLY:-}"
 unset STACK_TALLY
-stack_verdict() { # <label>: the summary line, and the suite's exit status
+stack_verdict() {
     echo ""
     printf '%s: \033[1;32m%d passed\033[0m, ' "$1" "$PASS"
     if [ "$FAIL" -gt 0 ]; then
@@ -178,6 +176,8 @@ if in_block 2; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-tari-mode-off.sh" && domain_ran test-tari-mode-off.sh "$_d0" "$?" || domain_ran test-tari-mode-off.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-tari-lmdb.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-tari-lmdb.sh" && domain_ran test-tari-lmdb.sh "$_d0" "$?" || domain_ran test-tari-lmdb.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/test-tari-config-render.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/test-tari-config-render.sh" && domain_ran test-tari-config-render.sh "$_d0" "$?" || domain_ran test-tari-config-render.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-payout-wallet-pairs.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-payout-wallet-pairs.sh" && domain_ran test-payout-wallet-pairs.sh "$_d0" "$?" || domain_ran test-payout-wallet-pairs.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-tari-wallet.sh disable=SC2015

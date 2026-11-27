@@ -183,6 +183,7 @@ test-spool-audit.sh|audit_size
 test-spool-audit.sh|entry
 test-suite-blocks.sh|1
 test-suite-blocks.sh|arg
+test-tari-config-render.sh|1
 test-tor-network.sh|v
 test-tor-port-validation.sh|invalid_port
 test-unit-helpers.sh|t_human
