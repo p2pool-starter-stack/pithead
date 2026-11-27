@@ -230,11 +230,7 @@ async def auth(request: web.Request) -> web.Response:
         failures.pop(peer, None)
         resp = web.HTTPFound("/")
         resp.set_cookie(
-            COOKIE,
-            tok,
-            httponly=True,
-            secure=request.app["secure_cookie"],
-            samesite="Strict",
+            COOKIE, tok, httponly=True, secure=request.app["secure_cookie"], samesite="Strict"
         )
         raise resp
     if peer not in failures and len(failures) >= MAX_AUTH_CLIENTS:
