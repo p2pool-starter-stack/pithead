@@ -87,6 +87,22 @@ _WORKER_HISTORY_CAPTURE_SEC = 300
 _PROXY_WORKERS_MAX_AGE_SEC = 300
 
 
+def _worker_history_row(w, now_ts):
+    rf = w.get("rigforge")
+    source = "rig" if w.get("api_ok") is True and not (rf and rf.get("stale")) else "proxy"
+    h15 = w.get("h15", 0) or 0
+    h60 = w.get("h60", 0) or 0
+    return {
+        "ts": now_ts,
+        "name": w.get("name", ""),
+        "h15": h15,
+        "accepted": w.get("accepted", 0) or 0,
+        "rejected": w.get("rejected", 0) or 0,
+        "rate": h15 or h60,
+        "source": source,
+    }
+
+
 class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixin):
     """Aggregate mining statistics and maintain the application state."""
 
@@ -544,18 +560,9 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         )
                         self._last_hourly_capture = now_ts
 
-                    # 6a3. v1.7 telemetry backbone (#196 Wave-0), ~5 min wall-clock gate:
-                    # per-worker hashrate/share history, batched into ONE executemany call rather
-                    # than N inserts per cycle. 30-day retention.
                     if now_ts - self._last_worker_capture >= _WORKER_HISTORY_CAPTURE_SEC:
                         worker_rows = [
-                            {
-                                "ts": now_ts,
-                                "name": w.get("name", ""),
-                                "h15": w.get("h15", 0) or 0,
-                                "accepted": w.get("accepted", 0) or 0,
-                                "rejected": w.get("rejected", 0) or 0,
-                            }
+                            _worker_history_row(w, now_ts)
                             for w in final_workers
                             if w.get("status") == "online"
                         ]

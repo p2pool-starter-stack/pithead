@@ -215,11 +215,10 @@ class StorageSchemaMixin:
             "CREATE TABLE IF NOT EXISTS disk_growth "
             "(ts REAL, monero_db_bytes INTEGER, disk_used_gb REAL, disk_total_gb REAL)"
         )
-        # worker_history: per-rig hashrate window + cumulative accepted/rejected, sampled ~5 min
-        # wall-clock and written in one batched executemany call per cycle. 30-day retention.
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS worker_history "
-            "(ts REAL, name TEXT, h15 REAL, accepted INTEGER, rejected INTEGER)"
+            "(ts REAL, name TEXT, h15 REAL, accepted INTEGER, rejected INTEGER, "
+            "rate REAL, source TEXT)"
         )
         # audit_events (#530): the durable backing store for the Security panel's audit trail. The
         # #33 control.log is host-owned, read-only from this container, and the writers already trim
@@ -333,3 +332,12 @@ class StorageSchemaMixin:
             self.logger.info("Migrating DB: Adding type column to worker_config")
             self._conn.execute("ALTER TABLE worker_config ADD COLUMN type TEXT DEFAULT 'apply'")
         self._migrate_worker_config_revision(cursor)
+
+        cursor.execute("PRAGMA table_info(worker_history)")
+        worker_history_columns = {info[1] for info in cursor.fetchall()}
+        if "rate" not in worker_history_columns:
+            self.logger.info("Migrating DB: Adding rate column to worker_history")
+            self._conn.execute("ALTER TABLE worker_history ADD COLUMN rate REAL")
+        if "source" not in worker_history_columns:
+            self.logger.info("Migrating DB: Adding source column to worker_history")
+            self._conn.execute("ALTER TABLE worker_history ADD COLUMN source TEXT")

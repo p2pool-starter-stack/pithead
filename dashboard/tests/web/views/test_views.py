@@ -701,7 +701,7 @@ class TestBuildWorkerHashrateHistory:
         finally:
             sm.close()
         hist = d["hashrate_history"]
-        assert hist["hashrate"] == [{"x": 1000000, "y": 1234.0}]
+        assert hist["hashrate"] == [{"x": 1000000, "y": 1234.0, "source": None}]
         assert len(hist["markers"]) == 1
         m = hist["markers"][0]
         assert m["x"] == 900000

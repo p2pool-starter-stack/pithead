@@ -89,7 +89,11 @@ export class RigInspector extends WorkerInspect {
             ? `RigForge ${version}${latest ? ` · ${latest} available` : " · latest"}`
             : "Not reported: this rig does not publish a RigForge version"
         }</dd></div>
-        <div><dt>24 h hashrate</dt><dd>${health.average ? `${health.average} average` : "Unavailable"}</dd></div>
+        <div><dt>24 h hashrate</dt><dd>${
+          health.average
+            ? `${health.average} average · ${health.approximate ? "proxy, approximate" : "rig-reported"}`
+            : "Unavailable"
+        }</dd></div>
         <div><dt>Accepted shares</dt><dd>${row.accepted ?? "Unavailable"}</dd></div>
         <div><dt>Rejected shares</dt><dd>${row.rejected ?? "Unavailable"}</dd></div>
         <div><dt>XMRig developers</dt><dd>${donation.text}${donation.mismatch ? ` · ${donation.mismatch}` : ""}</dd></div>

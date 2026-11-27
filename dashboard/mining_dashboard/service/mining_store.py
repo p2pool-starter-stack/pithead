@@ -293,6 +293,8 @@ class MiningStoreMixin:
                     r.get("h15", 0) or 0,
                     r.get("accepted", 0) or 0,
                     r.get("rejected", 0) or 0,
+                    r.get("rate"),
+                    r.get("source"),
                 )
                 for r in rows
             ]
@@ -301,8 +303,8 @@ class MiningStoreMixin:
                     return
                 with self._conn:
                     self._conn.executemany(
-                        "INSERT INTO worker_history (ts, name, h15, accepted, rejected) "
-                        "VALUES (?, ?, ?, ?, ?)",
+                        "INSERT INTO worker_history (ts, name, h15, accepted, rejected, "
+                        "rate, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
                         values,
                     )
                     if random.random() < 0.05:  # noqa: S311 — pruning sampler, not a security context
@@ -326,14 +328,14 @@ class MiningStoreMixin:
                 cursor = self._conn.cursor()
                 if name is not None:
                     cursor.execute(
-                        "SELECT ts, name, h15, accepted, rejected FROM worker_history "
-                        "WHERE ts >= ? AND name = ? ORDER BY ts ASC",
+                        "SELECT ts, name, h15, accepted, rejected, rate, source "
+                        "FROM worker_history WHERE ts >= ? AND name = ? ORDER BY ts ASC",
                         (since, name),
                     )
                 else:
                     cursor.execute(
-                        "SELECT ts, name, h15, accepted, rejected FROM worker_history "
-                        "WHERE ts >= ? ORDER BY ts ASC",
+                        "SELECT ts, name, h15, accepted, rejected, rate, source "
+                        "FROM worker_history WHERE ts >= ? ORDER BY ts ASC",
                         (since,),
                     )
                 return [dict(row) for row in cursor.fetchall()]
@@ -367,7 +369,8 @@ class MiningStoreMixin:
         for s in self.get_worker_history(since=since, name=worker):
             idx = bisect.bisect_right(boundaries, s["ts"]) - 1
             if idx >= 0:
-                buckets[idx].append(s["h15"])
+                rate = s.get("rate")
+                buckets[idx].append(rate if rate is not None else s["h15"])
 
         out = [
             {
