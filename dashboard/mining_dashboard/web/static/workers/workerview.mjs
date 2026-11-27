@@ -346,12 +346,14 @@ export class WorkerInspect extends Component {
             }
             <div class="mt-1">
                 <button class="btn-toggle" disabled=${busy} onClick=${() => this.apply()}>${busy ? "Applying…" : "Apply to rig"}</button>
-            ${this.state.poolsPending
-              ? html`<label class="config-confirm-type">Type <code>APPLY</code> to change this rig's pools:
+            ${
+              this.state.poolsPending
+                ? html`<label class="config-confirm-type">Type <code>APPLY</code> to change this rig's pools:
                     <input type="text" autocomplete="off" spellcheck="false" disabled=${busy}
                            value=${this.state.poolsConfirm}
                            onInput=${(e) => this.setState({ poolsConfirm: e.target.value })} /></label>`
-              : null}
+                : null
+            }
             </div>
             ${!busy && this.isDirty() ? html`<p class="text-muted text-xs">Unsaved — Apply before closing, or the change is lost.</p>` : null}
             <${StatusLine} result=${result} />`
