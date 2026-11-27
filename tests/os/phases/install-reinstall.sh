@@ -16,6 +16,13 @@ _phase_install_reinstall() {
         bad "could not plant the reinstall sentinels and 1.x-shaped config"
         return 1
     }
+    _ssh "n=0; for d in /data/containers/storage/volumes/*/_data; do
+              [ -d \"\$d\" ] && [ ! -L \"\$d\" ] || continue
+              echo volume-data > \"\$d/.reinstall-volume-sentinel\" && n=\$((n + 1))
+          done; [ \"\$n\" -gt 0 ]" || {
+        bad "no named volume folder under /data/containers/storage/volumes to plant the reinstall sentinel in"
+        return 1
+    }
     _ssh "systemctl poweroff" 2>/dev/null || true
     sleep 8
     vm_destroy_or_refuse || return
@@ -100,6 +107,10 @@ _phase_install_reinstall() {
                  s=OK
                  test -s \"\$T/pithead/data/monero/chain-sentinel\" || s=NO-MONERO-CHAIN
                  test -s \"\$T/pithead/data/tari/chain-sentinel\" || s=\$s,NO-TARI-CHAIN
+                 ls -d \"\$T\"/containers/storage/volumes/*/_data >/dev/null 2>&1 || s=\$s,NO-VOLUME-FOLDER
+                 for f in \"\$T\"/containers/storage/volumes/*/_data/.reinstall-volume-sentinel; do
+                     test -e \"\$f\" && s=\$s,VOLUME-DATA-SURVIVED
+                 done
                  test -e \"\$T/pithead/reinstall-sentinel\" && s=\$s,USER-DATA-SURVIVED
                  umount \"\$T\" 2>&1 || s=\$s,UMOUNT-FAILED
                  echo \"verdict=\$s\"" 2>&1)
