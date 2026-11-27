@@ -96,6 +96,7 @@ test("table mode: editing the pools row without a real password strips the senti
       { url: "pool.example:3333", user: "wallet.rig1", pass: SENTINEL, keepalive: true },
     ]),
   };
+  inst.state.poolsConfirm = "APPLY";
   let posted = null;
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, opts) => {

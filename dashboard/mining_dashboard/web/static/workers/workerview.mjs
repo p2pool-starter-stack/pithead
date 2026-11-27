@@ -105,6 +105,8 @@ export class WorkerInspect extends Component {
       jsonError: null,
       busy: false,
       result: null,
+      poolsPending: false,
+      poolsConfirm: "",
       // Per-worker hashrate chart (#1013): its own range preference (persisted, like the editor
       // mode above) and its own loading flag — a range switch refetches ONLY the chart data
       // (loadChart), never the full load(), so it can't wipe an in-progress config edit.
@@ -244,16 +246,26 @@ export class WorkerInspect extends Component {
       this.setState({ result: { status: "error", error: "No changes to apply." } });
       return;
     }
+    const poolsChange = "pools" in changes;
+    if (poolsChange && this.state.poolsConfirm !== "APPLY") {
+      this.setState({
+        poolsPending: true,
+        result: { status: "error", error: "This changes the rig's pools. Type APPLY to confirm." },
+      });
+      return;
+    }
+    const request = { worker: this.props.name, changes };
+    if (poolsChange) request.confirm = "APPLY";
     this.setState({ busy: true, result: { status: "running" } });
     try {
       const res = await fetch("/api/control/worker-apply", {
         method: "POST",
         headers: CONTROL_HEADERS,
-        body: JSON.stringify({ worker: this.props.name, changes }),
+        body: JSON.stringify(request),
       });
       let out = await res.json();
       if (out.status === "pending") out = await pollWorkerResult(out.id);
-      this.setState({ busy: false, result: out });
+      this.setState({ busy: false, result: out, poolsPending: false, poolsConfirm: "" });
       this.load(); // refresh telemetry + history with the new row
     } catch (e) {
       this.setState({ busy: false, result: { status: "error", error: String(e) } });
@@ -334,6 +346,12 @@ export class WorkerInspect extends Component {
             }
             <div class="mt-1">
                 <button class="btn-toggle" disabled=${busy} onClick=${() => this.apply()}>${busy ? "Applying…" : "Apply to rig"}</button>
+            ${this.state.poolsPending
+              ? html`<label class="config-confirm-type">Type <code>APPLY</code> to change this rig's pools:
+                    <input type="text" autocomplete="off" spellcheck="false" disabled=${busy}
+                           value=${this.state.poolsConfirm}
+                           onInput=${(e) => this.setState({ poolsConfirm: e.target.value })} /></label>`
+              : null}
             </div>
             ${!busy && this.isDirty() ? html`<p class="text-muted text-xs">Unsaved — Apply before closing, or the change is lost.</p>` : null}
             <${StatusLine} result=${result} />`
