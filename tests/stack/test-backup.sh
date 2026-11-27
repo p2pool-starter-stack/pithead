@@ -56,6 +56,7 @@ exec "$@"
 EOF
 chmod +x "$RB/bin/docker" "$RB/bin/sudo"
 cat >"$RB/.env" <<EOF
+TOR_EGRESS_FIREWALL=false
 MONERO_ONION_ADDRESS=mona.onion
 TARI_ONION_ADDRESS=taria.onion
 P2POOL_ONION_ADDRESS=p2pa.onion
@@ -131,6 +132,7 @@ exec "$@"
 EOF
 chmod +x "$CJ/bin/docker" "$CJ/bin/sudo"
 cat >"$CJ/.env" <<EOF
+TOR_EGRESS_FIREWALL=false
 MONERO_ONION_ADDRESS=mona.onion
 TARI_ONION_ADDRESS=taria.onion
 P2POOL_ONION_ADDRESS=p2pa.onion
@@ -375,6 +377,7 @@ exit 0
 EOF
 chmod +x "$R/bin/docker" "$R/bin/sudo"
 cat >"$R/.env" <<EOF
+TOR_EGRESS_FIREWALL=false
 DEPLOYMENT_COMPLETED=true
 COMPOSE_PROFILES=local_node
 HOST_IP=box.lan
@@ -421,6 +424,7 @@ exit 0
 EOF
 chmod +x "$RD557/bin/docker" "$RD557/bin/sudo"
 cat >"$RD557/.env" <<EOF
+TOR_EGRESS_FIREWALL=false
 DEPLOYMENT_COMPLETED=true
 COMPOSE_PROFILES=local_node
 HOST_IP=box.lan

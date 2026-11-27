@@ -194,12 +194,9 @@ printf 'NETWORK_SUBNET=172.28.0.0/24\nNETWORK_PREFIX=172.28.0\nTOR_EGRESS_FIREWA
 : >"$FF/ipt.log"
 fwfail_out="$(PITHEAD_ENGINE=docker PATH="$FF/bin:$PATH" IPT_LOG="$FF/ipt.log" run_sourced "$FF" apply_tor_egress_firewall 2>&1)"
 fwfail_rc=$?
-assert_rc "load failure degrades gracefully (stack still runs, rc 0)" "$fwfail_rc" "0"
+assert_rc "load failure outside startup warns and returns 0 (startup refuses through refresh)" "$fwfail_rc" "0"
 assert_contains "load failure warns clearnet is NOT provably fail-closed" "$fwfail_out" "egress-apply:iptables-insert-failed"
 assert_eq "load failure leaves the installed rules alone: no -D, no nft delete (#2672)" "$(grep -cE -- '-D |delete' "$FF/ipt.log")" "0"
-# remove: `down` strips ONLY our tagged rules — this removal is the precondition
-# for the #291 down->upgrade/apply window, so prove it deletes the tags and spares foreign DOCKER-USER
-# rules. iptables-save replays two tagged rules + one foreign rule; remove must -D the tagged pair only.
 RM="$SANDBOX/rm"
 mkdir -p "$RM/bin"
 printf '#!/usr/bin/env bash\nexec "$@"\n' >"$RM/bin/sudo"
@@ -741,10 +738,11 @@ node_onion_probe() { # provision_node_onions recreates tor and captures a newly 
         : >dockerlog
         : >renders
         log() { :; }
-        restore_recreate_names() { :; }  # its own test is tests/stack/lifecycle/recreate-names.sh
-        lan_guard_watched_ports() { :; } # LAN guard has its own tests; keep this onion probe scoped
+        restore_recreate_names() { :; }
+        lan_guard_watched_ports() { :; }
+        apply_tor_egress_firewall() { :; }
         docker() {
-            [ "$1" != ps ] || return 0 # no running node in this onion fixture
+            [ "$1" != ps ] || return 0
             printf '%s ' "$*" >>dockerlog
         }
         render_env() { printf 'x' >>renders; }

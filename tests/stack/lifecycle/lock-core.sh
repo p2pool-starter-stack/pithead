@@ -10,7 +10,7 @@ echo "== unit: the mutation lock serialises mutating windows (#1342) =="
 LKDIR="$SANDBOX/lock"
 mkdir -p "$LKDIR"
 # These fixtures exercise configured Compose mutations; configless shutdown has its own suite.
-: >"$LKDIR/.env"
+printf 'TOR_EGRESS_FIREWALL=false\n' >"$LKDIR/.env"
 LKBIN="$SANDBOX/lockbin"
 make_stubs "$LKBIN"
 LKFILE="$LKDIR/explicit.lock"
@@ -338,7 +338,7 @@ assert_contains "the mutation it could not serialise still runs" "$(cat "$LKLOG"
 LKROOT="$SANDBOX/deploy"
 mkdir -p "$LKROOT/pithead-v1.0.0" "$LKROOT/pithead-v2.0.0" "$LKROOT/plain-a" "$LKROOT/plain-b"
 for lk_fixture in pithead-v1.0.0 pithead-v2.0.0 plain-a plain-b; do
-    : >"$LKROOT/$lk_fixture/.env"
+    printf 'TOR_EGRESS_FIREWALL=false\n' >"$LKROOT/$lk_fixture/.env"
 done
 unset lk_fixture
 # Hold a window in one dir; drive a mutating verb from its sibling. `env -u PITHEAD_LOCK_HELD`

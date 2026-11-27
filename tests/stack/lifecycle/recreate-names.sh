@@ -9,7 +9,7 @@ echo "== unit: an apply never ends with a service under compose's recreate name 
 # surplus and starts the replacement without renaming it. The stub's container list is a file.
 RN="$SANDBOX/recreate-names"
 mkdir -p "$RN"
-printf 'COMPOSE_PROFILES=local_node\n' >"$RN/.env"
+printf 'TOR_EGRESS_FIREWALL=false\nCOMPOSE_PROFILES=local_node\n' >"$RN/.env"
 printf 'monerod\np2pool\n' >"$RN/names"
 rn_out=$(
     cd "$RN" || exit
@@ -47,7 +47,7 @@ echo "== unit: compose_up_checked retries once when the engine's stop API times 
 # answered the stop with a 500 about the exit file. The container is stopped on the second pass.
 ST="$SANDBOX/stop-timeout"
 mkdir -p "$ST"
-printf 'COMPOSE_PROFILES=local_node\n' >"$ST/.env"
+printf 'TOR_EGRESS_FIREWALL=false\nCOMPOSE_PROFILES=local_node\n' >"$ST/.env"
 st_out=$(
     cd "$ST" || exit
     # shellcheck disable=SC1090

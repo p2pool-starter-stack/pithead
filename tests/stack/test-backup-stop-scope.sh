@@ -30,6 +30,7 @@ exec "$@"
 EOF
 chmod +x "$CD/bin/docker" "$CD/bin/sudo"
 cat >"$CD/.env" <<EOF
+TOR_EGRESS_FIREWALL=false
 MONERO_ONION_ADDRESS=mona.onion
 TARI_ONION_ADDRESS=taria.onion
 P2POOL_ONION_ADDRESS=p2pa.onion
