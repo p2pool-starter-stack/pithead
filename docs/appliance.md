@@ -828,7 +828,7 @@ appliance; a manually deployed debug image carries its own SSH key for developme
 **"Wrong token."** A generated token changes each time the setup service restarts; a valid
 preseed token is reused. Read the current token from the console or your preseed file.
 Five wrong attempts from the same network peer start a 60-second
-cooldown. Wait for the time shown on the page, then retry the same token; the wizard stays open
+cooldown. An IPv6 peer is counted by its /64 network, so devices sharing one /64 share the five. Wait for the time shown on the page, then retry the same token; the wizard stays open
 and other authenticated operators keep their sessions.
 
 **The address was rejected.** For Monero you most likely pasted a subaddress (starts with
