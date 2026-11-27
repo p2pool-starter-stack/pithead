@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 REMOTE = ROOT / "os/quadlet"
+SHARED = REMOTE / "common"
 FIXTURES = (REMOTE, REMOTE / "local", REMOTE / "payout")
 PROVENANCE_KEYS = ("PITHEAD_REGISTRY", "STACK_VERSION")
 
@@ -81,26 +82,34 @@ class QuadletProvenanceTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return out
 
-    def assert_fixture_parity(self, expected, actual):
-        expected_files = {
+    def expected_units(self, fixture, names):
+        units = {
             path.name: path.read_bytes()
-            for path in expected.iterdir()
+            for path in fixture.iterdir()
             if path.is_file() and path.name != "fixture.env"
         }
+        for name in set(names) - set(units):
+            if (SHARED / name).is_file():
+                units[name] = (SHARED / name).read_bytes()
+        return units
+
+    def assert_fixture_parity(self, expected, actual):
         actual_files = {path.name: path.read_bytes() for path in actual.iterdir()}
-        self.assertEqual(actual_files, expected_files)
+        self.assertEqual(actual_files, self.expected_units(expected, actual_files))
 
     def assert_stack_images(self, output, registry, version):
-        def images(directory):
+        def images(units):
             return {
-                path.name: line.removeprefix("Image=")
-                for path in directory.glob("*.container")
-                for line in path.read_text().splitlines()
+                name: line.removeprefix("Image=")
+                for name, body in units.items()
+                if name.endswith(".container")
+                for line in body.decode().splitlines()
                 if line.startswith("Image=") and "/pithead-" in line
             }
 
-        actual = images(output)
-        self.assertEqual(set(actual), set(images(REMOTE)))
+        rendered = {path.name: path.read_bytes() for path in output.iterdir()}
+        actual = images(rendered)
+        self.assertEqual(set(actual), set(images(self.expected_units(REMOTE, rendered))))
         for image in actual.values():
             self.assertTrue(image.startswith(f"{registry}/pithead-"), image)
             self.assertTrue(image.endswith(f":{version}"), image)

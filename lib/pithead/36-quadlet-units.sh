@@ -1,10 +1,6 @@
 render_quadlet_units() (
     local envf="$1" outdir="$2"
     [ -f "$envf" ] || error "render-quadlet: env file not found: $envf"
-    umask 077
-    mkdir -p "$outdir"
-    chmod 0700 "$outdir"
-    find "$outdir" -maxdepth 1 -type f \( -name '*.container' -o -name '*.network' \) -exec chmod 0600 {} +
     _qenv() { env_get_file "$envf" "$1"; }
     _qenvq() {
         local v
@@ -14,10 +10,6 @@ render_quadlet_units() (
         v=${v//%/%%}
         printf '"%s=%s"' "$1" "$v"
     }
-    # Every emitted unit has run on the bench (render-then-prove): the remote set in the #78
-    # spike, the local-node units 2026-07-24, and the payout-wallet units the same day (real
-    # throwaway monero wallet; tari view-only wallet on a canonical scalar). A new profile or
-    # service starts life refused here until it has a bench run behind it.
     local profiles tor_profiles reg ver prefix subnet
     profiles=$(_qenv COMPOSE_PROFILES)
     tor_profiles=$(_qenv TOR_COMPOSE_PROFILES)
@@ -26,6 +18,10 @@ render_quadlet_units() (
     [ -n "${reg:=${PITHEAD_REGISTRY:-}}" ] && [ -n "${ver:=${STACK_VERSION:-}}" ] || error "render-quadlet: PITHEAD_REGISTRY and STACK_VERSION need build provenance or nonempty env-file values."
     prefix=$(_qenv NETWORK_PREFIX)
     subnet=$(_qenv NETWORK_SUBNET)
+    umask 077
+    mkdir -p "$outdir"
+    chmod 0700 "$outdir"
+    find "$outdir" -maxdepth 1 -type f \( -name '*.container' -o -name '*.network' \) -exec chmod 0600 {} +
     cat >"$outdir/mining.network" <<EOF
 [Network]
 NetworkName=mining_net
