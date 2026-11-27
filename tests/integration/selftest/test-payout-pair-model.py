@@ -34,7 +34,10 @@ class ModelTest(unittest.TestCase):
         return {
             "services": services,
             "networks": {"mining_net": {"name": "fixture-shared"}},
-            "secrets": {"tari_wallet_secret": {"file": "./build/tari/view-only.secret"}},
+            "secrets": {
+                "monero_view_key": {"file": "./build/monero/view-only.secret"},
+                "tari_wallet_secret": {"file": "./build/tari/view-only.secret"},
+            },
         }
 
     def transform(self, lists):
@@ -85,6 +88,9 @@ class ModelTest(unittest.TestCase):
         )
         self.assertEqual(
             model["secrets"]["tari_wallet_secret"]["file"], "./build/tari/view-only.secret"
+        )
+        self.assertEqual(
+            model["secrets"]["monero_view_key"]["file"], "./build/monero/view-only.secret"
         )
 
     def test_raw_list_environment_preserves_values_and_isolation(self):

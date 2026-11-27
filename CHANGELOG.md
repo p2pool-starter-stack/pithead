@@ -40,6 +40,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- The Monero payout view key no longer reaches `wallet-rpc` as an environment value: it is delivered as an owner-only file mounted read-only, like the Tari view key, so `docker inspect`, `podman inspect` and `systemctl show` no longer print it (#4198).
 - The dashboard's **Earnings — Expected vs Actual** card no longer compares this stack's expected
   income with the whole wallet's payouts in silence. The payout side is now stated on the card as
   wallet-wide (every stack or rig paying your configured address counts), a percent computed while
