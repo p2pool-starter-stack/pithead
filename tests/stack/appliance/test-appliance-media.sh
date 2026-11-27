@@ -186,12 +186,16 @@ EOF
 diffout=$(
     export PITHEAD_MEDIA_BIN="$MC/pithead"
     source "$ROOT/os/overlay/pithead-media-config"
-    SECRET_PATHS_JSON=$(_secret_paths_json) # the real fetch, against the sandboxed pithead copy
-    media_config_diff "$MC/good.json" "$MC/changed.json"
+    SECRET_PATHS_JSON=$(_secret_paths_json)
+    media_config_diff <(jq '.workers.list=[{name:"rig1",api_token:"api-token-old-value"}] | .dashboard.workers=[{name:"rig2",api_token:"api-token-old-second"}]' "$MC/good.json") \
+        <(jq '.workers.list=[{name:"rig1",api_token:"api-token-new-value"}] | .dashboard.workers=[{name:"rig2",api_token:"api-token-new-second"}]' "$MC/changed.json")
 )
 assert_contains "the payout wallet change shows old -> new in full (that IS the point)" "$diffout" "$VALID_PRIMARY -> 44MnN1f3Eto8DZYUWuE5XZNUtE3vcRzt2j6PzqWpPau34e6Cf4fAxt6X2MBmrm6F9YMEiMNjN6W4Shn4pLcfNAja621jwyg"
 assert_contains "a changed secret (dashboard password) names the path" "$diffout" "dashboard.auth.password"
 assert_not_contains "a changed secret never shows the new value" "$diffout" "a-new-dashboard-password"
+assert_contains "a changed worker API token is listed as changed with its value hidden" "$diffout" "workers.list.0.api_token: changed (value hidden)"
+assert_contains "a changed worker API token under dashboard.workers is listed the same way" "$diffout" "dashboard.workers.0.api_token: changed (value hidden)"
+assert_eq "no worker API token value is printed, old or new" "$(printf '%s' "$diffout" | grep -c 'api-token-' || true)" "0"
 
 rc=$(
     export PITHEAD_MEDIA_BIN="$MC/pithead"
@@ -211,8 +215,6 @@ rc=$(
 )
 assert_eq "a real change -> media_config_identical false" "$rc" "1"
 
-# Masking fails CLOSED: with no secret-path list there is no diff and no "identical" verdict —
-# an earlier draft fell back to an empty list, which printed raw secret values to the console.
 rc=$(
     export PITHEAD_MEDIA_BIN="$MC/does-not-exist"
     source "$ROOT/os/overlay/pithead-media-config"
@@ -354,8 +356,6 @@ fi
 assert_contains "the cancelled change is announced on the console" "$(cat "$MC/abort.out")" \
     "Media configuration channel: cancelled — no changes applied."
 
-# main() must FAIL CLOSED end to end when the secret-path list can't be read: with a broken host
-# program, no diff (which could leak raw secret values) is ever shown and no config is applied.
 STICK6="$MC/stick-nosecrets"
 mkdir -p "$STICK6"
 cp "$MC/changed.json" "$STICK6/pithead-config.json"

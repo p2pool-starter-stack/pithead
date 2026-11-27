@@ -145,6 +145,8 @@ bundle_redact_log() {
         -e 's/(--wallet[ =])[^-[:space:]][^[:space:]]*/\1[redacted-address]/g' \
         -e 's/(--merge-mine[ =][^[:space:]]+[[:space:]]+)[^-[:space:]][^[:space:]]*/\1[redacted-address]/g' \
         -e 's/[a-z2-7]{56}\.onion/[redacted].onion/g' \
+        -e 's/(][[:space:]]{2,}password: )[^[:space:]]+/\1[redacted]/g' \
+        -e 's/(One-time token: )[^[:space:]]+/\1[redacted]/g' \
         -e "$xmr_shape" \
         -e "$xmr_shape"
 }
