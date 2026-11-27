@@ -313,6 +313,7 @@ class TorEgressHealer(TorHistoryMixin):
                     self._pending_since = now
                     return
                 if self._guard_rotated:
+                    self._disruptive.pop()
                     logger.warning(
                         "Tor egress still failed after guard rotation (%s). Not restarting Tor.",
                         evidence,

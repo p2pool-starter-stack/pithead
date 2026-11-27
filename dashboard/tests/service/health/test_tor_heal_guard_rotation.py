@@ -37,6 +37,7 @@ async def test_guard_rotation_signature_never_restarts_tor(caplog):
         await _run_rounds(healer, now, MAX_ATTEMPTS + 3)
     assert submits.count("tor-newnym") == NEWNYM_ATTEMPTS
     assert healer._guard_rotated is True
+    assert healer._disruptive == []
     docker.stop.assert_not_awaited()
     assert "tor-recover" not in submits
     assert any("Not restarting Tor" in r.message for r in caplog.records)
