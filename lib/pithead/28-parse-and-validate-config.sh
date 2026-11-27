@@ -188,6 +188,7 @@ parse_and_validate_config() {
 
     migrate_legacy_workers
     migrate_removed_telegram_control
+    migrate_xvb_na_endpoint
     validate_worker_endpoints
     validate_energy_config
 
@@ -232,6 +233,8 @@ parse_and_validate_config() {
     if ! printf '%s' "$DONATE_LEVEL" | grep -qE '^[0-9]+$' || [ "$DONATE_LEVEL" -gt 99 ]; then
         error "proxy.donate_level must be an integer 0–99 (percent); default 0 (got \"$DONATE_LEVEL\")."
     fi
+
+    validate_donation_config
 
     MONERO_USER=$(jq -r '.monero.node_username // empty' "$CONFIG_FILE")
     MONERO_PASS=$(jq -r '.monero.node_password // empty' "$CONFIG_FILE")
@@ -299,6 +302,14 @@ parse_and_validate_config() {
     for d in "$MONERO_DIR" "$TARI_DIR" "$P2POOL_DIR" "$TOR_DATA_DIR" "$DASHBOARD_DIR" "$CLEARNET_STATE_DIR" "$CONTROL_DIR" "$CADDY_LOG_DIR" "$PROXY_TLS_DIR"; do
         assert_safe_dir "$d"
     done
+    local _dk _dj _dirs=("$MONERO_DIR" "$TARI_DIR" "$P2POOL_DIR" "$TOR_DATA_DIR" "$DASHBOARD_DIR") _keys=(monero.data_dir tari.data_dir p2pool.data_dir tor.data_dir dashboard.data_dir)
+    for _dk in "${!_dirs[@]}"; do
+        for _dj in "${!_dirs[@]}"; do
+            [ "$_dk" -lt "$_dj" ] || continue
+            [[ "${_dirs[_dk]%/}/" == "${_dirs[_dj]%/}/"* || "${_dirs[_dj]%/}/" == "${_dirs[_dk]%/}/"* ]] || continue
+            error "${_keys[_dk]} (${_dirs[_dk]}) and ${_keys[_dj]} (${_dirs[_dj]}) overlap — one data directory is inside the other; reset or removal of one would destroy the other."
+        done
+    done
 
     # "auto"/empty/DYNAMIC_HOST here means "decide later" (preserved value, prompt, or hostname)
     DASHBOARD_HOST=$(resolve_default "$(jq -r '.dashboard.host // empty' "$CONFIG_FILE")" "")
@@ -316,8 +327,7 @@ parse_and_validate_config() {
     if [ -n "$HOST_PORT" ] && ! is_valid_port "$HOST_PORT"; then
         error "dashboard.port must be a whole number between 1 and 65535, or \"auto\" (got \"$HOST_PORT\")."
     fi
-    # Ensure a strict true/false string is returned, defaulting to true
-    DASHBOARD_SECURE=$(jq -r 'if .dashboard.secure != null then .dashboard.secure | tostring else "true" end' "$CONFIG_FILE")
+    DASHBOARD_SECURE=$(normalize_bool "$(config_bool '.dashboard.secure' true)")
     # Deliberate opt-in to serving the dashboard on a globally-routable address. Default false:
     # the appliance auto-publishes every address it holds, and on any network passing IPv6 through
     # that silently included a public one. The supported off-LAN route is the onion service.

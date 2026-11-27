@@ -9,6 +9,7 @@ source "$HERE/../lib.sh"
 source "$HERE/../lib/fault-rules.sh"
 # shellcheck source=tests/integration/lib/run-tor-probe-fault.sh
 source "$HERE/../lib/run-tor-probe-fault.sh"
+has_compose_profile() { return 1; }
 
 SCRATCH=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-${TMP:-/tmp}}}/tor-probe-selftest.XXXXXX")
 SCRATCH=$(cd "$SCRATCH" && pwd -P)
@@ -63,10 +64,15 @@ for flag in 0 unset; do
     (
         if [ "$flag" = unset ]; then unset SKIP_MINING_ASSERTS; else SKIP_MINING_ASSERTS=$flag; fi
         waited=0
+        OUT_DIR="$SCRATCH/binding-$flag"
+        mkdir -p "$OUT_DIR"
+        api_state() { echo '{"proxy_workers":0}'; }
         env_on_box() { echo true; }
         cleared=0
         fault_rules_clear_all() { cleared=$((cleared + 1)); }
+        tor_newnym_budget_reset() { budget_reset=$((${budget_reset:-0} + 1)); }
         wait_for() {
+            check test "$budget_reset" -eq 1
             check test "$1" -eq 180
             check test "$cleared" -eq 1
             check test "$2" -eq 10
@@ -80,20 +86,140 @@ for flag in 0 unset; do
         check test "$IT_PASS" -eq 0
         check test "$IT_SKIPPED_LEGS" -eq 0
         check grep -Fq 'Tor probe fault has a live mining witness' <<<"$IT_FAILED_NAMES"
+        check grep -Fq 'before-fault' "$OUT_DIR/tor-probe-witness.log"
         printf 'binding fixture (%s): %s passed, %s failed\n' "$flag" "$PASS" "$FAIL"
         test "$FAIL" -eq 0
     )
 done
 
+echo "== A peerless Monero node fails the precondition before any fault is installed =="
+(
+    env_on_box() { echo true; }
+    has_compose_profile() { return 0; }
+    fault_rules_clear_all() { :; }
+    tor_newnym_budget_reset() { :; }
+    waits=""
+    wait_for() {
+        waits="$waits $1"
+        [ "$1" -eq 180 ] || return 1
+    }
+    rx() { echo "unexpected rx" >>"$SCRATCH/peerless-calls"; }
+    push_config() { echo "unexpected push_config" >>"$SCRATCH/peerless-calls"; }
+    fault_tor_probe_egress
+    check test "$waits" = " 180 600"
+    check test "$IT_FAIL" -eq 1
+    check test ! -e "$SCRATCH/peerless-calls"
+    check grep -Fq 'Tor probe fault starts with Tor carrying peer traffic' <<<"$IT_FAILED_NAMES"
+    printf 'peerless fixture: %s passed, %s failed\n' "$PASS" "$FAIL"
+    test "$FAIL" -eq 0
+)
+echo "== Failed mining and recovery rows carry the dashboard's own log lines =="
+(
+    BASELINE_CONFIG='{}'
+    env_on_box() { echo true; }
+    fault_rules_clear_all() { :; }
+    fault_rules_trap_arm() { :; }
+    fault_rules_trap_disarm() { :; }
+    tor_newnym_budget_reset() { :; }
+    push_config() { :; }
+    pithead() { :; }
+    wait_status_ok() { :; }
+    sleep() { :; }
+    wait_for() {
+        case "$4" in
+        _tor_probe_mining_sample) return 0 ;;
+        _tor_probe_witness_latch) TOR_PROBE_LAST=5 ;;
+        *) return 1 ;;
+        esac
+    }
+    _tor_probe_mining_sample() { return 1; }
+    DASHBOARD_LOG="$SCRATCH/dashboard.log"
+    export DASHBOARD_LOG
+    printf '%s\n' \
+        '2026-11-22 10:00:17,201 [WARNING] Mining work is not valid (Monero node unreachable past the debounce) — stopping xmrig-proxy so workers fail over to their backup pools.' \
+        '2026-11-22 10:04:02,917 [WARNING] Tor clearnet egress failed for 5 minutes: check.torproject.org and cloudflare.com timed out. Requesting NEWNYM (1/2).' \
+        "2026-11-22 10:20:40,005 [WARNING] Tor clearnet egress is STILL broken after 2 recovery attempts (0 disruptive in the last day, cap 2): probe timeout. No more automatic action; run './pithead doctor' for current evidence." >"$DASHBOARD_LOG"
+    rx() {
+        case "$1" in
+        "docker logs --since 1 dashboard 2>&1"*) bash -c "cat \"\$DASHBOARD_LOG\"${1#docker logs --since 1 dashboard 2>&1}" ;;
+        *tor_recovery_state_saturated*) return 1 ;;
+        *) echo 1 ;;
+        esac
+    }
+    fault_tor_probe_egress >"$SCRATCH/dashboard-detail.out"
+    check grep -Fq 'sample 0 had no live proxy worker or accepted-share counter; dashboard: 2026-11-22 10:00:17,201 [WARNING] Mining work is not valid (Monero node unreachable past the debounce) — stopping xmrig-proxy' "$SCRATCH/dashboard-detail.out"
+    check grep -Fq 'no corroborated recovery log; last dashboard Tor lines: 2026-11-22 10:04:02,917 [WARNING] Tor clearnet egress failed for 5 minutes' "$SCRATCH/dashboard-detail.out"
+    check grep -q '^2026-11-22 10:20:40,005 \[WARNING\] Tor clearnet egress is STILL broken after 2 recovery attempts' "$SCRATCH/dashboard-detail.out"
+    printf 'dashboard detail fixture: %s passed, %s failed\n' "$PASS" "$FAIL"
+    test "$FAIL" -eq 0
+)
+echo "== Post-apply witness waits for a reconnecting proxy and records the state when none qualifies =="
+for fixture in reconnects never; do
+    (
+        IT_FAIL=0 IT_PASS=0 IT_FAILED_NAMES=
+        OUT_DIR="$SCRATCH/witness-$fixture"
+        mkdir -p "$OUT_DIR"
+        EXPECTED_WORKERS=1
+        SKIP_MINING_ASSERTS=0
+        reads="$OUT_DIR/reads"
+        : >"$reads"
+        api_state() {
+            echo read >>"$reads"
+            if [ "$fixture" = reconnects ] && [ "$(wc -l <"$reads")" -ge 4 ]; then
+                echo '{"proxy_workers":1,"proxy_summary":{"accepted":"1,234"}}'
+            else
+                echo '{"proxy_workers":0,"proxy_summary":{},"workers":[{"name":"rig-a","status":"offline","uptime":0,"accepted":159,"ip":"192.0.2.9"}]}'
+            fi
+        }
+        env_on_box() { echo true; }
+        fault_rules_clear_all() { :; }
+        fault_rules_trap_arm() { :; }
+        fault_rules_trap_disarm() { :; }
+        rx() { return 0; }
+        push_config() { :; }
+        wait_status_ok() { :; }
+        tor_probe_ns_ipt() { return 1; }
+        pithead() { [ "$1" = apply ]; }
+        wait_for() {
+            local tries=$1 desc=$3
+            shift 3
+            [[ "$desc" == *"for Tor fault"* ]] && return 0
+            while [ "$tries" -gt 0 ]; do
+                "$@" && return 0
+                tries=$((tries - 10))
+            done
+            return 1
+        }
+        BASELINE_CONFIG='{}'
+        fault_tor_probe_egress >/dev/null
+        if [ "$fixture" = reconnects ]; then
+            check test "$(wc -l <"$reads")" -eq 4
+            check test "$TOR_PROBE_LAST" = 1234
+            check test "$(grep -c 'live mining witness' <<<"$IT_FAILED_NAMES")" -eq 0
+            check grep -Fq 'installed the dashboard namespace rule' <<<"$IT_FAILED_NAMES"
+            check test ! -e "$OUT_DIR/tor-probe-witness.log"
+        else
+            check test "$(wc -l <"$reads")" -eq 7
+            check grep -Fq 'Tor probe fault has a live mining witness' <<<"$IT_FAILED_NAMES"
+            check grep -Fq 'after-apply' "$OUT_DIR/tor-probe-witness.log"
+            check grep -Fq '"proxy_workers":0' "$OUT_DIR/tor-probe-witness.log"
+            check grep -Fq '"workers":[{"name":"rig-a","status":"offline","uptime":0,"accepted":159}]' "$OUT_DIR/tor-probe-witness.log"
+            check test "$(grep -c 192.0.2.9 "$OUT_DIR/tor-probe-witness.log")" -eq 0
+        fi
+        printf 'witness fixture (%s): %s passed, %s failed\n' "$fixture" "$PASS" "$FAIL"
+        test "$FAIL" -eq 0
+    )
+done
+
 echo "== Lifecycle recovery proof rejects false success and unexpected-abort advice =="
-for fixture in clears refusal abort success wrong-guard busy error deadline sampler-timeout; do
+for fixture in clears refusal abort success wrong-guard busy error deadline sampler-timeout slow-check; do
     (
         IT_FAIL=0 IT_PASS=0
         OUT_DIR="$SCRATCH/$fixture"
         mkdir -p "$OUT_DIR"
         clock=0
         now_s() { echo 9999999999; }
-        tor_recovery_probe_now_s() { echo "$clock"; }
+        tor_recovery_probe_now_s() { echo $((clock + $(cat "$OUT_DIR/skew" 2>/dev/null || echo 0))); }
         sleep() { clock=$((clock + $1)); }
         rx() {
             if [[ "$1" == *lslocks* ]]; then
@@ -102,10 +228,14 @@ for fixture in clears refusal abort success wrong-guard busy error deadline samp
                 printf '%s\n' 'lock-record: pid=42 verb=apply since=2026-10-31T00:00:00Z' 'kernel-lock: pid=42 mode=WRITE' 'untrusted diagnostic payload'
                 return 0
             fi
+            if [[ "$1" == *tor-control-signal.sh* ]]; then
+                echo 'circuit-established=0 pending=70'
+                return 0
+            fi
             [ "$1" != 'docker exec tor /usr/local/bin/tor-recovery-diagnose.sh' ]
         }
         pithead() {
-            printf '%s|%s\n' "$((60 - clock))" "${IT_PITHEAD:-./pithead}" >>"$OUT_DIR/commands"
+            printf '%s|%s\n' "$((150 - clock))" "${IT_PITHEAD:-./pithead}" >>"$OUT_DIR/commands"
             echo attempt >>"$OUT_DIR/calls"
             case "$fixture" in
             busy | clears | sampler-timeout)
@@ -117,6 +247,14 @@ for fixture in clears refusal abort success wrong-guard busy error deadline samp
                 return 1
                 ;;
             error) return 2 ;;
+            slow-check)
+                remaining=${IT_PITHEAD#timeout --kill-after=2 }
+                remaining=${remaining%% *}
+                [ "$remaining" -ge 100 ] || return 124
+                echo 100 >"$OUT_DIR/skew"
+                echo '[WARNING] Tor recovery refused: circuit history is not saturated.'
+                return 1
+                ;;
             deadline) return 124 ;;
             refusal)
                 echo '[WARNING] Tor recovery refused: circuit history is not saturated.'
@@ -137,7 +275,7 @@ for fixture in clears refusal abort success wrong-guard busy error deadline samp
         set +e
         tor_recovery_healthy_probe
         set -e
-        if [ "$fixture" = refusal ] || [ "$fixture" = clears ] || [ "$fixture" = sampler-timeout ]; then
+        if [ "$fixture" = refusal ] || [ "$fixture" = clears ] || [ "$fixture" = sampler-timeout ] || [ "$fixture" = slow-check ]; then
             check test "$IT_FAIL" -eq 0
             check test "$IT_PASS" -eq 6
         elif [ "$fixture" = busy ] || [ "$fixture" = error ] || [ "$fixture" = deadline ]; then
@@ -161,16 +299,22 @@ for fixture in clears refusal abort success wrong-guard busy error deadline samp
             check test "$(grep -c 'untrusted' "$OUT_DIR/tor-recovery-admission.log")" -eq 0
             ;;
         busy)
-            check test "$clock" -eq 60
-            check test "$(wc -l <"$OUT_DIR/calls")" -eq 30
-            check grep -q 'admission: elapsed_s=60 rc=75' "$OUT_DIR/tor-recovery-admission.log"
+            check test "$clock" -eq 150
+            check test "$(wc -l <"$OUT_DIR/calls")" -eq 75
+            check grep -q 'admission: elapsed_s=150 rc=75' "$OUT_DIR/tor-recovery-admission.log"
             ;;
         sampler-timeout)
             check test "$(wc -l <"$OUT_DIR/calls")" -eq 3
             check grep -q '^kernel-lock: unavailable$' "$OUT_DIR/tor-recovery-admission.log"
             ;;
+        slow-check)
+            check test "$(wc -l <"$OUT_DIR/calls")" -eq 1
+            check grep -q 'elapsed_s=100 rc=1' "$OUT_DIR/tor-recovery-admission.log"
+            check test "$(grep -c '^tor-status:' "$OUT_DIR/tor-recovery-admission.log")" -eq 0
+            ;;
         deadline)
             check test "$(wc -l <"$OUT_DIR/calls")" -eq 1
+            check grep -q '^tor-status: circuit-established=0 pending=70$' "$OUT_DIR/tor-recovery-admission.log"
             check grep -q 'kernel-lock: pid=42 mode=WRITE' "$OUT_DIR/tor-recovery-admission.log"
             ;;
         *) check test "$(wc -l <"$OUT_DIR/calls")" -eq 1 ;;

@@ -49,6 +49,15 @@ for a guest-local alert sink. It restores its original config and state on exit,
 state only after Tor stops. Failures report the current stage, bounded command logs and
 the restoration result separately from the test result; no shared Tor is poisoned.
 
+The opt-in `tor-heal-exhausted` phase provisions its own local-node guest and proves the
+ladder's rejected-NEWNYM rung: with no saturated history, a host-rejected NEWNYM must advance
+to the host state reset and Tor must recover unattended (#4075). It is a separate phase because
+the `tor-heal` ladder alone consumes about three and a half hours of the 240-minute bench
+window, and both legs must run to their own bounded end. `selftest-tor-heal-exhausted.sh`
+exercises its wrapper without a guest.
+
+The provision LAN-guard leg writes the three-switch `./pithead apply -y` output to `lan-guard-apply.log` in the guest's `/data/pithead` and, when the apply fails, prints its last 60 lines (redacted) with the exit code (#4281). `selftest-lan-guard-apply-output.sh` covers that branch without a guest.
+
 Submitting `tor-heal` to bench-ci needs `--timeout-minutes 240`: the ladder runs about three
 and a half hours after provisioning, and the tier's default run window ends the job after the
 second gate has passed but before the host recovery applies. The phase vocabulary of this
@@ -355,8 +364,8 @@ the configured test registry fail before the image build. Release builds do not 
 - **media** — the physical-presence configuration channel (#786 sub-issue D): provisions via the
   ESP pre-seed path, then attaches a second removable stick carrying a changed `config.json` and
   reboots. The wallet the stick changes to is the named throwaway `MEDIA_WALLET_ALT` — the same
-  never-fundable key the v1.20.0 restore fixture derives from its public seed — so no payout
-  identity in this phase is a real donation address (#4184). Asserts the exact diff appears on the console (the changed wallet address in full, read
+  never-fundable key the v1.20.0 restore fixture derives from its public seed, because the stick
+  needs a second primary address; the starting payouts are the owner's public wallets. Asserts the exact diff appears on the console (the changed wallet address in full, read
   directly from the serial file so an early match cannot be lost to a broken pipe, a
   changed secret only named, never shown), the countdown applies the change, the changed setting
   takes effect, and the stick is consumed so it cannot re-apply. A second reboot proves pulling
@@ -378,7 +387,7 @@ the configured test registry fail before the image build. Release builds do not 
   Fault E (#4038) runs `recovery-bundle` on the fault guest with no container running and a
   deliberately failed pithead unit and a dummy unit installed at run time; the archive is a zip taken with
   `--since` and `--until`, mode 600 under `/data/pithead/support-bundles`, and must hold the failed unit's
-  journal line, the dummy unit's file, the whole-journal, kernel and boot-list files and a manifest with
+  journal line with its seeded `--rpc-login` redacted and no copy of the value anywhere in the archive, the dummy unit's file, the whole-journal, kernel and boot-list files and a manifest with
   the journal facts; its path must appear on the serial console, which also records how many quadlet
   container units carried journal lines.
 - **reset** — first, boot the real **Set up again** menu entry on a provisioned coordinator
@@ -545,6 +554,18 @@ box have covered it?**
 This is distinct from the remote-node row below, where a missing input stays a counted
 **failure**: the classes are for rows the configuration excludes, never for inputs the bench
 forgot.
+
+Guests that reach real nodes can mine on mainnet, so every guest configured by the battery pays
+the wallets in `PITHEAD_OS_PAYOUT_MONERO` and `PITHEAD_OS_PAYOUT_TARI` (the test host supplies the
+owner's addresses); without them the harness uses its labelled throwaway addresses. The run
+refuses before any guest exists when `PITHEAD_OS_MONERO_NODE_HOST` or `PITHEAD_OS_TARI_NODE_HOST` is
+set and either payout variable is empty, naming the variable and never a value. The media guest
+never reaches a chain node, so its sticks use their own labelled throwaway addresses rather than
+the payouts. The v1.20.0 restore fixture (`tests/os/fixtures/v1.20.0`) deliberately restores a
+throwaway identity and a fixture donor id on a guest whose node hosts are the unreachable fixture
+address, so it never mines; the restore leg asserts that host is unchanged after the restore. XvB keeps its default
+`xvb.donor_id` of `auto`, the first 8 characters of that Monero address, so XvB hash is the
+owner's; `selftest-owner-payouts.sh` fails if any guest config sets the donor id explicitly.
 
 The provision phase's remote-node consumer row is mandatory and takes reserved, reachable test
 nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,

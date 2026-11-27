@@ -32,7 +32,8 @@ load_preserved_state() {
 prepare_directories() {
     log "Initializing data directories..."
     mkdir -p "$MONERO_DIR" "$TARI_DIR" "$P2POOL_DIR" "$TOR_DATA_DIR" "$DASHBOARD_DIR" "$CLEARNET_STATE_DIR" "$PROXY_TLS_DIR"
-    mkdir -p "$P2POOL_DIR/stats"
+    # shellcheck disable=SC2174
+    mkdir -p -m 755 "$P2POOL_DIR/stats"
 
     # Enforce permissions. Each data dir is owned by the uid its container runs as: Tor keeps its
     # alpine 'tor' user (100:101); the built images + tari run non-root as APP_UID:APP_GID (#255).
@@ -40,7 +41,6 @@ prepare_directories() {
     # chown -R'd tree EACCESes for any operator uid != APP_UID.
     sudo chown -R 100:101 "$TOR_DATA_DIR"
     sudo chown -R "$APP_UID":"$APP_GID" "$MONERO_DIR" "$TARI_DIR" "$P2POOL_DIR" "$DASHBOARD_DIR"
-    sudo chmod -R 755 "$P2POOL_DIR/stats"
     # Dashboard can create a transition marker, but cannot remove the root-owned marker after the
     # host claims it. The sticky bit keeps that one-way transition spent across apply/reboot.
     sudo chown root:root "$CLEARNET_STATE_DIR" && sudo chmod 1777 "$CLEARNET_STATE_DIR" ||

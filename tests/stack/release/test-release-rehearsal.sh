@@ -13,6 +13,7 @@ rehearsal_case() (
     local params=("$@")
     set --
     source "$REL"
+    # shellcheck disable=SC2034,SC2218
     DRY_RUN=0 ASSUME_YES=1 REGISTRY=registry.invalid/rehearsal TAG=v9.9.9 STAGING_TAG=v9.9.9-rc.1
     IMAGES=(tor) PUBLISHED_IMAGES=(tor) STACK_VERSION=v9.9.9 COSIGN_ENABLED=1
     REGISTRY_READ_RETRIES=1 REGISTRY_READ_BACKOFF=0
@@ -234,3 +235,98 @@ rehearsal_directory_config() {
 rehearsal_out="$(rehearsal_case rehearsal_directory_config 2>&1)"
 assert_rc "a directory is not a readable buildkitd config file" "$?" 1
 unset -f rehearsal_case rehearsal_credentials rehearsal_login rehearsal_ghcr_login rehearsal_ghcr_fallback rehearsal_lookalike rehearsal_production rehearsal_invalid_policy rehearsal_custom_policy rehearsal_main rehearsal_builder rehearsal_existing_builder rehearsal_missing_config rehearsal_directory_config
+echo "== unit: release identity is pinned to the gated commit =="
+PIN_REPO="$SANDBOX/pin15"
+PIN_ORIGIN="$SANDBOX/pin15-origin.git"
+mkdir -p "$PIN_REPO"
+git -C "$PIN_REPO" init -q
+git -C "$PIN_REPO" -c user.name=t -c user.email=t@t commit -q --allow-empty -m a
+git init -q --bare "$PIN_ORIGIN"
+git -C "$PIN_REPO" remote add origin "$PIN_ORIGIN"
+pin_case() {
+    (
+        # shellcheck disable=SC2034,SC2218
+        local dry="$1" reh="$2" fn="$3"
+        cd "$PIN_REPO" || exit
+        set --
+        # shellcheck disable=SC1090,SC2034
+        source "$REL" 2>/dev/null
+        set +eu
+        # shellcheck disable=SC2034,SC2218
+        DRY_RUN="$dry" PITHEAD_REHEARSAL="$reh" ALLOW_DIRTY=0 TAG=v9.9.9 REGISTRY=r.invalid/x IMAGE_PREFIX=p-
+        # shellcheck disable=SC2034,SC2218
+        GIT_COMMIT="$(git rev-parse HEAD)"
+        docker() { return "${PIN_DOCKER_RC:-1}"; }
+        git() {
+            [ "${PIN_LSREMOTE_FAIL:-0}" = 1 ] && [ "$1" = ls-remote ] && return 1
+            command git -c user.name=t -c user.email=t@t "$@"
+        }
+        "$fn"
+    ) 2>&1
+}
+pin_out="$(pin_case 0 0 check_release_tag_free)"
+assert_rc "a free tag passes" "$?" 0
+git -C "$PIN_REPO" push -q origin HEAD:refs/tags/v9.9.9
+pin_out="$(pin_case 0 0 check_release_tag_free)"
+assert_rc "a tag already on origin refuses the cut" "$?" 1
+assert_contains "the remote tag refusal names origin" "$pin_out" "already exists on origin"
+git -C "$PIN_ORIGIN" tag -d v9.9.9 >/dev/null
+pin_out="$(PIN_LSREMOTE_FAIL=1 pin_case 0 0 check_release_tag_free)"
+assert_rc "an unreadable origin refuses a real cut" "$?" 1
+pin_out="$(PIN_DOCKER_RC=0 pin_case 0 0 check_release_tag_free)"
+assert_rc "a registry tag that exists refuses a real cut" "$?" 1
+assert_contains "the registry refusal explains the overwrite" "$pin_out" "promotion would overwrite it"
+pin_out="$(PIN_DOCKER_RC=0 pin_case 0 1 check_release_tag_free)"
+assert_rc "a rehearsal only warns about the registry tag" "$?" 0
+pin_out="$(PIN_DOCKER_RC=0 pin_case 1 0 check_release_tag_free)"
+assert_rc "a dry run only warns about the registry tag" "$?" 0
+pin_out="$(pin_case 0 0 require_gated_commit)"
+assert_rc "an unmoved clean HEAD passes the pin" "$?" 0
+git -C "$PIN_REPO" -c user.name=t -c user.email=t@t commit -q --allow-empty -m b
+pin_out="$(
+    # shellcheck disable=SC2034
+    cd "$PIN_REPO" || exit
+    set --
+    # shellcheck disable=SC1090,SC2034
+    source "$REL" 2>/dev/null
+    set +eu
+    # shellcheck disable=SC2034,SC2218
+    DRY_RUN=0 ALLOW_DIRTY=0 GIT_COMMIT="$(git rev-parse HEAD~1)"
+    require_gated_commit 2>&1
+)"
+assert_rc "a HEAD that moved after preflight refuses the publish" "$?" 1
+assert_contains "the moved-HEAD refusal names the gated commit" "$pin_out" "HEAD moved since preflight"
+pin_publish() {
+    (
+        local mode="$1"
+        cd "$PIN_REPO" || exit
+        set --
+        # shellcheck disable=SC1090,SC2034
+        source "$REL" 2>/dev/null
+        set +eu
+        # shellcheck disable=SC2034,SC2218
+        DRY_RUN=0 ASSUME_YES=1 ALLOW_DIRTY=0 TAG=v9.9.9 COSIGN_ENABLED=0
+        # shellcheck disable=SC2034,SC2218
+        GIT_COMMIT="$(command git rev-parse HEAD~1)"
+        [ "$mode" = stub ] && require_gated_commit() { :; }
+        write_manifest() { :; }
+        make_bundle() { :; }
+        append_bundle_sha256() { :; }
+        WORKDIR="$SANDBOX/pin-work"
+        mkdir -p "$WORKDIR"
+        git() {
+            case "$1" in
+            tag) printf 'TAG %s\n' "$*" ;;
+            rev-parse | status) command git "$@" ;;
+            esac
+        }
+        gh() { :; }
+        publish
+    ) 2>&1
+}
+pin_tag_out="$(pin_publish real)"
+assert_rc "publish with a moved HEAD stops before tagging" "$?" 1
+assert_contains "publish names the moved HEAD" "$pin_tag_out" "HEAD moved since preflight"
+assert_not_contains "publish creates no tag when HEAD moved" "$pin_tag_out" "TAG "
+pin_tag_out="$(pin_publish stub)"
+assert_contains "git tag names the gated commit explicitly" "$pin_tag_out" "tag -a v9.9.9 $(git -C "$PIN_REPO" rev-parse HEAD~1)"
