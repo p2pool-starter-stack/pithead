@@ -210,6 +210,8 @@ if in_block 2; then
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-core.sh" && domain_ran test-control-core.sh "$_d0" "$?" || domain_ran test-control-core.sh "$_d0" "$?"
     # shellcheck source=tests/stack/secrets/test-secrets-masking.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/secrets/test-secrets-masking.sh" && domain_ran test-secrets-masking.sh "$_d0" "$?" || domain_ran test-secrets-masking.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/secrets/test-secrets-env-handoff.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/secrets/test-secrets-env-handoff.sh" && domain_ran test-secrets-env-handoff.sh "$_d0" "$?" || domain_ran test-secrets-env-handoff.sh "$_d0" "$?"
 fi
 
 if in_block 3; then
@@ -306,12 +308,10 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-miner.sh" && domain_ran test-appliance-rig-miner.sh "$_d0" "$?" || domain_ran test-appliance-rig-miner.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-rig-config-merge.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-config-merge.sh" && domain_ran test-appliance-rig-config-merge.sh "$_d0" "$?" || domain_ran test-appliance-rig-config-merge.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/appliance/test-appliance-rig-token-landing.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-token-landing.sh" && domain_ran test-appliance-rig-token-landing.sh "$_d0" "$?" || domain_ran test-appliance-rig-token-landing.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-wizard-spool.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-wizard-spool.sh" && domain_ran test-appliance-wizard-spool.sh "$_d0" "$?" || domain_ran test-appliance-wizard-spool.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/appliance/test-appliance-setup-again.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-setup-again.sh" && domain_ran test-appliance-setup-again.sh "$_d0" "$?" || domain_ran test-appliance-setup-again.sh "$_d0" "$?"
 

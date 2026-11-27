@@ -176,11 +176,9 @@ firstboot_wizard() {
                 local rig_worker rig_pool rig_token
                 rig_worker=$(jq -r '.worker // ""' "$PWD/rig.json" 2>/dev/null)
                 rig_pool=$(jq -r '.pool // ""' "$PWD/rig.json" 2>/dev/null)
-                rig_token=$(rig_access_token) || rig_token="" # empty here = the render leg refuses below
-                # The rig's card: worker, pool, the control token (#1836 — minted once, shown ONCE, no login) and
-                # this box's address; an unresolvable pool host (#1867) adds control:"off" and why instead.
-                jq -n --arg w "$rig_worker" --arg s "stratum+tcp://$rig_pool" --arg t "$rig_token" --arg a "$(hostname -I 2>/dev/null | awk '{print $1}')" --arg allow "$(rig_coordinator_ip)" \
-                    --arg reason "the pool host does not resolve to an IPv4 address to pin it to" '{role: "rig", worker: $w, stratum: $s, token: $t, address: $a} + (if $allow == "" then {control: "off", reason: $reason} else {} end)' | write_handoff_card "$card_spool"
+                rig_token=$(rig_access_token) || rig_token=""
+                JQ_T="$rig_token" jq -n --arg w "$rig_worker" --arg s "stratum+tcp://$rig_pool" --arg a "$(hostname -I 2>/dev/null | awk '{print $1}')" --arg allow "$(rig_coordinator_ip)" \
+                    --arg reason "the pool host does not resolve to an IPv4 address to pin it to" '{role: "rig", worker: $w, stratum: $s, token: env.JQ_T, address: $a} + (if $allow == "" then {control: "off", reason: $reason} else {} end)' | write_handoff_card "$card_spool"
                 local hwait=0
                 while ! wizard_spool_has "$spool" handoff-ack && [ "$hwait" -lt 600 ]; do
                     sleep 2
@@ -303,14 +301,9 @@ firstboot_wizard() {
                 dash_user=$(jq -r '.dashboard.auth.username // "admin"' "$candidate")
                 dash_pass=$(jq -r '.dashboard.auth.password // ""' "$candidate")
                 _console "" "Point your miners at this machine:" "    $stratum_addr"
-                # Publish over the setup TLS session and hold provisioning until they confirm
-                # they saved it (or 10 minutes pass — an unattended pre-seeded run must not
-                # hang forever), because the page goes DARK during provisioning and the
-                # credentials must not vanish with it.
-                jq -n --arg u "$dash_user" --arg p "$dash_pass" \
+                JQ_P="$dash_pass" JQ_MINER="$miner_connection" jq -n --arg u "$dash_user" \
                     --arg d "https://$(hostname).local" --arg s "$stratum_addr" \
-                    --argjson miner "$miner_connection" \
-                    '{username:$u,password:$p,dashboard:$d,stratum:$s} + $miner' | write_handoff_card "$card_spool"
+                    '{username:$u,password:env.JQ_P,dashboard:$d,stratum:$s} + (env.JQ_MINER | fromjson)' | write_handoff_card "$card_spool"
                 local hwait=0
                 while ! wizard_spool_has "$spool" handoff-ack && [ "$hwait" -lt 600 ]; do
                     sleep 2
