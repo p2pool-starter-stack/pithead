@@ -55,7 +55,12 @@ generate_caddyfile() {
     if [ -n "${DASHBOARD_AUTH_HASH_B64:-}" ]; then
         local hash
         hash=$(printf '%s' "$DASHBOARD_AUTH_HASH_B64" | openssl base64 -d -A)
-        auth=$(printf '        basic_auth {\n            %s %s\n        }' "$DASHBOARD_AUTH_USER" "$hash")
+        auth=$(printf '%s\n' \
+            '        forward_auth 127.0.0.1:8000 {' \
+            '            uri /api/auth/basic' \
+            '            header_up X-Forwarded-For {http.request.remote.host}' \
+            '            copy_headers X-Auth-User' \
+            '        }')
         epoch=$(printf 'pithead-session-epoch-v1:%s:%s' "$DASHBOARD_AUTH_USER" "$DASHBOARD_AUTH_HASH_B64" | sha256_hex)
         gate=$(printf '%s\n' \
             '    request_header -X-Auth-User' \
@@ -79,7 +84,6 @@ generate_caddyfile() {
             '        vars pithead_basic 1' \
             '        redir @pithead_page /login 303' \
             "$auth" \
-            '        request_header X-Auth-User {http.auth.user.id}' \
             '    }' \
             '    @pithead_session not vars pithead_basic 1' \
             '    forward_auth @pithead_session 127.0.0.1:8000 {' \

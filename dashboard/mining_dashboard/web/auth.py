@@ -24,6 +24,7 @@ MAX_TRACKED_CLIENTS = 1024
 MAX_CONCURRENT_VERIFY = 4
 MAX_LOGIN_BYTES = 4096
 MAX_FIELD_CHARS = 256
+CHALLENGE = {"WWW-Authenticate": 'Basic realm="restricted"', "Cache-Control": "no-store"}
 
 
 class Attempts:
@@ -108,6 +109,54 @@ async def _verify(request, username, password):
     raise aiohttp.ClientError("unexpected verifier status")
 
 
+async def _verify_counted(request, key, credentials) -> bool:
+    attempts = request.app["auth"]["attempts"]
+    wait = attempts.retry_after(key)
+    if wait or request.app["auth"]["busy"] >= MAX_CONCURRENT_VERIFY:
+        raise web.HTTPTooManyRequests(
+            text="Too many sign-in attempts. Try again shortly.",
+            headers={"Retry-After": str(wait or FAILURE_WINDOW)},
+        )
+    ok = False
+    if credentials is not None:
+        request.app["auth"]["busy"] += 1
+        try:
+            ok = await _verify(request, *credentials)
+        except (aiohttp.ClientError, TimeoutError):
+            logger.warning("Sign-in verifier unreachable")
+            raise web.HTTPServiceUnavailable(text="Sign-in is temporarily unavailable.") from None
+        finally:
+            request.app["auth"]["busy"] -= 1
+    if not ok:
+        attempts.failed(key)
+    return ok
+
+
+def _basic_credentials(request) -> tuple[str, str] | None:
+    scheme, _, value = request.headers.get("Authorization", "").partition(" ")
+    if scheme.lower() != "basic":
+        return None
+    try:
+        raw = base64.b64decode(value.strip(), validate=True).decode()
+    except (ValueError, UnicodeDecodeError):
+        return None
+    username, sep, password = raw.partition(":")
+    if not sep or len(username) > MAX_FIELD_CHARS or len(password) > MAX_FIELD_CHARS:
+        return None
+    return username, password
+
+
+async def basic(request) -> web.Response:
+    key = client_key(request)
+    credentials = _basic_credentials(request)
+    if not await _verify_counted(request, key, credentials):
+        logger.warning("Failed dashboard basic-auth sign-in from %s", key)
+        raise web.HTTPUnauthorized(text="Authentication required.", headers=CHALLENGE)
+    return web.Response(
+        status=204, headers={"X-Auth-User": credentials[0], "Cache-Control": "no-store"}
+    )
+
+
 async def login(request):
     epoch = request.headers.get(EPOCH_HEADER, "")
     if not epoch:
@@ -126,23 +175,8 @@ async def login(request):
     if len(username) > MAX_FIELD_CHARS or len(password) > MAX_FIELD_CHARS or ":" in username:
         return web.json_response({"error": "Invalid username or password."}, status=401)
 
-    attempts, key = request.app["auth"]["attempts"], client_key(request)
-    wait = attempts.retry_after(key)
-    if wait or request.app["auth"]["busy"] >= MAX_CONCURRENT_VERIFY:
-        raise web.HTTPTooManyRequests(
-            text="Too many sign-in attempts. Try again shortly.",
-            headers={"Retry-After": str(wait or FAILURE_WINDOW)},
-        )
-    request.app["auth"]["busy"] += 1
-    try:
-        ok = await _verify(request, username, password)
-    except (aiohttp.ClientError, TimeoutError):
-        logger.warning("Sign-in verifier unreachable")
-        raise web.HTTPServiceUnavailable(text="Sign-in is temporarily unavailable.") from None
-    finally:
-        request.app["auth"]["busy"] -= 1
-    if not ok:
-        attempts.failed(key)
+    key = client_key(request)
+    if not await _verify_counted(request, key, (username, password)):
         logger.warning("Failed dashboard sign-in from %s", key)
         return web.json_response({"error": "Invalid username or password."}, status=401)
 
@@ -217,5 +251,6 @@ def setup(app):
             web.post("/api/auth/login", login),
             web.post("/api/auth/logout", logout),
             web.get("/api/auth/check", check),
+            web.get("/api/auth/basic", basic),
         ]
     )
