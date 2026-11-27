@@ -94,7 +94,7 @@ render_red() { # <cadence.json>
 
 upsert() { # <title> <bodyfile>
     local title="$1" file="$2" n old new
-    n="$(gh issue list --state open --limit 200 --json number,title | jq -r --arg t "$title" 'map(select(.title == $t)) | .[0].number // empty')"
+    n="$(bash "$(dirname "${BASH_SOURCE[0]}")/find-open-issue.sh" "$title")"
     if [ ! -s "$file" ]; then
         if [ -n "$n" ]; then
             gh issue close "$n" --comment "The sweep found nothing on $(date -u +%F); closing."
@@ -169,7 +169,7 @@ E
 #!/usr/bin/env bash
 echo "gh $*" >>"$GH_LOG"
 case "$1 $2" in
-"issue list") echo "$GH_LIST" ;;
+"api --paginate") printf '%s' "$GH_LIST" | jq -r '.[] | "\(.number)\t\(.title)"' ;;
 "issue view") printf '%s\n' "$GH_OLD_BODY" ;;
 esac
 E
