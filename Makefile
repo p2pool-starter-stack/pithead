@@ -168,14 +168,14 @@ lint-py: ## ruff lint + format check on all repo Python (ruff runs via uv from t
 
 lint-js: ## Biome lint + format check on the static frontend (config: biome.json)
 	cd .config && npm install --prefer-offline
-	npx --prefix .config --no-install @biomejs/biome check .
+	.config/node_modules/.bin/biome check .
 
 lint-yaml: ## yamllint over all tracked YAML (config: .config/yamllint.yml)
 	uvx yamllint -c .config/yamllint.yml $(shell git ls-files '*.yml' '*.yaml')
 
 lint-md: ## markdownlint over all Markdown (config: .config/.markdownlint-cli2.jsonc)
 	cd .config && npm install --prefer-offline
-	npx --prefix .config --no-install markdownlint-cli2 --config .config/.markdownlint-cli2.jsonc
+	.config/node_modules/.bin/markdownlint-cli2 --config .config/.markdownlint-cli2.jsonc
 
 lint-docs-voice: ## Fail if banned marketing words appear in prose docs (house voice: docs/dev/STYLE.md)
 	bash scripts/lint/lint-docs-voice.sh --self-test
@@ -217,7 +217,7 @@ lint-toml: ## taplo TOML format check (config: .config/taplo.toml)
 	@# dir (EACCES scandir — e.g. root-owned artifacts under .claude/ agent worktrees).
 	@test -n "$$(git ls-files '*.toml')" || { echo "lint-toml: zero tracked TOML files — refusing a vacuous pass"; exit 1; }
 	cd .config && npm install --prefer-offline
-	git ls-files -z '*.toml' | xargs -0 npx --prefix .config --no-install @taplo/cli fmt --check --config .config/taplo.toml
+	git ls-files -z '*.toml' | xargs -0 .config/node_modules/.bin/taplo fmt --check --config .config/taplo.toml
 
 # Cut a release from the private build/test server — GHCR publish, gated on the test suite +
 # the #54 integration matrix (issue #44). Pass options through ARGS, e.g. a safe plan-only preview:
