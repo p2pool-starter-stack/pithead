@@ -155,7 +155,7 @@ chain_read_restore_prepare() {
 chain_read_restore_proof() {
     chain_read_unchanged || {
         warn "chain: restore changed a protected container"
-        # shellcheck disable=SC2034 # restore_all reads this global after the sourced helper returns
+        # shellcheck disable=SC2034
         RESTORE_PROOF_FAILED=1
     }
 }

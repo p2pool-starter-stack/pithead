@@ -84,7 +84,7 @@ assert_eq "write path reaches normal remove and up" "$(grep -c touched "$command
 main_source="$(sed -n '/^main() {$/,/^}$/p' "$HERE/../e2e.sh")"
 (
     eval "$main_source"
-    # shellcheck disable=SC2034 # the evaluated main consumes these globals
+    # shellcheck disable=SC2034
     MODE=chain-safe CI_CHAIN_SAFE_READ=1 KEEP=0 BRANCH=test BENCH_HOST=test E2E_DIR=/e2e
     log() { :; }
     ok() { :; }
@@ -104,9 +104,9 @@ restore_source="$(sed -n '/^restore_all() {$/,/^}$/p' "$HERE/../e2e.sh")"
 : >"$commands"
 (
     eval "$restore_source"
-    # shellcheck disable=SC2034 # the evaluated restore_all consumes these globals
+    # shellcheck disable=SC2034
     MODE=chain-safe CI_CHAIN_SAFE_READ=1 RESTORED=0 KEEP=0 MINER_CFG_BACKUP=''
-    # shellcheck disable=SC2034 # the evaluated restore_all consumes these globals
+    # shellcheck disable=SC2034
     RESTORE_DIR=/base BENCH_HOST=test SAFETY_ARCHIVE=''
     drain_harness_or_refuse() { :; }
     step() { :; }
