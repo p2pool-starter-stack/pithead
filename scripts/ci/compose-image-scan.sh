@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Usage: compose-image-scan.sh <base-compose> <head-compose> <ignorefile> | --self-test
-# Fails only on fixable HIGH/CRITICAL IDs in a changed digest that its previous digest lacked.
 set -Eeuo pipefail
 
 TRIVY="${TRIVY:-trivy}"

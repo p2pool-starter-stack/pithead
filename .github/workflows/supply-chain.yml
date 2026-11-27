@@ -1,6 +1,5 @@
 name: Supply chain
 
-# Diff-only PR gates: they fail on what a PR introduces, never on the existing backlog.
 on:
   pull_request:
 
@@ -36,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2 # the PR merge commit and its base parent
+          fetch-depth: 2
           persist-credentials: false
       - name: Detect a changed compose file
         id: scope
@@ -51,7 +50,7 @@ jobs:
       - uses: ./.github/actions/install-trivy
         if: steps.scope.outputs.changed == 'true'
         with:
-          version: v0.73.0 # THE live pin, read by `make lint-trivy-parity` — see ci.yml (#1290)
+          version: v0.73.0
       - name: Scan the changed third-party digests (Trivy)
         if: steps.scope.outputs.changed == 'true'
         run: bash scripts/ci/compose-image-scan.sh "$RUNNER_TEMP/base-compose.yml" docker-compose.yml .config/trivyignore

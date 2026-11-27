@@ -15,8 +15,6 @@ name: OS rootfs scan
 # scheduled job fires from run history, never from this file; the one-command check is in
 # CONTRIBUTING.md § One integration branch.
 on:
-  # No path filter: the check must report on every PR so it can be required without hanging
-  # pending. The scope step below decides whether the PR touches anything the rootfs is built from.
   pull_request:
   schedule:
     - cron: "0 6 * * 1" # Mondays 06:00 UTC, after ci.yml's 05:00 image sweep
@@ -40,7 +38,7 @@ jobs:
         with:
           # The triggering ref, checkout's default: a PR run scans the PR; the weekly sweep and a
           # manual dispatch run on `develop`, which carries `os/` (#1162).
-          fetch-depth: 2 # the PR merge commit and its base parent, for the scope step
+          fetch-depth: 2
           persist-credentials: false
       - name: Decide whether this PR touches the rootfs inputs
         id: scope
