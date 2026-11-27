@@ -319,14 +319,17 @@ fi
 printf '%s\n' 'PASS: failed watchdog restoration retains its control files'
 MINER_RECOVERY_BIN="$work/recovery"
 printf '%s\n' 'pithead-miner-recovery: local miner proxy was recreated while the miner was disconnected; restarting xmrig' >"$MINER_RECOVERY_BIN"
-printf '%s\n' 's=0000000000000000;i=0;b=0;m=0;r=0;u=00000000000000000000000000000000' >"$T3375/fastpath-cursor"
 printf '%s\n' 1700000000 >"$T3375/backup-at"
+export PROXY_STARTED_AT=4444
 journalctl() {
     case "$*" in
+    *--show-cursor*) printf -- '-- cursor: s=0000000000000000;i=2;b=0;m=0;r=0;u=11111111111111111111111111111111\n' ;;
     *--after-cursor*) printf '%s\n' 'Nov 26 10:00:00 guest pithead-miner-recovery[9]: pithead-miner-recovery: proxy was recreated' ;;
     *) : ;;
     esac
 }
+miner_guest_dispatch backup-ready
+[ "$(cat "$T3375/fastpath-cursor")" = 's=0000000000000000;i=2;b=0;m=0;r=0;u=11111111111111111111111111111111' ]
 miner_fastpath_receipt >"$work/receipt"
 grep -Fxq 'pithead-t3375: fastpath_restart=observed' "$work/receipt"
 journalctl() { :; }

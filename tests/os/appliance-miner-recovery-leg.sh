@@ -367,7 +367,7 @@ miner_guest_dispatch() {
     identity) podman inspect --format '{{.Id}} {{.State.StartedAt}}' xmrig-proxy ;;
     backup-ready)
         podman inspect --format '{{.Id}}' xmrig-proxy >"$T3375/proxy-id"
-        timeout 10 journalctl --no-pager -n 0 --show-cursor | sed -n 's/^cursor: //p' >"$T3375/fastpath-cursor" || true
+        timeout 10 journalctl --no-pager -n 0 --show-cursor | sed -n 's/^-- cursor: //p' >"$T3375/fastpath-cursor" || true
         ;;
     backup-applied)
         touch "$T3375/backup-applied"
