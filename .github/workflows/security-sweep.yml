@@ -1,12 +1,8 @@
 name: Security sweep
 
-# Daily sweep of what no pull request touches: lockfiles and workflows on develop, main and every
-# develop-v* branch, and the published ghcr images. Findings land in one security-labelled issue
-# per ref (scripts/watch/security-issue.sh), never as a red run: a run fails only when a scan
-# could not run. `schedule:` fires from the default branch, so every ref is checked out explicitly.
 on:
   schedule:
-    - cron: "30 5 * * *" # daily 05:30 UTC
+    - cron: "30 5 * * *"
   workflow_dispatch:
 
 permissions:
@@ -83,7 +79,6 @@ jobs:
           [ "${#args[@]}" -gt 0 ] || { echo "::error::no lockfile found at $REF — nothing was scanned"; exit 1; }
           rc=0
           "$RUNNER_TEMP/osv-scanner" scan source "${args[@]}" --format json --output-file ../out/osv.json || rc=$?
-          # rc 1 means vulnerabilities were found, which is a result; any other non-zero is a scan error.
           [ "$rc" = 0 ] || [ "$rc" = 1 ] || { echo "::error::osv-scanner failed with exit code $rc"; exit 1; }
           [ -s ../out/osv.json ] || { echo "::error::osv-scanner wrote no report"; exit 1; }
       - name: Audit the workflows at this ref (zizmor, online)
@@ -132,9 +127,6 @@ jobs:
           done
 
   sweep-shipped:
-    # Resolves each published tag to a digest and scans the digest: a tag is a moving pointer, so
-    # only the digest names the bytes a user pulled. fail-fast: false; the report job names an
-    # unscanned image UNCHECKED, not clean.
     name: Shipped-image CVE sweep (${{ matrix.service }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -152,8 +144,6 @@ jobs:
           SERVICE: ${{ matrix.service }}
         run: |
           set -Eeuo pipefail
-          # Since #1076 `main` is a fast-forward pointer to the released tag, the only ref that
-          # knows what shipped; a shallow clone does not carry it.
           git fetch --no-tags --depth=1 origin main
           ver="$(git show origin/main:VERSION)"
           [ -n "$ver" ] || { echo "::error::main carries no VERSION — cannot tell what shipped"; exit 1; }
@@ -166,23 +156,21 @@ jobs:
             -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
             "https://ghcr.io/v2/$repo/manifests/$tag" |
             tr -d '\r' | awk 'tolower($1) == "docker-content-digest:" { print $2 }')"
-          # An unresolved digest must never fall through to a tag scan.
           printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$' ||
             { echo "::error::could not resolve ghcr.io/$repo:$tag to a digest — got [$digest]"; exit 1; }
           echo "ref=ghcr.io/$repo@$digest" >>"$GITHUB_OUTPUT"
           printf '%s\n' "$tag" >"sweep-$SERVICE.tag"
-      - uses: ./.github/actions/install-trivy # the only step that installs trivy here (#2214)
+      - uses: ./.github/actions/install-trivy
         with:
-          version: v0.73.0 # THE live pin, read by `make lint-trivy-parity` — see build-images (#1290)
+          version: v0.73.0
       - name: Scan the published image by digest (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          skip-setup-trivy: true # scans with the binary the step above installed (#1290, #2214)
+          skip-setup-trivy: true
           image-ref: ${{ steps.shipped.outputs.ref }}
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          # Report-only: a fixable CVE in a published image asks for a patch release, a person's call.
           exit-code: "0"
           trivyignores: main.trivyignore
           cache: "false"
@@ -199,7 +187,6 @@ jobs:
 
   sweep-shipped-report:
     name: Shipped-image CVE sweep — tracking issue
-    # always() so a failed scan leg still reports: an image with no scan output is UNCHECKED.
     if: always()
     needs: sweep-shipped
     runs-on: ubuntu-latest
@@ -221,7 +208,6 @@ jobs:
         id: report
         run: |
           set -uo pipefail
-          # NOT `set -e`: an incomplete sweep is a result to publish; the rc is carried to the last step.
           bash scripts/watch/shipped-image-sweep-report.sh shipped-sweep >report.md
           rc=$?
           [ -s report.md ] || { echo "The shipped-image sweep produced no report at all — see the run log." >report.md; rc=1; }

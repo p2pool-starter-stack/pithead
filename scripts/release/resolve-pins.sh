@@ -23,10 +23,6 @@
 # Usage:
 #   scripts/release/resolve-pins.sh              Compare every digest-pinned image against its registry.
 #                                         rc 1 on any mismatch OR any failed lookup.
-#   RESOLVE_PINS_MISMATCH_OK=1 scripts/release/resolve-pins.sh
-#                                         Same report, but a mismatch is printed and not counted: the weekly
-#                                         pin watch publishes drift to its issue and fails only on a lookup it
-#                                         could not make. A release cut never sets it.
 #   scripts/release/resolve-pins.sh --self-test  Drive extraction + comparison against fixtures, docker
 #                                         stubbed as a shell function. No network.
 

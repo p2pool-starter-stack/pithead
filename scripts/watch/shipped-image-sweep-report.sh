@@ -13,12 +13,6 @@
 # means "consider cutting a patch release", a decision a person makes — not a build to fail. The
 # run goes red only when the sweep itself could not do its job.
 #
-# WHAT THIS SCRIPT IS. It does no scanning and touches no network. security-sweep.yml's `sweep-shipped` matrix
-# resolves each published tag to a digest, scans that digest with trivy, and uploads two files per
-# image; this script reads that directory and renders the tracking-issue body. Keeping the render
-# out of the workflow is what makes it testable — `--self-test` drives every failure mode below
-# through fixtures with no docker, no network, and no GitHub.
-#
 # INCOMPLETE IS NEVER CLEAN. Every refusal below exits 1 and says UNCHECKED in the report rather
 # than printing a reassuring zero. This is the defect class the whole currency lane exists for: a
 # watcher with nothing to say and a watcher that has quietly died look identical from the Actions
@@ -26,7 +20,6 @@
 #
 #   - the artifact directory is missing, or holds no scan output at all
 #   - an expected image produced no report (its matrix leg failed)
-#   - an unexpected image appeared (security-sweep.yml's matrix and SWEPT_IMAGES below have drifted)
 #   - a report cannot be parsed
 #   - a report names an artifact that is NOT a digest reference, so the run cannot honestly claim
 #     it scanned published bytes rather than a moving tag
@@ -43,17 +36,8 @@
 
 set -Eeuo pipefail
 
-# THE TITLE IS A CONSTANT AND MUST NEVER BE EDITED. The workflow upserts the tracking issue by
-# EXACT title match over the open issue list. Change this string and the next run silently files a
-# SECOND issue instead of updating the first, then keeps both — the old one frozen at whatever it
-# last said, which reads as a sweep that found nothing new. Renaming the issue by hand in the web
-# UI breaks it the same way.
 SWEEP_ISSUE_TITLE="Shipped-image CVE sweep (daily report)"
 
-# The images this report expects to find, which must match security-sweep.yml's `sweep-shipped` matrix. The
-# two lists are checked against each other at run time rather than trusted: a service added to the
-# matrix and not here arrives as an unexpected file, one added here and not to the matrix arrives
-# as a missing leg, and BOTH exit 1. A silently shrinking sweep is the failure this guards.
 SWEPT_IMAGES="monero p2pool tor xmrig-proxy dashboard os-rootfs"
 
 # Only fixable HIGH/CRITICAL are counted, the same scope ci.yml's gate uses (`ignore-unfixed`), and
@@ -108,9 +92,6 @@ render_report() {
         return 1
     fi
 
-    # An unexpected report means security-sweep.yml's matrix grew and SWEPT_IMAGES did not. Catch it before
-    # rendering, because the summary table below is keyed on SWEPT_IMAGES and would simply not
-    # show the new image — a sweep that silently omits an image is exactly what #1313 is about.
     for file in "$dir"/sweep-*.json; do
         [ -e "$file" ] || continue
         svc="$(basename "$file" .json)"

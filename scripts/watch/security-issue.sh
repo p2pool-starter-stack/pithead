@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
-#
-# Renders scan output into security-labelled tracking issues and upserts them (security-sweep.yml,
-# scheduled-run-watch.yml). One open issue per title, edited in place, a comment only when the
-# finding set changes, closed when the finding set is empty. It does no scanning.
-#
-#   security-issue.sh render-ref <dir>        osv.json + zizmor.json + ref.txt of one swept ref -> body (empty when clean)
-#   security-issue.sh render-red <cadence>    latest red scheduled runs from scheduled-run-watch's cadence.json
-#   security-issue.sh title-ref <ref>         the issue title for a swept ref
-#   security-issue.sh upsert <title> <file>   create/edit/close; an empty <file> means clean
-#   security-issue.sh --self-test
 
 set -Eeuo pipefail
 
 RED_TITLE="Security: a scheduled scan or watch run is red"
 
 usage() {
-    sed -n '3,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+    cat >&2 <<'EOF'
+Renders scan output into security-labelled tracking issues and upserts them (security-sweep.yml,
+scheduled-run-watch.yml). One open issue per title, edited in place, a comment only when the
+finding set changes, closed when the finding set is empty. It does no scanning.
+
+  security-issue.sh render-ref <dir>        osv.json + zizmor.json + ref.txt of one swept ref -> body (empty when clean)
+  security-issue.sh render-red <cadence>    latest red scheduled runs from scheduled-run-watch's cadence.json
+  security-issue.sh title-ref <ref>         the issue title for a swept ref
+  security-issue.sh upsert <title> <file>   create/edit/close; an empty <file> means clean
+  security-issue.sh --self-test
+EOF
     exit 2
 }
 
 title_ref() { printf 'Security sweep: vulnerable dependencies or workflows on %s\n' "$1"; }
 
-osv_rows() { # <osv.json> -> "id<TAB>cve<TAB>package<TAB>version<TAB>severity<TAB>fixed" for fixable HIGH/CRITICAL
+osv_rows() {
     jq -r '
         [.results[]?.packages[]? | . as $p | .vulnerabilities[]? |
             (([.affected[]?.ranges[]?.events[]?.fixed] | map(select(. != null)) | unique | join(", "))) as $fixed |
@@ -32,7 +32,7 @@ osv_rows() { # <osv.json> -> "id<TAB>cve<TAB>package<TAB>version<TAB>severity<TA
         | [.id, .cve, .pkg, .ver, .sev, .fixed] | @tsv' "$1"
 }
 
-zizmor_rows() { # <zizmor.json> -> "ident<TAB>severity<TAB>file:line<TAB>description"
+zizmor_rows() {
     jq -r '[.[] | {ident, sev: .determinations.severity, desc,
             file: (.locations[0].symbolic.key.Local.given_path // "?"),
             line: ((.locations[0].concrete.location.start_point.row // 0) + 1)}]
@@ -42,7 +42,7 @@ zizmor_rows() { # <zizmor.json> -> "ident<TAB>severity<TAB>file:line<TAB>descrip
 
 hash_of() { sort | cksum | cut -d' ' -f1; }
 
-render_ref() { # <dir>
+render_ref() {
     local dir="$1" ref osv zz table="" n=0 hash run
     ref="$(cat "$dir/ref.txt")"
     run="${RUN_URL:-}"
@@ -71,7 +71,7 @@ render_ref() { # <dir>
     printf '## Possible solutions\n\nBump the listed packages to the fixed version, or pin and fix the flagged workflow step.\n'
 }
 
-render_red() { # <cadence.json>
+render_red() {
     local rows hash
     rows="$(jq -r '.workflows[]? | select(.path != ".github/workflows/scheduled-run-watch.yml") |
         if .runs == null then [.path, "unknown", "-", "history could not be read"]
@@ -92,7 +92,7 @@ render_red() { # <cadence.json>
     printf '## Possible solutions\n\nOpen the linked run, fix the cause, and run the workflow once with workflow_dispatch.\n'
 }
 
-upsert() { # <title> <bodyfile>
+upsert() {
     local title="$1" file="$2" n old new
     n="$(bash "$(dirname "${BASH_SOURCE[0]}")/find-open-issue.sh" "$title")"
     if [ ! -s "$file" ]; then

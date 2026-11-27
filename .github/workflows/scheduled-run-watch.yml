@@ -37,8 +37,6 @@ name: Scheduled-run watch
 # #1146).
 on:
   schedule:
-    # Daily 08:00 UTC, after the daily 05:30 security sweep. GitHub may start any slot hours
-    # late, so the cadence report allows 12 hours before LATE and a full period before MISSED.
     - cron: "0 8 * * *"
   workflow_dispatch:
 

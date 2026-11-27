@@ -4,12 +4,6 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-  # One Monday sweep hangs off this schedule (every other job gates itself off the event):
-  # build-images (#833) rebuilds this branch and scans the rebuild, the only sweep that can go red
-  # before a release. The published-image sweep (#1313) runs daily in security-sweep.yml.
-  # THIS cron block is the one that fires (`schedule:` reads the DEFAULT branch, `develop`). Prove
-  # a cadence change fired with `gh run list --json event`: a schedule that never runs looks
-  # exactly like one that ran and found nothing (#1162).
   schedule:
     - cron: "0 5 * * 1" # Mondays 05:00 UTC
 
