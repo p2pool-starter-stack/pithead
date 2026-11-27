@@ -157,6 +157,10 @@ sudo() {
 docker() {
     case "$*" in
     'exec tor /usr/local/bin/tor-control-signal.sh NEWNYM') printf 'newnym\n' >>"$WORK/actions" ;;
+    'exec tor /usr/local/bin/tor-control-signal.sh GUARDS')
+        [ "${GUARD_STALL:-0}" = 1 ] || return 3
+        printf 'dropguards\n' >>"$WORK/actions"
+        ;;
     'compose stop tor')
         printf 'stop\n' >>"$WORK/actions"
         if [ "${STOP_FAIL:-0}" = 1 ]; then return 1; fi
@@ -300,4 +304,55 @@ jq '.extra="DROPGUARDS"' "$WORK/request.json" >"$WORK/rejected.json"
 control_process_request "$WORK/rejected.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = rejected ]
 [ "$(grep -c '^newnym$' "$WORK/actions")" = 2 ]
+
+guard_reply() {
+    printf '250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=%s TAG=%s SUMMARY="x"\r\n' "$1" "$2"
+    printf '250-status/circuit-established=%s\r\n250-uptime=%s\r\n250+entry-guards=\r\n%s\r\n.\r\n250 OK\r\n' "$3" "$4" "$5"
+}
+cat >"$WORK/bin/nc" <<'SH'
+#!/bin/sh
+input=$(cat)
+printf '%s\n' "$input" >>"$TOR_CAPTURE"
+case "$input" in
+*GETINFO*) cat "$TOR_STATE_REPLY" ;;
+*) printf '250 OK\r\n250 OK\r\n' ;;
+esac
+SH
+guard_signal() {
+    rm -f "$WORK/signal"
+    TOR_CAPTURE="$WORK/signal" TOR_STATE_REPLY="$1" TOR_COOKIE_FILE="$WORK/cookie" PATH="$WORK/bin:$PATH" \
+        sh "$ROOT/build/tor/control-signal.sh" GUARDS >"$WORK/signal-result"
+}
+up_guard='$0123456789ABCDEF0123456789ABCDEF01234567~guard up 2026-11-15 10:00:00'
+guard_reply 95 circuit_create 0 600 "$up_guard" >"$WORK/state-stall"
+guard_signal "$WORK/state-stall"
+grep -q '^DROPGUARDS' "$WORK/signal"
+[ "$(cat "$WORK/signal-result")" = 'DROPGUARDS accepted' ]
+guard_reply 95 circuit_create 0 120 "$up_guard" >"$WORK/state-young"
+guard_reply 100 "done" 1 600 "$up_guard" >"$WORK/state-healthy"
+guard_reply 95 circuit_create 1 600 "$up_guard" >"$WORK/state-established"
+guard_reply 95 circuit_create 0 600 '$0123456789ABCDEF0123456789ABCDEF01234567~guard down' >"$WORK/state-guard-down"
+for scenario in young healthy established guard-down; do
+    rc=0
+    guard_signal "$WORK/state-$scenario" || rc=$?
+    [ "$rc" = 3 ]
+    ! grep -q "^DROPGUARDS" "$WORK/signal" || exit 1
+done
+
+rm -f "$WORK/control/tor-newnym-budget" "$WORK/actions"
+GUARD_STALL=1
+control_process_request "$WORK/request.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = applied ]
+[ "$(jq -r .action "$WORK/result")" = tor-dropguards ]
+[ "$(cat "$WORK/actions")" = dropguards ]
+control_process_request "$WORK/request.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = rejected ]
+read -r first count <"$WORK/control/tor-newnym-budget"
+[ "$count" = 1 ]
+printf '%s 1\n' "$((first - 1801))" >"$WORK/control/tor-newnym-budget"
+control_process_request "$WORK/request.json" "$WORK/control"
+control_process_request "$WORK/request.json" "$WORK/control"
+[ "$(grep -c '^dropguards$' "$WORK/actions")" = 2 ]
+[ "$(jq -r .status "$WORK/result")" = rejected ]
+[ "$(grep -c '^stop$' "$WORK/actions" || true)" = 0 ]
 echo 'tor recovery unit PASS'

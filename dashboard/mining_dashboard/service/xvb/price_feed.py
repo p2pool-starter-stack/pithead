@@ -19,7 +19,13 @@ import re
 
 import requests
 
-from mining_dashboard.helper.http import bounded_get, proxy_map
+from mining_dashboard.helper.http import (
+    PROXY_PURPOSE_DASHBOARD,
+    bounded_get,
+    proxy_map,
+    purpose_proxy,
+    request_failure_class,
+)
 
 logger = logging.getLogger("PriceFeed")
 
@@ -62,7 +68,9 @@ class CoinGeckoClient:
         # become an exfil channel through the feed's URL. Anything else: no fetch, static fallback.
         if not re.fullmatch(r"[A-Za-z]{2,5}", self.currency):
             return None
-        proxies = proxy_map(self.tor_proxy)
+        proxies = proxy_map(
+            purpose_proxy(self.tor_proxy, PROXY_PURPOSE_DASHBOARD) if self.tor_proxy else None
+        )
         try:
             resp = bounded_get(
                 COINGECKO_SIMPLE_PRICE,
@@ -78,7 +86,7 @@ class CoinGeckoClient:
                 return None
             return parse_prices(resp.json(), self.currency)
         except (requests.RequestException, ValueError) as e:
-            logger.debug("Price fetch failed (kept silent): %s", e)
+            logger.debug("Price fetch failed (kept silent): %s", request_failure_class(e))
             return None
 
 

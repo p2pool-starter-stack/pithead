@@ -66,3 +66,87 @@ assert_eq "a missing changelog emits the release title" "$release_notes_out" 'Pi
 rm -rf "$release_notes_fixture"
 unset release_notes_fixture release_notes_out
 unset -f release_notes_extract
+
+echo "== unit: release records and attaches the installed OS packages (#4254) =="
+os_pkg_dir="$SANDBOX/os-packages"
+mkdir -p "$os_pkg_dir/bin" "$os_pkg_dir/work"
+printf 'ID=alpine\nVERSION_ID=3.24.1\n' >"$os_pkg_dir/os-release"
+printf 'P:musl\nV:1.2.5-r10\no:musl\n\nP:libcrypto3\nV:3.5.4-r0\no:openssl\n' >"$os_pkg_dir/installed"
+cat >"$os_pkg_dir/bin/docker" <<'DOCKER'
+#!/usr/bin/env bash
+case "$1" in
+create) case "$*" in *"${OS_PKG_FAIL:-none}"*) exit 1 ;; esac; echo cid ;;
+cp)
+    case "${*: -2:1}" in
+    cid:/etc/os-release) cp "$OS_PKG_DIR/os-release" "${*: -1}" ;;
+    cid:/lib/apk/db/installed) cp "$OS_PKG_DIR/installed" "${*: -1}" ;;
+    *) exit 1 ;;
+    esac
+    ;;
+esac
+DOCKER
+chmod +x "$os_pkg_dir/bin/docker"
+os_pkg_capture() {
+    local fail="${1:-none}"
+    (
+        cd "$ROOT" || exit
+        set --
+        # shellcheck source=scripts/release/release.sh
+        source "$REL" 2>/dev/null
+        set +eu
+        export OS_PKG_DIR="$os_pkg_dir" OS_PKG_FAIL="$fail" PATH="$os_pkg_dir/bin:$PATH"
+        WORKDIR="$os_pkg_dir/work" DRY_RUN=0 TAG=v9.9.9 STACK_VERSION=9.9.9 GIT_COMMIT=abc BUILD_DATE=now
+        for s in "${PUBLISHED_IMAGES[@]}"; do set_digest "$s" "ghcr.io/test/pithead-$s@sha256:1"; done
+        capture_packages >/dev/null || exit
+        write_manifest "$WORKDIR/manifest.md" >/dev/null
+    )
+}
+os_pkg_capture
+assert_rc "capture_packages records every published image" "$?" "0"
+assert_eq "the package list has one line per image and source package" \
+    "$(grep -c . "$os_pkg_dir/work/os-packages.txt")" "12"
+assert_contains "each line names the image, OSV ecosystem, source package and version" \
+    "$(cat "$os_pkg_dir/work/os-packages.txt")" "os-rootfs Alpine:v3.24 openssl 3.5.4-r0"
+assert_contains "the manifest names the attached package asset" \
+    "$(cat "$os_pkg_dir/work/manifest.md")" 'Attached as `os-packages-v9.9.9.txt`'
+assert_contains "the manifest counts each image's source packages" \
+    "$(cat "$os_pkg_dir/work/manifest.md")" "- tor: 2 source packages (Alpine:v3.24)"
+os_pkg_err="$(os_pkg_capture pithead-os-rootfs 2>&1)"
+os_pkg_rc=$?
+assert_eq "a failed capture stops the release" "$os_pkg_rc" "1"
+assert_contains "a failed capture names the image" "$os_pkg_err" \
+    "Could not record the installed OS packages of ghcr.io/test/pithead-os-rootfs@sha256:1"
+os_pkg_run="$(
+    cd "$ROOT" || exit
+    set --
+    # shellcheck source=scripts/release/release.sh
+    source "$REL" 2>/dev/null
+    set +eu
+    WORKDIR="$os_pkg_dir/work" DRY_RUN=0 DRAFT=0 COSIGN_ENABLED=0 TAG=v9.9.9 STACK_VERSION=9.9.9 GIT_COMMIT=abc BUILD_DATE=now
+    make_bundle() { : >"$1"; }
+    append_bundle_sha256() { :; }
+    changelog_notes() { :; }
+    confirm() { return 0; }
+    gh() { :; }
+    run() { printf '%s\n' "$*"; }
+    publish 2>/dev/null
+)"
+assert_contains "publish attaches the package list to the GitHub Release" "$os_pkg_run" \
+    "release create v9.9.9 --title Pithead v9.9.9 --notes-file $os_pkg_dir/work/notes.md $os_pkg_dir/work/pithead.tar.gz $os_pkg_dir/work/ingredients-v9.9.9.md $os_pkg_dir/work/os-packages-v9.9.9.txt"
+assert_eq "the attached list is the recorded list" \
+    "$(cmp -s "$os_pkg_dir/work/os-packages.txt" "$os_pkg_dir/work/os-packages-v9.9.9.txt" && echo same)" "same"
+os_pkg_err="$(
+    cd "$ROOT" || exit
+    set --
+    # shellcheck source=scripts/release/release.sh
+    source "$REL" 2>/dev/null
+    set +eu
+    WORKDIR="$os_pkg_dir/empty" DRY_RUN=0 TAG=v9.9.9 STACK_VERSION=9.9.9 GIT_COMMIT=abc BUILD_DATE=now
+    mkdir -p "$WORKDIR"
+    publish 2>&1 >/dev/null
+)"
+assert_eq "publish stops when no package list was recorded" "$?" "1"
+assert_contains "publish names the missing package list" "$os_pkg_err" "refusing to publish without it"
+rm -rf "$os_pkg_dir"
+unset os_pkg_dir os_pkg_err os_pkg_rc os_pkg_run
+unset -f os_pkg_capture

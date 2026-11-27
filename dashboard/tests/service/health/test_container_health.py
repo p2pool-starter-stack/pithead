@@ -49,16 +49,27 @@ class TestBaseline:
         clock.advance(30)
         assert m.update({"monerod": _s(restart_count=42)}) == []
 
-    def test_first_sighting_unhealthy_seeds_bad_silently(self):
-        # A container already unhealthy at dashboard start must not replay a stale edge —
-        # and its later recovery is silent too (this process never alerted the problem).
+    def test_first_sighting_unhealthy_alerts_once_after_debounce(self):
         m, clock = _monitor()
         assert m.update({"monerod": _s(health="unhealthy")}) == []
+        clock.advance(60)
+        assert m.update({"monerod": _s(health="unhealthy")}) == []
+        clock.advance(61)
+        assert m.update({"monerod": _s(health="unhealthy")}) == [("monerod", "unhealthy")]
         clock.advance(600)
         assert m.update({"monerod": _s(health="unhealthy")}) == []
         assert m.update({"monerod": _s(health="healthy")}) == []
         clock.advance(120)
+        assert m.update({"monerod": _s(health="healthy")}) == [("monerod", "recovered")]
+
+    def test_first_sighting_unhealthy_recovering_inside_debounce_is_silent(self):
+        m, clock = _monitor()
+        assert m.update({"monerod": _s(health="unhealthy")}) == []
+        clock.advance(60)
         assert m.update({"monerod": _s(health="healthy")}) == []
+        clock.advance(600)
+        assert m.update({"monerod": _s(health="healthy")}) == []
+        assert m.is_confirmed_bad("monerod") is False
 
     def test_steady_healthy_emits_nothing(self):
         m, clock = _monitor()
@@ -241,12 +252,13 @@ class TestIsConfirmedBad:
         m, _clock = _monitor()
         assert m.is_confirmed_bad("dashboard") is False
 
-    def test_first_sighting_unhealthy_seed_is_not_confirmed(self):
-        # The seed sets state="bad" silently (no alert edge) — it must ALSO not read as confirmed,
-        # or fail_closed would hold the fleet on a container the debounce never vetted (#490 F1).
-        m, _clock = _monitor()
+    def test_first_sighting_unhealthy_is_confirmed_only_past_debounce(self):
+        m, clock = _monitor()
         m.update({"dashboard": _s(health="unhealthy")})
         assert m.is_confirmed_bad("dashboard") is False
+        clock.advance(121)
+        assert m.update({"dashboard": _s(health="unhealthy")}) == [("dashboard", "unhealthy")]
+        assert m.is_confirmed_bad("dashboard") is True
 
     def test_transient_unhealthy_on_known_container_not_confirmed_before_debounce(self):
         # A KNOWN (healthy-first) container reported unhealthy on a single poll must NOT confirm

@@ -217,3 +217,60 @@ term_out="$(bundle_case term)"
 assert_contains "an interrupted run leaves no archive" "$term_out" "FILES:0"
 assert_not_contains "an interrupted run never reaches the end of the verb" "$term_out" "RC:"
 bundle_tmp_gone "$term_out" && ok "an interrupted run removes the scratch directory" || bad "an interrupted run removes the scratch directory" "$term_out"
+
+echo "== build provenance: git is only called for verbs that need it (#4456) =="
+
+PG="$SANDBOX/provenance-git"
+mkdir -p "$PG/bin" "$PG/dev/dashboard" "$PG/rel"
+cp "$STACK" "$PG/dev/pithead"
+cp "$STACK" "$PG/rel/pithead"
+printf '9.9.9\n' >"$PG/dev/VERSION"
+printf '9.9.9\n' >"$PG/rel/VERSION"
+: >"$PG/dev/dashboard/Dockerfile"
+cat >"$PG/bin/git" <<'GITEOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$PG_GIT_LOG"
+case "$*" in
+"rev-parse --short HEAD") echo abc1234 ;;
+"rev-parse --abbrev-ref HEAD") echo topic ;;
+"diff --quiet HEAD") [ -z "${PG_DIRTY:-}" ] || exit 1 ;;
+esac
+exit 0
+GITEOF
+chmod +x "$PG/bin/git"
+
+pg_calls() {
+    local dir="$1"
+    shift
+    : >"$PG/git.log"
+    (cd "$dir" && PG_GIT_LOG="$PG/git.log" PATH="$PG/bin:$PATH" ./pithead "$@" >/dev/null 2>&1 || true)
+    wc -l <"$PG/git.log" | tr -d ' '
+}
+
+assert_eq "provenance: egress-status makes no git call" "$(pg_calls "$PG/dev" egress-status)" "0"
+assert_eq "provenance: lan-guard-check makes no git call" "$(pg_calls "$PG/dev" lan-guard-check)" "0"
+assert_eq "provenance: version on a release bundle makes no git call" "$(pg_calls "$PG/rel" version)" "0"
+assert_eq "provenance: version on a source checkout still calls git" "$(pg_calls "$PG/dev" version)" "4"
+assert_eq "provenance: -V and --version on a release bundle make no git call" \
+    "$(pg_calls "$PG/rel" -V)$(pg_calls "$PG/rel" --version)" "00"
+assert_eq "provenance: version output is unchanged" \
+    "$(cd "$PG/dev" && PG_GIT_LOG="$PG/git.log" PATH="$PG/bin:$PATH" ./pithead version)" \
+    "pithead dev (topic @ abc1234, VERSION 9.9.9)"
+assert_contains "provenance: release version output is unchanged" \
+    "$(cd "$PG/rel" && PG_GIT_LOG="$PG/git.log" PATH="$PG/bin:$PATH" ./pithead version)" \
+    "pithead v9.9.9 (release images v9.9.9)"
+assert_eq "provenance: a dirty source checkout is still marked" \
+    "$(cd "$PG/dev" && PG_DIRTY=1 PG_GIT_LOG="$PG/git.log" PATH="$PG/bin:$PATH" ./pithead version)" \
+    "pithead dev (topic @ abc1234-dirty, VERSION 9.9.9)"
+assert_eq "provenance: doctor computes it once, not twice" "$(pg_calls "$PG/dev" doctor)" "4"
+pg_exports() {
+    # shellcheck disable=SC1090
+    (cd "$PG/dev" && export PG_GIT_LOG="$PG/git.log" PATH="$PG/bin:$PATH" && source "$STACK" && set +e && export_build_provenance "$1" && printf '%s@%s' "$PITHEAD_GIT_BRANCH" "$PITHEAD_GIT_COMMIT")
+}
+assert_eq "provenance: up exports the branch and the commit" "$(pg_exports up)" "topic@abc1234"
+assert_eq "provenance: a timer verb exports them empty" "$(pg_exports egress-status)" "@"
+pg_missing=""
+for verb in up apply upgrade restart setup render; do
+    [ "$(pg_calls "$PG/dev" "$verb" --bogus)" -gt 0 ] || pg_missing="$pg_missing $verb"
+done
+assert_eq "provenance: up apply upgrade restart setup render still compute git provenance" "$pg_missing" ""

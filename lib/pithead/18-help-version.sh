@@ -187,8 +187,8 @@ Maintenance:
   render-quadlet [--env FILE] [--out DIR]
                             Render Podman Quadlet units (the appliance runtime) from a
                             rendered .env — the second render target beside docker-compose.
-                            Defaults: --env .env, --out ./quadlet. Refuses local-node profiles
-                            until their units are bench-proven (phase 2). The os/quadlet/
+                            Defaults: --env .env, --out ./quadlet. Local-node units
+                            are emitted when their profile is active. The os/quadlet/
                             fixtures pin this output byte-for-byte.
 
   rotate-secrets [-y|--yes]
@@ -213,13 +213,11 @@ Workflow: edit config.json, then run '$0 apply'.
 EOF
 }
 
-# One-line, greppable version identity for support threads (#386). Reads the provenance
-# export_build_provenance already computed this invocation — never re-reads VERSION or calls git,
-# so a release bundle (no .git) works and the values can't drift. `unknown` when VERSION is absent.
 show_version() {
     local ver="unknown"
     [ -n "$PITHEAD_VERSION" ] && ver="v$PITHEAD_VERSION"
     if is_source_checkout; then
+        [ -n "${PITHEAD_GIT_COMMIT:-}${PITHEAD_GIT_BRANCH:-}" ] || export_git_provenance
         echo "pithead dev (${PITHEAD_GIT_BRANCH:-unknown} @ ${PITHEAD_GIT_COMMIT:-unknown}, VERSION ${PITHEAD_VERSION:-unknown})"
     else
         echo "pithead $ver (release images $STACK_VERSION)"

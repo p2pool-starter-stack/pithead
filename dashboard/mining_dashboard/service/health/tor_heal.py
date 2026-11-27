@@ -19,8 +19,9 @@ from mining_dashboard.config.config import (
     TOR_AUTO_HEAL,
     TOR_SOCKS_PROXY,
 )
-from mining_dashboard.helper.http import bounded_get
+from mining_dashboard.helper.http import bounded_get, proxy_map, purpose_proxy
 from mining_dashboard.service import control_service
+from mining_dashboard.service.health.monerod_redial import MonerodRestartBudget
 from mining_dashboard.service.health.tor_heal_history import TorHistoryMixin
 
 logger = logging.getLogger("TorHeal")
@@ -70,6 +71,7 @@ class TorEgressHealer(TorHistoryMixin):
         clock=time.monotonic,
         restart_monerod=None,
         ping_failing_since=None,
+        monerod_budget=None,
     ):
         self.enabled = TOR_AUTO_HEAL if enabled is None else enabled
         # Cycle monerod after a successful tor restart (#972) — only when the node is local
@@ -77,6 +79,7 @@ class TorEgressHealer(TorHistoryMixin):
         if restart_monerod is None:
             restart_monerod = MONERO_NODE_HOST == LOCAL_MONERO_HOST
         self._restart_monerod = restart_monerod
+        self._monerod_budget = monerod_budget or MonerodRestartBudget()
         self._docker = docker_control
         self._probe = probe or self._probe_egress
         self._notify = notify  # optional async callable(text) — the Telegram one-off
@@ -97,7 +100,8 @@ class TorEgressHealer(TorHistoryMixin):
         self._pending_since = None
         self._failure_evidence = ""
         self._recovery_step = None
-        self._newnym_unconfirmed = False  # last NEWNYM round got no applied result
+        self._newnym_unconfirmed = False
+        self._guard_rotated = False
         self._history_since = None
         self._history_outage = None
         self._clear_history = False
@@ -120,14 +124,12 @@ class TorEgressHealer(TorHistoryMixin):
         evidence = []
         for url in (PROBE_URL, SECOND_PROBE_URL):
             circuit = uuid.uuid4().hex
-            # Tor's SOCKS-auth isolation keeps each request off the previous circuit.
-            # PySocks offers SOCKS5 username/password only when BOTH fields are nonempty.
-            proxy = TOR_SOCKS_PROXY.replace("://", f"://{circuit}:isolate@", 1)
             try:
-                bounded_get(url, timeout=PROBE_TIMEOUT_SEC, proxies={"http": proxy, "https": proxy})
+                proxy = purpose_proxy(TOR_SOCKS_PROXY, circuit)
+                bounded_get(url, timeout=PROBE_TIMEOUT_SEC, proxies=proxy_map(proxy))
                 evidence.append(f"{url}: circuit {circuit[:8]} answered")
                 return True, "; ".join(evidence)
-            except requests.RequestException as exc:
+            except (requests.RequestException, ValueError) as exc:
                 evidence.append(f"{url}: circuit {circuit[:8]} {type(exc).__name__}")
         return False, "; ".join(evidence)
 
@@ -151,8 +153,8 @@ class TorEgressHealer(TorHistoryMixin):
             self._last_attempt = None
             self._ok_streak = 0
             self._warned_exhausted = False
+            self._guard_rotated = False
             return "recovered"
-        # ok is False — any failure breaks a would-be recovery streak.
         self._ok_streak = 0
         if self._failing_since is None:
             hint = self._ping_failing_since() if self._ping_failing_since else None
@@ -188,6 +190,7 @@ class TorEgressHealer(TorHistoryMixin):
             self._ok_streak = 0
             self._warned_exhausted = False
             self._newnym_unconfirmed = False
+            self._guard_rotated = False
         self._tor_started = started
         self._own_restart = False
 
@@ -270,7 +273,9 @@ class TorEgressHealer(TorHistoryMixin):
                     self._request_history()
                     return
                 self._newnym_unconfirmed = False
-                self._recovery_step = "NEWNYM"
+                rotated = result.get("action") == "tor-dropguards"
+                self._guard_rotated = self._guard_rotated or rotated
+                self._recovery_step = "guard rotation" if rotated else "NEWNYM"
             probe = await asyncio.to_thread(self._probe)
             ok, evidence = probe
             if not ok:
@@ -300,6 +305,12 @@ class TorEgressHealer(TorHistoryMixin):
                         )
                         return
                     self._pending_since = now
+                    return
+                if self._guard_rotated:
+                    logger.warning(
+                        "Tor egress still failed after guard rotation (%s). Not restarting Tor.",
+                        evidence,
+                    )
                     return
                 if self.saturated_history:
                     try:
@@ -344,22 +355,7 @@ class TorEgressHealer(TorHistoryMixin):
                     MAX_ATTEMPTS,
                 )
                 if started and self._restart_monerod and await self._monerod_running():
-                    # Tor killed the SOCKS connections; cycle Monero's dead peer sockets (#972).
-                    # Match its 1m stop grace and let the HTTP timeout outlast it (#234).
-                    logger.warning(
-                        "Restarting monerod alongside tor so it re-dials its peers through "
-                        "the fresh Tor (#972)."
-                    )
-                    m_stopped = await self._docker.stop(
-                        self.MONEROD, stop_timeout=60, request_timeout=90
-                    )
-                    m_started = await self._docker.start(self.MONEROD, request_timeout=60)
-                    if not (m_stopped and m_started):
-                        logger.warning(
-                            "monerod restart alongside tor could not be issued — if the node "
-                            "stays out of sync, restart it manually: './pithead restart "
-                            "monerod' (#972)."
-                        )
+                    await self._monerod_budget.cycle_after_tor_restart(self._docker, now)
             elif action == "exhausted":
                 # Keep diagnostics and undelivered warnings alive without another mutation.
                 if self._history_since is None or now - self._history_since >= COOLDOWN_SEC:

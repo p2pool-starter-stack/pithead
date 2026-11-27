@@ -15,7 +15,13 @@ import logging
 
 import requests
 
-from mining_dashboard.helper.http import bounded_get, proxy_map
+from mining_dashboard.helper.http import (
+    PROXY_PURPOSE_UPDATES,
+    bounded_get,
+    proxy_map,
+    purpose_proxy,
+    request_failure_class,
+)
 
 logger = logging.getLogger("UpdateChecker")
 
@@ -52,10 +58,10 @@ class GitHubReleaseClient:
         self.tor_proxy = tor_proxy
 
     def latest_release(self) -> dict | None:
-        """Return ``{"tag": ..., "url": ...}`` for the latest published release, or ``None`` on any
-        failure (network, non-200, malformed JSON). Routed through Tor when a proxy is set."""
-        proxies = proxy_map(self.tor_proxy)
         try:
+            proxies = proxy_map(
+                purpose_proxy(self.tor_proxy, PROXY_PURPOSE_UPDATES) if self.tor_proxy else None
+            )
             resp = bounded_get(
                 self.api_url,
                 timeout=20,
@@ -82,7 +88,7 @@ class GitHubReleaseClient:
                     break
             return rel
         except (requests.RequestException, ValueError) as e:
-            logger.debug("Update check failed (kept silent): %s", e)
+            logger.debug("Update check failed (kept silent): %s", request_failure_class(e))
             return None
 
 

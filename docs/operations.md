@@ -751,7 +751,11 @@ failed backup (disk full mid-archive, for example) removes the partial archive a
 the stack before reporting the error. If startup fails, it prints Tor's health-check history and
 last 40 container log lines before retrying, while retaining the original startup error. Failed
 Tor health checks record bootstrap progress and tag, or a cookie, control-query, authentication,
-or invalid-reply failure. Raw control replies and relay summaries are omitted. Pass `-y` / `--yes`
+or invalid-reply failure. Raw control replies and relay summaries are omitted. Every health check
+also reads `status/circuit-established` from the same control session and publishes it in the
+history as a `pithead-tor-circuit {"established":true|false}` line, which the dashboard reads with
+`docker inspect` to prove Tor is carrying circuits (#4076); a malformed or duplicated circuit value
+is dropped without a line (the dashboard then reads no proof), and the verdict gate itself stays the bootstrap `TAG=done`. Pass `-y` / `--yes`
 to skip both prompts (low-space warning, stop-the-stack question).
 
 Include the blockchains (larger, slower) with:
@@ -965,7 +969,7 @@ without it the heal only probes and logs warnings, and sends a recovery note whe
 Doctor reports this configuration as INFO and names the login and control prerequisite or manual Tor restart. The dashboard probes every five minutes with a new SOCKS circuit per request.
 A failed request is corroborated against a second target before it counts toward the outage
 window: 5 minutes to the first NEWNYM, 15 minutes to any later one. A Healthchecks ping that has failed on two circuits makes the healer probe every minute until its first action, and the window counts from that ping's first failure once a probe fails too; a ping failure alone never acts. The host control runner permits NEWNYM at most twice per 24 hours, 30 minutes apart;
-continued failure after accepted refreshes permits one final action. With saturated circuit history,
+continued failure after accepted refreshes permits one final action. When Tor has run for at least five minutes, bootstrap sits at 95% (`circuit_create`), `status/circuit-established` is 0 and a guard reads `up` (the first-hop refusal a relay's circuit-creation defence causes, #4121), the host sends `DROPGUARDS` over the control port instead of NEWNYM, draws on the same budget and audits it as `tor-dropguards`. After a guard rotation the heal never restarts Tor or requests `tor-recover`, because both keep or re-pick the same refusing state at the cost of a new circuit burst: it logs a warning and waits for egress. With saturated circuit history,
 the dashboard submits `tor-recover`; the host runs the existing recovery gates, including the
 persistent six-hour cooldown, and backs up state before resetting guards. A refused or failed
 recovery is logged and alerted without a fallback restart. Otherwise it performs one Tor container
@@ -1047,13 +1051,15 @@ check) WARNs on the live state. Fix:
 ```
 
 Stack operations don't need the manual step: compose restarts monerod automatically whenever it
-restarts or recreates tor (`up`, `apply`, `upgrade`), and `restart tor` and a bare `restart` (and so the dashboard's Restart all) wait for Tor to report bootstrapped and then restart a running monerod themselves, whether or not compose already cycled it (a bare `restart` then restarts the tari container too, when the stack has one, so it starts after Tor instead of alongside it); the final `tor.auto_heal` container restart restarts monerod itself once Tor is running. NEWNYM does not restart monerod. (#972, #4063)
+restarts or recreates tor (`up`, `apply`, `upgrade`), and `restart tor` and a bare `restart` (and so the dashboard's Restart all) wait for Tor to report bootstrapped and then restart a running monerod themselves, whether or not compose already cycled it (a bare `restart` then restarts the tari container too, when the stack has one, so it starts after Tor instead of alongside it); the final `tor.auto_heal` container restart restarts monerod itself once Tor is running, drawing on the same shared monerod restart budget as the dashboard's own triggers so no two restarters act back to back (#4076). NEWNYM does not restart monerod. (#972, #4063)
 
 The dashboard also covers a Tor start it did not see happen, with or without `tor.auto_heal`
 (#4076). It notes every start of the tor container (an operator, `./pithead`, Docker or an
 update). Once Tor reports healthy (bootstrapped), a monerod that has held 0 outgoing peers for five
-minutes is restarted, once per Tor start. A monerod that was itself restarted in the meantime (by
-compose or the Tor heal) gets its own five minutes first.
+minutes is restarted, once per Tor start. Peers read right after the start may be dead sockets
+that have not dropped yet, so the re-dial is cancelled only once the node has held outgoing peers
+for ten minutes. A monerod that was itself restarted in the meantime (by compose or the Tor heal)
+gets its own five minutes first.
 
 Local node only. With `monero.mode: remote` there is no `monerod` here to restart and doctor's
 Monero sync check skips, so a stranded node is the remote host's problem to detect and fix.
@@ -1107,8 +1113,25 @@ counts. Remote and unreachable nodes have no chain verdict. The container's `doc
 health becomes `unhealthy` after 600 seconds without outgoing peers
 (`MONERO_HEALTH_PEERLESS_SEC`) or 30 minutes without height progress; it still prints its peer
 counts, so the card keeps reading them. A local monerod whose verdict stays peerless for five more
-minutes, while Tor reports healthy, is restarted by the dashboard (#4076).
-Restarts are spaced at least 30 minutes apart, capped at three per rolling 24 hours, logged
+minutes, while Tor reports healthy, is restarted by the dashboard (#4076), and so is one whose
+height has stopped moving while its target height sits above it — a node wedged mid-sync behind
+live outgoing peers (#4076). The stall trigger acts only while Tor is PROVEN: the container reads
+healthy (bootstrapped 100%) and Tor's own healthcheck reports `status/circuit-established` for five
+consecutive minutes (the same `State.Health.Log` channel the peer counts travel on; a missing or
+malformed circuit line is no reading, never a proven Tor). Its stall clock starts when Tor becomes
+proven, so a height frozen through a Tor outage is never counted and never fires at the moment Tor
+recovers. The stall threshold is 10 minutes, or 30 minutes until the dashboard has seen this monerod run
+report itself synchronized (initial sync, and again after a restart) or while the target sits more
+than 72 blocks above the height; the trigger reads the target height `get_info` reports only while the node is not
+synchronized, so a node that stays synchronized while wedged is not seen by it (the 30-minute
+height verdict still alerts); it never fires while the height is advancing. A
+peer gap shorter than 90 seconds pauses the stall clock without resetting it and never fires the
+trigger; after a longer gap the clock starts afresh. Before a stall restart the dashboard records
+the height, target height and peer counts — and nothing else — in the log line and the audit row.
+Neither trigger ever restarts P2Pool or touches chain data.
+All three monerod restarters — the peerless watchdog and stall trigger, and the tor healer's own
+cycle after its Tor restart (#972) — draw on one shared budget: restarts are spaced at least 30
+minutes apart, capped at three per rolling 24 hours, logged
 (`Restarting monerod to re-dial its peers through Tor`) and recorded in the audit log. At the cap
 the dashboard logs once that it has stopped, and the manual fix stays:
 
