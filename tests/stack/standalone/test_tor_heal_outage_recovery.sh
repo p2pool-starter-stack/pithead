@@ -191,6 +191,13 @@ jq -n --arg id "$reject_id" '{id:$id,action:"backup",actor:"tor-heal"}' >"$WORK/
 GENERAL_CONTROL=true CONTROL_HEAL_ONLY=true control_run_pending
 [ "$(jq -r .status "$WORK/control/results/$drain_id.json")" = applied ]
 jq -e '.status == "rejected" and .error == "only Tor healing is enabled"' "$WORK/control/results/$reject_id.json" >/dev/null
+echo "== disabling general control during a drain still serves a queued support bundle =="
+export_id=cccccccc-cccc-4ccc-8ccc-cccccccccccc
+control_support_bundle() { control_write_result "$4/results" "$2" '{"status":"applied"}'; }
+jq -n --arg id "$drain_id" '{id:$id,action:"commit",actor:"admin"}' >"$WORK/control/requests/1.json"
+jq -n --arg id "$export_id" '{id:$id,action:"support-bundle",actor:"admin"}' >"$WORK/control/requests/2.json"
+GENERAL_CONTROL=true control_run_pending
+[ "$(jq -r .status "$WORK/control/results/$export_id.json")" = applied ]
 echo "== No login rejects every unrelated action and non-healer actor =="
 for action in preview commit upgrade worker-apply worker-upgrade restart apply backup os-check os-download os-verify os-install os-reboot diag-doctor diag-logs onion-client-key egress-sync unknown; do
     jq -n --arg id "$id" --arg action "$action" '{id:$id,action:$action,actor:"tor-heal"}' >"$WORK/unrelated.json"

@@ -403,8 +403,8 @@ control_run_pending() {
             rm -f "$snapshot" "$claim"
             continue
         fi
-        CONTROL_HEAL_ONLY=true
-        [ "$(env_get DASHBOARD_CONTROL_ENABLED)" != true ] || CONTROL_HEAL_ONLY=false
+        CONTROL_HEAL_ONLY=true CONTROL_EXPORT_ONLY=1
+        [ "$(env_get DASHBOARD_CONTROL_ENABLED)" != true ] || CONTROL_HEAL_ONLY=false CONTROL_EXPORT_ONLY=0
         control_process_request "$snapshot" "$cdir"
         rm -f "$snapshot"
         rm -f "$claim"

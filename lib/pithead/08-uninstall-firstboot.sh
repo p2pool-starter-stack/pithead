@@ -121,17 +121,7 @@ stack_uninstall() {
     remove_tor_egress_when_idle ||
         warn "A stack container is still active or could not be checked, so the Tor-only egress rules stay for now, but their boot unit is already removed and nothing re-applies them after a reboot. Run '$0 down' before rebooting."
     lan_guard_teardown uninstall && { remove_lan_guard_boot_unit || error "uninstall stopped: $LAN_GUARD_BOOT_UNIT or $LAN_GUARD_HOLD_UNIT could not be removed; retry."; }
-    local volumes labels vol
-    volumes=$(docker volume ls -q) || error "Could not list Docker volumes; uninstall stopped before removing .env. Retry when the engine is available."
-    for vol in tari_wallet_db tari_wallet_data; do
-        printf '%s\n' "$volumes" | grep -Fx "${project}_$vol" >/dev/null || continue
-        labels=$(docker volume inspect "${project}_$vol" --format '{{index .Labels "com.docker.compose.project"}}/{{index .Labels "com.docker.compose.volume"}}') ||
-            error "Could not inspect ${project}_$vol; uninstall stopped before removing .env. Retry when the engine is available."
-        if [ "$labels" = "$project/$vol" ]; then
-            docker volume rm "${project}_$vol" >/dev/null ||
-                error "Could not remove ${project}_$vol; uninstall stopped before removing .env. Retry when the volume is available."
-        fi
-    done
+    remove_tari_wallet_volumes
     docker compose config --images 2>/dev/null | sort -u | while read -r img; do
         [ -n "$img" ] && docker rmi "$img" >/dev/null 2>&1 || true
     done
