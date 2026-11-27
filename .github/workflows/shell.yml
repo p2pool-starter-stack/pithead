@@ -98,6 +98,22 @@ jobs:
         env:
           FRAGMENT: ${{ matrix.fragment }}
 
+  coreutils-fileops:
+    name: Coreutils file-ops (Ubuntu 26.04, unstubbed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # #4495: ubuntu-latest IS Ubuntu 26.04 (the runner image the DIY target runs), and the stack
+    # suites stub cp/mv/stat around the exact file operations this job runs unstubbed. The
+    # standalone job below stays pinned to ubuntu-24.04, so this is the only 26.04 proof.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the generated CLI
+        run: make pithead
+      - name: Run the file-operations self-test on the runner image
+        run: bash tests/integration/selftest/selftest-coreutils-fileops.sh
+
   shell:
     # The required status check. Branch protection names this context, so it stays one job that is
     # green only when every block and independent prerequisite passes.
