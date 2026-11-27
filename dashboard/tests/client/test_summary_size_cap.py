@@ -67,7 +67,7 @@ class FakeSession:
     def __init__(self, response):
         self._response = response
 
-    def get(self, url, headers=None, timeout=None):
+    def get(self, url, headers=None, timeout=None, allow_redirects=True):
         return FakeGet(self._response)
 
 

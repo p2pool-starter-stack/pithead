@@ -29,6 +29,7 @@ test-stack: pithead ## pithead shell test suite
 	bash tests/stack/standalone/test_tor_recovery_info.sh
 	bash tests/stack/standalone/test_tor_bootstrap_recovery.sh
 	bash tests/stack/standalone/test_tor_heal_outage_recovery.sh
+	bash tests/stack/standalone/test_tor_unsaturated_reset.sh
 	bash tests/stack/standalone/test_tor_reset.sh
 	bash tests/stack/standalone/test_data_reset.sh
 	bash tests/stack/standalone/test_directory_linebreaks.sh
@@ -68,6 +69,7 @@ test-tools: ## Build-tool contracts and CI workflow guards (no live services)
 	python3 tests/stack/standalone/test_appliance_release_docs.py
 	bash scripts/watch/tor-bump.sh --self-test
 	bash scripts/watch/security-issue.sh --self-test
+	bash tests/watch/test-find-open-issue.sh
 	sed -n '/^  shell-block:$$/,/^  shell-fragment:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
 	sed -n '/^  shell-fragment:$$/,/^  shell:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
 	sed -n '/^  shell:$$/,/^  shell-standalone:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 5( |$$)'

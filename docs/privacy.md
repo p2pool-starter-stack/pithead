@@ -119,7 +119,7 @@ Compose project. At boot, the LAN guard runs first and Pithead reinstalls the eg
 its LAN-port jumps before starting containers, so the guard's return path still reaches the DROP.
 Until the host attests a selected first sync's Tor transition, a failed live firewall readback
 prevents Compose startup. A selected
-P2Pool or XvB exception also refuses startup on refresh failure; after a choice is disabled, its
+P2Pool, XvB or donation exception also refuses startup on refresh failure; after a choice is disabled, its
 marker keeps that refusal through firewall opt-out until an enabled refresh proves the stale rule
 gone. Ordinary startup retains the firewall warning. Before Docker creates its first network,
 the absent `FORWARD` jump is allowed only when Docker confirms the mining network is absent and no
@@ -195,14 +195,14 @@ What the running stack sends to the internet, connection by connection.
 | Dashboard **XvB stats** fetch | `xmrvsbeast.com` | your Monero **wallet** (no longer your IP) | ✅ Tor (`socks5h`, #163) | on, only if XvB enabled | `XVB_ENABLED=false` stops it |
 | Dashboard **XvB raffle registration** (#263) | `xmrvsbeast.com` | your Monero **wallet** (no longer your IP) | ✅ Tor (`socks5h`, same path as the stats fetch) | on, only if XvB enabled; fires once you have a PPLNS share | `XVB_ENABLED=false`, or set `XVB_SUBMIT_URL` to a disable sentinel (`off`), to stop it |
 | Dashboard **XvB winners fetch** (raffle-wins display) | `xmrvsbeast.com` | nothing — the winners file is public and the request carries no wallet | ✅ Tor (`socks5h`, same path as the stats fetch) | on, only if XvB enabled | `XVB_ENABLED=false` stops it |
-| **XvB donation mining** (only while donating) | `na.xmrvsbeast.com:4247` via Tor | — | ✅ **Tor** (per-pool `socks5`, DNS proxy-side) by default (#166) | on while donating | opt out with `xvb.tor: false` (exposes IP for max yield); `xvb.enabled: false` stops it entirely |
+| **XvB donation mining** (only while donating) | `eu.xmrvsbeast.com:4247` via Tor | — | ✅ **Tor** (per-pool `socks5`, DNS proxy-side) by default (#166) | on while donating | opt out with `xvb.tor: false` (exposes IP for max yield); `xvb.enabled: false` stops it entirely |
 | Dashboard **XvB warm-standby pull** (#249) | the primary stack you named | nothing about you — the primary sees a **Tor exit**, not your IP | ✅ Tor (`socks5h`) for an onion or any source not provably private; only a private, loopback or link-local IP *literal* dials direct as a LAN hop (a hostname can't be proven private without DNS, so it rides Tor) | opt-in (`xvb.standby.source`; off until set) | unset `xvb.standby.source` to stop it |
 | Dashboard **update check** (#224, plus the per-worker RigForge badge #596) | `api.github.com` | nothing about you — GitHub sees a **Tor exit**, not your IP; the RigForge check sends no rig versions, it only reads the latest release | ✅ Tor (`socks5h`) | **on** | `dashboard.check_for_updates: false` opts out of both; cached, fails silently offline |
 | **Caddy** TLS (dashboard HTTPS) | local only | — | n/a — `tls internal`, **no ACME / no external CA** | on | clean (no egress) |
 | **Telegram** bot (#121) | `api.telegram.org` | nothing about you — Telegram sees a **Tor exit**, not your IP | ✅ **always** Tor (`socks5h`, #340) | **off** | opt-in; both the alert sends and the command poll ride Tor |
 | Dashboard **Healthchecks** ping (#79) | `hc-ping.com` (or self-hosted) | nothing about you — the endpoint sees a **Tor exit**, not your IP | ✅ **always** Tor (`socks5h`) | opt-in (set `healthchecks.ping_url`; off until set) | the ping URL must be Tor-reachable (hosted, public, or an onion self-hosted instance) — there is no clearnet mode |
 | Dashboard **price feed** (#520) | `api.coingecko.com` | nothing about you — CoinGecko sees a **Tor exit**, not your IP | ✅ **always** Tor (`socks5h`) | **off** | opt-in (`dashboard.energy.price_feed: true`); fetches the XMR + XTM spot prices every 15 min; fails silently, static config prices are the fallback |
-| Dashboard **Tor egress probe** (#424) | `www.google.com/generate_204` and `www.cloudflare.com/cdn-cgi/trace` | No account identifier; each endpoint sees a distinct Tor exit circuit, not your IP | ✅ **always** Tor (`socks5h` with a fresh SOCKS username) | **off** | Opt-in (`tor.auto_heal: true`); failed egress is corroborated on a second circuit and target. Bounded NEWNYM requests precede one possible Tor restart. For saturated history, the final action instead invokes host-gated state recovery: it backs up state and resets guards only with the exact signature, corroborating evidence, onion identity checks, the mutation lock and a six-hour cooldown. DIY stays opt-in; appliances enable auto-heal when absent. |
+| Dashboard **Tor egress probe** (#424) | `www.google.com/generate_204` and `www.cloudflare.com/cdn-cgi/trace` | No account identifier; each endpoint sees a distinct Tor exit circuit, not your IP | ✅ **always** Tor (`socks5h` with a fresh SOCKS username) | **off** | Opt-in (`tor.auto_heal: true`); failed egress is corroborated on a second circuit and target. Bounded NEWNYM requests precede a host-gated state reset and then one possible Tor restart. The reset backs up state and resets guards only with a reset reason, corroborating evidence, onion identity checks, the mutation lock and a six-hour cooldown. DIY stays opt-in; appliances enable auto-heal when absent. |
 | Dashboard **Tari explorer reference** (#2464) | `textexplore.tari.com` (or `tari.explorer_url`) | nothing about you — the explorer sees a **Tor exit**, not your IP, and the request carries no address or height | ✅ **always** Tor (`socks5h`) | **on** while Tari is local or remote | once an hour; the explorer's tip is the one height that is not your node's own opinion, so it is what catches a node on a dead fork. A blank `tari.explorer_url` turns it off; a failed fetch contributes nothing to the verdict |
 | **Webhook / ntfy** alert sinks (#380) | your configured URLs | alert texts; the endpoint sees a **Tor exit**, not your IP | ✅ Tor (`socks5h`) by default | opt-in (set `notifications.webhooks` / `notifications.ntfy.url`; off until set) | `notifications.tor: false` is the LAN carve-out (Tor exits can't reach private addresses) — with it, a **clearnet** endpoint sees your host IP on every alert |
 
@@ -306,7 +306,7 @@ change (#165), not a v1.0 default. The opt-out works with the default egress fir
 
 ### XvB donation mining (#166) — ✅ Tor by default
 
-When the optimizer donates to XMRvsBeast (XvB), it points the proxy at `na.xmrvsbeast.com:4247`. As
+When the optimizer donates to XMRvsBeast (XvB), it points the proxy at `eu.xmrvsbeast.com:4247`. As
 of v1.1 that connection routes through Tor by default: `algo_service` sets a per-pool `socks5` on the
 XvB pool object it pushes to xmrig-proxy (the pool's DNS is resolved proxy-side, like the stats fetch
 in #163), so donation mining no longer exposes your home IP. No action needed.
@@ -315,7 +315,11 @@ Opt out for maximum yield (stratum-over-Tor adds latency that can raise rejected
 hashrate): set `xvb.tor: false` and re-run `./pithead apply`; the donation connection then dials
 direct. The firewall exempts only xmrig-proxy while XvB is enabled and this choice is active;
 switching Tor back on or disabling XvB removes the exemption at apply. The XvB pool sees your
-home IP while donating. To stop the egress entirely instead, disable XvB (`"xvb": { "enabled": false }`), which also
+home IP while donating. The exception is per container address, not per destination, so while it
+is active it also opens whatever else xmrig-proxy dials directly. The same holds for the project
+donation: with `donation.enabled` true and `donation.tor` false, the firewall exempts xmrig-proxy
+(the same address, one rule even when both choices are active) and the project endpoint sees your
+home IP; each choice keeps its own boot marker, so turning one off leaves the other's exemption. To stop the egress entirely instead, disable XvB (`"xvb": { "enabled": false }`), which also
 stops the (already Tor-routed, #163) stats fetch.
 
 > NOTE: the xmrig-proxy dev-fee `--donate-level` is pinned to `0` by default (`proxy.donate_level`,
@@ -379,7 +383,8 @@ be explicitly opted into.
 
 The [fail-closed egress firewall](#enforced-fail-closed-not-just-configured-270) admits direct IPv4
 egress from the selected node's own container during first sync, from P2Pool when
-`p2pool.clearnet` is true, and from xmrig-proxy when XvB is enabled with `xvb.tor` false.
+`p2pool.clearnet` is true, and from xmrig-proxy when XvB is enabled with `xvb.tor` false or
+the project donation is enabled with `donation.tor` false.
 Every other container stays restricted, and the IPv6 backstop remains in place.
 The host checks that the node's live `ACCEPT` is scoped to its address and precedes the subnet's
 blocking `DROP`; a broad or later exception does not count as active. The chosen node gets

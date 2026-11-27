@@ -61,6 +61,9 @@ bumps on the component pins for the same reason.
 
 The release ingredients manifest records the appliance's baked RigForge commit from
 `RIGFORGE_REF` in `os/rootfs/Dockerfile` alongside the stack component pins.
+The built-in miner's RigForge tree is baked at image build because nothing can be installed later: apt cannot
+run on the read-only root, and a read-write-remount install leaves its `/etc` state on the volatile overlay,
+where the first reboot breaks the compiler.
 One pin is not spelled as a version. The appliance pins RigForge by commit, so that a moved tag
 cannot change what is baked; the pin watcher resolves the latest release tag to the commit it names and
 compares the two commits. Comparing the commit against the tag directly would read stale for ever,
@@ -176,6 +179,22 @@ is no back-merge and no post-release repair step ([#1076]; releases through v1.1
 `develop` into `main` and back, and the back-merge was missed on v1.19.0). Commits that land on
 `develop` after the final cut commit sit ahead of `main`, the normal state between releases.
 `release.sh` warns (it does not abort) when the working tree is on any branch other than `develop`.
+
+The release is pinned to the commit preflight read. Preflight refuses a tag that already exists
+locally or on `origin`, and refuses (outside `--dry-run` and `PITHEAD_REHEARSAL=1`, where it only
+warns) a version whose `:vX.Y.Z` image tag is already in the registry. Before building the bundle,
+publish refuses if `HEAD` is no longer the gated commit or the tree is dirty, and the tag is created
+with `git tag -a "$TAG" "$GIT_COMMIT"`, so a `git pull` during the multi-hour gate cannot make the
+tag, images and bundle disagree.
+
+That publish check runs after the images are promoted. If it stops a cut, rerunning `release.sh`
+is refused, because the `:vX.Y.Z` image tag now exists. Recover by hand instead. Check out the
+gated commit that the refusal names, and review `git status --porcelain` until it is empty (remove
+any files the release tests left behind). Nothing was tagged, and no manifest or bundle was built.
+Then run the remaining steps of `publish()` in `scripts/release/bundle.sh` from that commit:
+`write_manifest`, `make_bundle`, `append_bundle_sha256` and, on a signed cut, `sign_bundle`; then
+tag the commit, push the tag, fast-forward `main`, and create the GitHub Release with the bundle,
+its signature and the manifest.
 
 The fast-forward push cannot ride a PR: GitHub merges a PR by merge commit, squash, or rebase,
 each of which mints a new commit, and the point is that `main` gains no object the tag does not

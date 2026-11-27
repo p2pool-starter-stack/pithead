@@ -30,7 +30,7 @@ P2POOL_ONION_ADDRESS=c.onion
 P2POOL_FLAGS=
 P2POOL_PORT=37889
 STRATUM_BIND=0.0.0.0
-XVB_POOL_URL=na.xmrvsbeast.com:4247
+XVB_POOL_URL=eu.xmrvsbeast.com:4247
 XVB_DONOR_ID=49Wallet
 XVB_ENABLED=true
 P2POOL_URL=172.28.0.28:3333
@@ -147,7 +147,7 @@ expect_min "log rotation on every service" "max-size:" 9
 # leaving the other was green. The two would then run different socket-proxy builds, which is exactly
 # the split the separate-proxy design exists to prevent.
 expect_min "tecnativa socket-proxy pinned by digest (both proxies)" "tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459" 2
-expect_present "caddy pinned by digest" "caddy:2.11.9@sha256:0c2243efcf437ab7f7a978f1027fcf0d4f9be8a75df27b1b3fbc5dbe0ffa8cf0"
+expect_present "caddy pinned by digest" "caddy:2.11.9@sha256:4851e54a46b206517c574821bb5cc67f170d2156041e9fbc4c9193b45e84a75b"
 expect_present "tari node pinned by digest" "minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec"
 
 # Per-service precision checks via the JSON render.
@@ -271,6 +271,7 @@ jq_assert "dashboard config.reference.json prefill mounted read-only (#33)" \
     '.services.dashboard.volumes | any((.target == "/host-config/config.reference.json") and (.read_only == true))'
 jq_assert "dashboard config.core-keys.json shortlist mounted read-only (#529)" \
     '.services.dashboard.volumes | any((.target == "/host-config/config.core-keys.json") and (.read_only == true))'
+jq_assert "donation defaults reach the dashboard (#4309)" '.services.dashboard.environment | .DONATION_ENABLED == "false" and .DONATION_PERCENT == "0" and .DONATION_TOR_ENABLED == "true"'
 jq_assert "control staged/ dir never enters the container (#33)" \
     '.services.dashboard.volumes | any(.target | contains("staged")) | not'
 jq_assert "control channel defaults off in the dashboard env (#33)" \

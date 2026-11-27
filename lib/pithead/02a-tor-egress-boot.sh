@@ -27,7 +27,7 @@ TOR_EGRESS_BOOT_UNIT="pithead-egress.service"
 # restart idempotent (a start with the rules already present replaces rather than stacks them);
 # the `-` prefix lets them fail when the rule is absent, which at boot it always is.
 render_tor_egress_boot_unit() { # <iptables> <subnet> <tor_ip> [sync-ip ...]
-    local ipt="$1" subnet="$2" tor_ip="$3" rule i ip chain marker cmd qmarker qipt qtag qip
+    local ipt="$1" subnet="$2" tor_ip="$3" rule i ip chain marker marker2 cmd qmarker qmarker2 qipt qtag qip
     shift 3
     local -a rules
     mapfile -t rules < <(tor_egress_rules "$subnet" "$tor_ip")
@@ -59,21 +59,26 @@ EOF
         *.26) chain=monero ;;
         *.27) chain=tari ;;
         *.28) marker="$(tor_egress_choice_marker)/p2pool" ;;
-        *.29) marker="$(tor_egress_choice_marker)/xvb" ;;
+        *.29)
+            marker="$(tor_egress_choice_marker)/xvb"
+            marker2="$(tor_egress_choice_marker)/donation"
+            ;;
         *) return 1 ;;
         esac
         if [ -n "${chain:-}" ]; then marker="$(clearnet_state_dir)/$chain.synced"; fi
         printf -v qmarker '%q' "$marker"
+        printf -v qmarker2 '%q' "${marker2:-$marker}"
         printf -v qipt '%q' "$ipt"
         printf -v qtag '%q' "$TOR_EGRESS_TAG"
         printf -v qip '%q' "$ip"
         if [ -n "${chain:-}" ]; then
             cmd="if test ! -e $qmarker && test ! -L $qmarker; then $qipt -I DOCKER-USER 1 -m comment --comment $qtag -s $qip -j ACCEPT; fi"
         else
-            cmd="if test -d $qmarker && test ! -L $qmarker; then $qipt -I DOCKER-USER 1 -m comment --comment $qtag -s $qip -j ACCEPT; fi"
+            cmd="if { test -d $qmarker && test ! -L $qmarker; } || { test -d $qmarker2 && test ! -L $qmarker2; }; then $qipt -I DOCKER-USER 1 -m comment --comment $qtag -s $qip -j ACCEPT; fi"
         fi
         printf "ExecStart=/bin/bash -c '%s'\n" "$cmd"
         chain=
+        marker2=
     done
     cat <<EOF
 
