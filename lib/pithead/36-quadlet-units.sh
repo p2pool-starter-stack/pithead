@@ -328,50 +328,36 @@ Restart=always
 WantedBy=multi-user.target
 EOF
 
-    local proxy_sock
+    local proxy_sock proxy proxy_desc proxy_env proxy_port
     proxy_sock=$(_qenv QUADLET_ENGINE_SOCK)
-    cat >"$outdir/docker-proxy.container" <<EOF
+    for proxy in docker-proxy docker-control; do
+        case $proxy in
+        docker-proxy) proxy_desc=read proxy_env="CONTAINERS=1 LOGS=1" proxy_port=12375 ;;
+        *) proxy_desc=control proxy_env="CONTAINERS=1 POST=1 ALLOW_START=1 ALLOW_STOP=1" proxy_port=12376 ;;
+        esac
+        cat >"$outdir/$proxy.container" <<EOF
 [Unit]
-Description=pithead read socket proxy
+Description=pithead $proxy_desc socket proxy
 [Container]
-ContainerName=docker-proxy
-Image=$(_qcompose_image docker-proxy)
+ContainerName=$proxy
+Image=$(_qcompose_image "$proxy")
 Network=proxy.network
-Environment=CONTAINERS=1 LOGS=1
+Environment=$proxy_env
 Volume=$proxy_sock:/var/run/docker.sock:ro
 Tmpfs=/run
 Tmpfs=/tmp
-PublishPort=127.0.0.1:12375:2375
+PublishPort=127.0.0.1:$proxy_port:2375
 ReadOnly=true
 DropCapability=all
 NoNewPrivileges=true
 PodmanArgs=--memory 128m --memory-swap 128m
+Exec=sh -c "sed -i '/timeout server 0/d' /tmp/haproxy.cfg; exec haproxy -W -db -f /tmp/haproxy.cfg"
 [Service]
 Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
-    cat >"$outdir/docker-control.container" <<EOF
-[Unit]
-Description=pithead control socket proxy
-[Container]
-ContainerName=docker-control
-Image=$(_qcompose_image docker-control)
-Network=proxy.network
-Environment=CONTAINERS=1 POST=1 ALLOW_START=1 ALLOW_STOP=1
-Volume=$proxy_sock:/var/run/docker.sock:ro
-Tmpfs=/run
-Tmpfs=/tmp
-PublishPort=127.0.0.1:12376:2375
-ReadOnly=true
-DropCapability=all
-NoNewPrivileges=true
-PodmanArgs=--memory 128m --memory-swap 128m
-[Service]
-Restart=always
-[Install]
-WantedBy=multi-user.target
-EOF
+    done
 
     # Payout env reaches the dashboard only under a payout profile, so the payout-off unit matches its fixture.
     local payout_env=""

@@ -224,3 +224,11 @@ assert_eq "#4252: a compose file without the service pin exits non-zero" "$QNOIM
 assert_contains "#4252: the refusal names the service and the compose file" "$QNOIMGOUT" "no image for service caddy"
 assert_eq "#4252: the refusal happens before any unit file is created" \
     "$(find "$QNOIMG" 2>/dev/null | wc -l | tr -d ' ')" "0"
+proxy_cmd="sed -i '/timeout server 0/d' /tmp/haproxy.cfg; exec haproxy -W -db -f /tmp/haproxy.cfg"
+assert_eq "both Quadlet socket proxies drop the unbounded events-backend timeout (#4159)" \
+    "$(sed -n 's/^Exec=sh -c "\(.*\)"$/\1/p' "$QOUT/docker-proxy.container" "$QOUT/docker-control.container" | sort -u)" "$proxy_cmd"
+assert_eq "both Compose socket proxies run the same command (#4159)" \
+    "$(grep -cxF -e "    command: &socket-proxy-command [\"sh\", \"-c\", \"$proxy_cmd\"]" -e '    command: *socket-proxy-command' "$ROOT/docker-compose.yml")" "2"
+assert_eq "socket-proxy command keeps the 10m default and drops only the zero (#4159)" \
+    "$(printf 'defaults\n    timeout server 10m\nbackend docker-events\n    timeout server 0\n' | sed "$(cut -d"'" -f2 <<<"$proxy_cmd")" | grep 'timeout server')" \
+    "    timeout server 10m"
