@@ -23,9 +23,7 @@ render_quadlet_units() (
     tor_profiles=$(_qenv TOR_COMPOSE_PROFILES)
     reg=$(_qenv PITHEAD_REGISTRY)
     ver=$(_qenv STACK_VERSION)
-    reg="${reg:-${PITHEAD_REGISTRY:-}}"
-    ver="${ver:-${STACK_VERSION:-}}"
-    [ -n "$reg" ] && [ -n "$ver" ] || error "render-quadlet: PITHEAD_REGISTRY and STACK_VERSION need build provenance or nonempty env-file values."
+    [ -n "${reg:=${PITHEAD_REGISTRY:-}}" ] && [ -n "${ver:=${STACK_VERSION:-}}" ] || error "render-quadlet: PITHEAD_REGISTRY and STACK_VERSION need build provenance or nonempty env-file values."
     prefix=$(_qenv NETWORK_PREFIX)
     subnet=$(_qenv NETWORK_SUBNET)
     cat >"$outdir/mining.network" <<EOF

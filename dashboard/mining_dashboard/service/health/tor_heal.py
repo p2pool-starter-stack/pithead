@@ -333,8 +333,6 @@ class TorEgressHealer(TorHistoryMixin, TorLifecycleMixin):
                     request_timeout=TOR_STOP_REQUEST_TIMEOUT_SEC,
                 )
                 started = await self._ensure_tor_running(stopped)
-                # False means unconfirmed, not unissued: a timed-out POST may have mutated
-                # the daemon. Keep the attempt and cooldown even when both responses are lost.
                 self._recovery_step = (
                     "Tor restart"
                     if stopped and started

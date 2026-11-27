@@ -238,8 +238,7 @@ RUNNING_CONTAINERS="monerod" CURL_BODY='{"status":"OK","synchronized":true}' PAT
     run_sourced "$SANDBOX" check_monerod_synchronized </dev/null >/dev/null 2>&1
 assert_contains "monerod sync: both node probes ran" "$(cat "$SANDBOX/authbin/args.log")" "/json_rpc"
 assert_not_contains "monerod sync: the node login is not in curl's arguments" "$(cat "$SANDBOX/authbin/args.log")" "pw-S3cret"
-assert_eq "monerod sync: both node probes read the login on standard input" \
-    "$(grep -c '^user = "op:pw-S3cret"$' "$SANDBOX/authbin/stdin.log")" "2"
+assert_eq "monerod sync: both node probes read the login on standard input" "$(grep -c '^user = "op:pw-S3cret"$' "$SANDBOX/authbin/stdin.log")" "2"
 rm -rf "$SANDBOX/authbin" "$SANDBOX/.env"
 
 echo "== unit: clock_sync_status (mining is time-sensitive) =="

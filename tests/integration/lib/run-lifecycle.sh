@@ -35,7 +35,7 @@ _run_lifecycle() {
     lifecycle_gate_sample after-restart
     post_op_invariants "after restart"
     run_connection_announcements || lifecycle_stopped run_connection_announcements || return 1
-    local cur_pool fp_before pool_fp_after other pool_apply_ok=1 restore_tls_before
+    local cur_pool fp_before pool_fp_after other pool_apply_ok=1 restore_tls_before arch rt_dir="$OUT_DIR/lifecycle-restore"
     cur_pool="$(lifecycle_pool_start)" || {
         it_fail "pool change starting sidechain established" "config or rendered flags unreadable or inconsistent"
         return 1
@@ -124,13 +124,11 @@ _run_lifecycle() {
     lifecycle_mining_step run_source_image_reconcile run_source_image_reconcile || lifecycle_stopped run_source_image_reconcile || return 1
     lifecycle_mining_step run_restore_dashboard_probe run_restore_dashboard_probe || lifecycle_stopped run_restore_dashboard_probe || return 1
     lifecycle_mining_step run_tari_background_sync run_tari_background_sync || lifecycle_stopped run_tari_background_sync || return 1
-    local rt_dir="$OUT_DIR/lifecycle-restore"
     run_image_permissions || lifecycle_stopped run_image_permissions || return 1
     restore_tls_before=$(dashboard_tls_identity) || restore_tls_before=""
     it_selfcheck_run_logged "$rt_dir" || lifecycle_ok=0
     it_step "backup → restore round-trip…"
     post_op_begin
-    local arch
     if it_run_logged "$rt_dir" backup pithead backup -y --no-encrypt; then
         arch="$(sed -n 's/^.*Backup written to: //p' "${IT_STEP_LOG:-/dev/null}" 2>/dev/null | tail -n1)"
         [ -z "$arch" ] || backup_prune rx backups "$arch" "${SAFETY_ARCHIVE:-}"

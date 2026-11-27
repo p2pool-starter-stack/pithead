@@ -67,9 +67,6 @@ phase_rig() {
         _wait_setup_page 120 &&
             ok "#1843: the machine falls to the setup page instead of mining unadoptably" ||
             bad "#1843: the setup page never came up after the refusal"
-        # POSITIVE evidence that the guard itself ran, which the two checks above cannot give:
-        # a pristine image with nothing staged passes both for the wrong reason. This line comes
-        # from the guard's own else-branch (lib/pithead/12-firstboot-wizard.sh).
         land_warn=$(_ssh "journalctl -b --no-pager -o cat | grep -m1 unusable" 2>/dev/null | tr -d '\r')
         [ -n "$land_warn" ] &&
             ok "#1843: the guard ran — boot journal: $(printf '%s' "$land_warn" | os_redact_addr | cut -c1-140)" ||
