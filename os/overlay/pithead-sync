@@ -8,7 +8,7 @@ DST="${PITHEAD_SYNC_DST:-/data/pithead}"
 RF_SRC="${PITHEAD_SYNC_RIGFORGE_SRC:-/opt/rigforge}"
 RF_DST="${PITHEAD_SYNC_RIGFORGE_DST:-/data/rigforge}"
 
-land_file() { # <source> <destination> <mode>
+land_file() {
     local t
     t=$(mktemp "${2}.pithead.XXXXXXXXXX") || return 1
     cp -- "$1" "$t" && chmod "$3" "$t" && mv -f -- "$t" "$2" || {

@@ -338,7 +338,6 @@ doctor() {
 
     check_data_wipe_note
 
-    # --- Coreutils implementation ---
     echo ""
     echo "Coreutils:"
     local cu_banner

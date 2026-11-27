@@ -225,7 +225,7 @@ safe_sed() {
     fi
 }
 
-install_file() { # <source> <destination> [mode, default 600]
+install_file() {
     local tmp mode="${3:-600}"
     tmp=$(mktemp "${2}.pithead.XXXXXXXXXX") || return 1
     if cp -- "$1" "$tmp" && chmod "$mode" "$tmp" && mv -f -- "$tmp" "$2"; then
@@ -235,9 +235,7 @@ install_file() { # <source> <destination> [mode, default 600]
     return 1
 }
 
-# Like install_file, but with sudo — for root-owned destinations such as the restore commit
-# paths. With OWNER (uid:gid), hand the landed file to it.
-sudo_install_file() { # <source> <destination> <mode> [uid:gid]
+sudo_install_file() {
     local tmp
     tmp=$(sudo mktemp "${2}.pithead.XXXXXXXXXX") || return 1
     if sudo cp -- "$1" "$tmp" && sudo chmod "$3" "$tmp" &&

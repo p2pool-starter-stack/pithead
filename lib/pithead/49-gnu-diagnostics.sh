@@ -4,7 +4,7 @@ coreutils_banner() {
     stat --version 2>/dev/null | head -n 1
 }
 
-detect_coreutils() { # sets GNU_FEATURES to the behaviors this host's coreutils lack
+detect_coreutils() {
     GNU_FEATURES=()
     local d
     d=$(mktemp -d) || return 1

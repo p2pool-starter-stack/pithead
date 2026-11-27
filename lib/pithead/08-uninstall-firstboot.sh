@@ -259,9 +259,6 @@ record_machine_role() { # <pithead|both|rig>
 # operator's configuration outright whenever the mv failed, for a reason it had already
 # discarded. Structurally, nothing here can remove the file without a copy already on disk.
 #
-# install_file, not cp: config.json holds the dashboard password and the wallet address, and the
-# copy must neither widen its mode nor truncate an existing copy in place.
-#
 # rc 0 = a copy was kept, 1 = it could not be.
 wizard_keep_failed_config() {
     # #2050: setup sets DEPLOYMENT_COMPLETED=true a third of the way in, so a failure past that

@@ -1,33 +1,12 @@
 #!/usr/bin/env bash
-#
-# Self-test for #4495 — the file operations that only GNU `install` performed, run FOR REAL.
-#
-# WHY THIS FILE EXISTS. `install -m 600 src dst` is not portable: Ubuntu 26.04 ships a coreutils
-# set that does not replace an existing destination the way GNU does, and `cp` onto an existing
-# file truncates it in place (an interruption leaves a partial config) while on a new file it
-# exists at the umask mode until `chmod` runs. The CLI now lands every such write through
-# `install_file`/`sudo_install_file` (mktemp in the destination folder, chmod the temp, mv -f over
-# the destination), and os/overlay carries the same dance inline. Several stack suites stub
-# exactly these binaries (`selftest-restore-dashboard-guest.sh` stubs cp, `selftest-live-gates.sh`
-# stubs cp/mv, harness and migration selftests stub stat), so on the 26.04 runner the operations
-# above had never run unstubbed. This file runs them for real: restore publish, wizard-spool
-# publish/read, the boot-status log, pithead-sync's program copy, and install_file itself. The
-# final section asserts `detect_coreutils` names the implementation and finds every behavior
-# present — on the ubuntu-latest (Ubuntu 26.04) job that line is the "checked on 26.04" evidence
-# for the audit's inventory.
-#
-# Run: tests/integration/selftest/selftest-coreutils-fileops.sh
-#
 set -uo pipefail
 
 HERE="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-# shellcheck source=tests/integration/lib.sh
 source "$HERE/../lib.sh"
 
 REPO="$(cd -P "$HERE/../../.." && pwd -P)"
 
 cfo() { (
-    # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
     source "$REPO/pithead" </dev/null >/dev/null 2>&1
     "$@"
 ); }
@@ -124,9 +103,8 @@ cfo_boot_case() {
     chmod 755 "$root/boot/pithead"
     (
         cd "$root/boot" || exit 1
-        # shellcheck source=/dev/null
         source "$REPO/os/overlay/pithead-boot-stack-health" </dev/null >/dev/null 2>&1
-        BOOT_STATUS_LOG="$root/boot/status.log"
+        export BOOT_STATUS_LOG="$root/boot/status.log"
         boot_status
     ) || return 1
     [ "$(cat "$root/boot/status.log")" = status-ok ] || return 1
