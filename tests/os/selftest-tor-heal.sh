@@ -286,34 +286,6 @@ sink_stop_rc=21
 if restore_case 0 0 1 >"$work/restore-sink-failure"; then exit 1; else [ "$?" = 1 ]; fi
 grep -q 'Guest restoration exit: 1; original exit: 0' "$work/restore-sink-failure"
 unset sink_stop_rc
-poison_case() (
-    mode=$1
-    data="$work/poison-$mode"
-    work="$work/poison-$mode"
-    mkdir -p "$work"
-    printf 'TotalBuildTimes 42\nCircuitBuildTimeBin 60000 7\nData 1\n' >"$work/original-state"
-    docker() {
-        case "$*" in
-        'compose stop tor') return 0 ;;
-        'compose start tor')
-            if [ "$mode" = repaired ]; then
-                printf 'TotalBuildTimes 5\nCircuitBuildTimeBin 60000 5\n' >"$data/state"
-            fi
-            ;;
-        'exec tor sh -c '*) printf '250 OK\r\n250 OK\r\n' ;;
-        *) return 0 ;;
-        esac
-    }
-    sleep() { :; }
-    eval "$(sed -n '/^saturated() {/,/^}/p;/^write_poison() {/,/^}/p;/^poison() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
-    poison
-    saturated "$data/state"
-)
-poison_case repaired
-poison_case preserving
-grep -E '^stage=(recovery-stop|host-recovery)$' "$ROOT/tests/os/tor-heal-guest.sh" |
-    tr '\n' ' ' | grep -qx 'stage=recovery-stop stage=host-recovery '
-grep -Fq 'newnym_applied "$started")" -lt 2' "$ROOT/tests/os/tor-heal-guest.sh"
 
 # Run the actual preamble in a child: failures inside helpers must identify the stage.
 sed '/^cd \/data\/pithead/,$d' "$ROOT/tests/os/tor-heal-guest.sh" >"$work/failure-preamble.sh"

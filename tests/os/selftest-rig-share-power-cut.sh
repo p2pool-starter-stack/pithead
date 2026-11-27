@@ -151,6 +151,9 @@ _setup_again_session() {
 _setup_again_rig_submit() { echo '{"token":"fixture"}'; }
 rig_adopt_leg() { [ -n "$rig_card" ]; }
 miner_backup_trial() { [ "$*" = kvm-rig-share ]; }
+rig_share_hashrate_wait() { return 0; }
+rig_failure_evidence() { :; }
+rig_failure_evidence_probe() { :; }
 _rig_mining_up() { return 0; }
 _ssh() {
     case "$*" in
@@ -163,7 +166,7 @@ _ssh() {
 _rig_share_coord_teardown() { printf '%s\n' "$*" >>"$scratch/teardown"; }
 run_case() {
     local scenario="$1" expected="$2" result=0
-    local PASS=0 FAIL=0 expected_pass=12 expected_fail=0
+    local PASS=0 FAIL=0 expected_pass=13 expected_fail=0
     local VM=rig DISK="$scratch/rig.img" SERIAL="$scratch/rig.log" ip=192.0.2.1
     for file in virsh teardown requests curl-argv curl-config; do : >"$scratch/$file"; done
     rm -f "$scratch/cut" "$scratch/new-boot"
@@ -184,10 +187,10 @@ run_case() {
         grep -Fxq 'start rig-coord' "$scratch/virsh" || fail "$scenario did not restore power"
         [ "$(wc -l <"$scratch/requests")" -ge 2 ] || fail "$scenario accepted a single snapshot"
     else
-        expected_pass=10 expected_fail=1
+        expected_pass=11 expected_fail=1
         case "$scenario" in
         no-initial-shares) expected_pass=3 expected_fail=2 ;;
-        boot-id-missing | destroy-fails | start-fails | boot-fails) expected_pass=9 ;;
+        boot-id-missing | destroy-fails | start-fails | boot-fails) expected_pass=10 ;;
         esac
         ! grep -q 'accepted counter advances after' "$scratch/verdicts" || fail "$scenario claimed post-cut mining"
     fi

@@ -56,6 +56,9 @@ _setup_again_rig_submit() {
 }
 rig_adopt_leg() { [ -n "$rig_card" ]; }
 miner_backup_trial() { [ "$*" = kvm-rig-share ]; }
+rig_share_hashrate_wait() { return 0; }
+rig_failure_evidence() { :; }
+rig_failure_evidence_probe() { :; }
 _rig_mining_up() { return 0; }
 _ssh() {
     case "$*" in
