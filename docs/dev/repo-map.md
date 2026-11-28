@@ -450,6 +450,7 @@ For test tiers and placement, read [testing strategy](testing-strategy.md) and
 
 Dashboard receipt identities live in `dashboard/mining_dashboard/service/payout_identity.py`.
 `dashboard/mining_dashboard/service/mining_store.py` scopes receipt reads, inserts and cursors;
+`dashboard/mining_dashboard/service/payout_alert_store.py` queues failed payout alerts for retry, driven by `payout_sync.py`.
 `dashboard/mining_dashboard/service/storage_schema.py` migrates legacy receipts to `unknown`.
 The wallet-switch regressions are
 `dashboard/tests/service/test_payout_wallet_identity.py` and
