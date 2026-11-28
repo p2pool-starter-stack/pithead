@@ -6,9 +6,9 @@ out=${1:?usage: generate.sh OUTPUT_DIRECTORY|--wallets-only}
 
 readonly TAG=v1.20.0
 readonly BUNDLE_SHA256=77071195f5e8ef07b68a7bde9db20d30c0e64cfb561280d962d555acc03a6d4b
-readonly COSIGN_IMAGE=ghcr.io/sigstore/cosign/cosign@sha256:4bedb8de1c5c1abd8dea60de704ba449402d238623fa8bb33d2ccaa9beffcbf5
 readonly PASSPHRASE=v120-fixture-passphrase
 repo=$(git rev-parse --show-toplevel)
+COSIGN_IMAGE=$(bash "$repo/scripts/cosign-image.sh")
 wallets=$(
     python3 - "$repo/lib/pithead/25-address-types.sh" <<'PY'
 import ctypes, ctypes.util, hashlib, json, pathlib, sys

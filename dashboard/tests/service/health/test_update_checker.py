@@ -69,11 +69,24 @@ class TestGitHubReleaseClient:
             return_value=self._resp(200, {"tag_name": "v1.4.0", "html_url": "https://h/v1.4.0"}),
         ) as g:
             assert c.latest_release() == {"tag": "v1.4.0", "url": "https://h/v1.4.0"}
-            # routed through the Tor proxy
             assert g.call_args.kwargs["proxies"] == {
-                "http": "socks5h://t:9050",
-                "https": "socks5h://t:9050",
+                "http": "socks5h://updates:isolate@t:9050",
+                "https": "socks5h://updates:isolate@t:9050",
             }
+
+    def test_failure_log_is_secret_free(self, caplog):
+        c = GitHubReleaseClient("u", tor_proxy="socks5h://t:9050")
+        boom = requests.ConnectionError("socks5h://updates:isolate@t:9050 refused")
+        with (
+            patch("mining_dashboard.service.health.update_checker.bounded_get", side_effect=boom),
+            caplog.at_level("DEBUG"),
+        ):
+            assert c.latest_release() is None
+        assert "isolate@" not in caplog.text
+        assert "connection error" in caplog.text
+
+    def test_schemeless_proxy_is_silent_none(self):
+        assert GitHubReleaseClient("u", tor_proxy="tor:9050").latest_release() is None
 
     def test_non_200_is_silent_none(self):
         c = GitHubReleaseClient("u")

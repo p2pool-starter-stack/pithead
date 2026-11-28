@@ -31,8 +31,8 @@ class ContainerHealthMonitor:
 
     The alerter needs a stable "monerod is crash-looping / stuck unhealthy / recovered" signal
     from the per-container inspect snapshots (``collector.containers.get_container_health``).
-    This is the container analogue of :class:`WorkerPresenceMonitor` — debounced, seed-silent,
-    keyed by container name:
+    This is the container analogue of :class:`WorkerPresenceMonitor` — debounced, seed-silent
+    for restarts, keyed by container name:
 
     - **Crash loop** — the restart count rose by ``crash_restarts`` within a rolling
       ``crash_window`` (tracked as deltas against a per-name baseline, so it's safe regardless
@@ -53,10 +53,6 @@ class ContainerHealthMonitor:
       and xmrig-proxy on purpose (sync gate #35, node-down failover #31) — and a container that
       disappears from the snapshot (profile off, remote mode, proxy down), which is silently
       forgotten so a later return re-baselines.
-    - **Silent baseline.** A container's first sighting registers its current state with no
-      edge — one already unhealthy at dashboard start seeds as bad without alerting (a restart
-      must not replay a stale transition), and its later recovery is silent too (it was never
-      alerted).
 
     :meth:`update` takes this cycle's snapshot dict and returns a list of ``(name, edge)``,
     ``edge`` in ``{"crash_loop", "unhealthy", "held", "exited", "recovered"}``.
@@ -90,13 +86,6 @@ class ContainerHealthMonitor:
         self._containers = {}
 
     def is_confirmed_bad(self, name):
-        """True only if `name`'s bad state was CONFIRMED by the debounce — a crash loop or a
-        continuous-unhealthy streak past ``unhealthy_after`` — i.e. it produced an alert edge
-        (``alerted``). A first-sighting silently-seeded baseline (already unhealthy/restarting at
-        the monitor's first look) is deliberately NOT confirmed: it skipped the debounce a KNOWN
-        container must pass, exactly as it skips the alert. `dashboard.fail_closed`'s miner hold
-        (#490) reads this rather than the raw level, so it holds the fleet only on a confirmed,
-        non-transient failure. Unknown/never-seen container reads as not bad."""
         c = self._containers.get(name)
         return bool(c and c["state"] == "bad" and c["alerted"])
 
@@ -114,8 +103,7 @@ class ContainerHealthMonitor:
         for name, s in states.items():
             c = self._containers.get(name)
             if c is None:
-                # First sighting — baseline silently, even when already bad.
-                bad = s["health"] == "unhealthy" or s["restarting"]
+                bad = s["restarting"]
                 self._containers[name] = {
                     "state": "bad" if bad else "ok",
                     "alerted": False,

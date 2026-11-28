@@ -56,13 +56,23 @@ class TestCoinGeckoClient:
             assert c.fetch() == {"xmr": 333.97, "tari": 0.0004}
             # routed through the Tor proxy, asking for both coin ids in the operator's currency
             assert g.call_args.kwargs["proxies"] == {
-                "http": "socks5h://t:9050",
-                "https": "socks5h://t:9050",
+                "http": "socks5h://dashboard:isolate@t:9050",
+                "https": "socks5h://dashboard:isolate@t:9050",
             }
             assert g.call_args.kwargs["params"] == {
                 "ids": "monero,minotari",
                 "vs_currencies": "usd",
             }
+
+    def test_failure_log_carries_no_credential(self, caplog):
+        c = CoinGeckoClient("USD", tor_proxy="socks5h://t:9050")
+        with patch(
+            "mining_dashboard.service.xvb.price_feed.bounded_get",
+            side_effect=requests.RequestException("socks5h://dashboard:isolate@t:9050 refused"),
+        ):
+            with caplog.at_level("DEBUG"):
+                assert c.fetch() is None
+        assert "isolate@" not in caplog.text
 
     def test_non_200_is_silent_none(self):
         c = CoinGeckoClient("USD")

@@ -30,25 +30,17 @@ from mining_dashboard.service.health.node_alert import build_node_alert
 from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics
 from mining_dashboard.service.network.egress import egress_posture_from_config
+from mining_dashboard.service.network.egress_status import host_audit_state
 from mining_dashboard.service.network.topology import topology_from_config
 from mining_dashboard.service.payout_identity import configured_wallet_id
 from mining_dashboard.version import resolve_version
-
-# The chart/window hub lives in web/views/charts.py (#1105). views.py stays the facade: the last two
-# are re-exported unused so `server.py`'s existing `from ...web.views import` keeps resolving.
 from mining_dashboard.web.miner_connection import stratum_state
-from mining_dashboard.web.views.charts import (
-    _filter_events,  # noqa: F401 — re-export for worker_detail.py
-    build_chart,
-    canonical_window,  # noqa: F401 — re-export for server.py
-    parse_window,  # noqa: F401 — re-export for server.py
-)
+from mining_dashboard.web.views.charts import build_chart
 
 # The header's address block lives in web/views/header.py (#1853): the hostname/IP line and the
 # .onion URL under it are ways IN to the machine, not readings off it.
 from mining_dashboard.web.views.header import dashboard_onion, host_display_addr
 from mining_dashboard.web.views.infra_views import (
-    _rigforge_display,  # noqa: F401 — re-export for worker_detail.py
     _shorten,
     build_energy,
     build_proxy_summary,
@@ -56,20 +48,10 @@ from mining_dashboard.web.views.infra_views import (
     build_system,
     build_tari,
     build_workers,
-    rigforge_update_for,  # noqa: F401 — re-export for worker_detail.py
 )
-
-# The host/rig/node status sections live in web/views/infra_views.py (#1105). views.py stays the
-# facade: build_state assembles these sections, build_pool_network uses the address elider, and
-# the last two are re-exported unused so web/views/worker_detail.py's existing import keeps resolving.
 from mining_dashboard.web.views.monero_view import build_monero
 from mining_dashboard.web.views.paused_badge import paused_badges
-
-# The time-series sections live in web/views/series_views.py (#1105). views.py stays the facade:
-# build_state assembles these sections and reads the palette and the window reject rate, and
-# _gauge_series is re-exported unused so web/views/worker_detail.py's existing import keeps resolving.
 from mining_dashboard.web.views.series_views import (
-    _gauge_series,  # noqa: F401 — re-export for worker_detail.py
     _mode_palette,
     _window_reject_pct,
     build_blocks,
@@ -375,18 +357,13 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         # proxy_summary so its (cumulative) shape stays unchanged for existing clients.
         "share_stats": build_share_stats(share_stats, range_arg, window),
         "reject_pct_24h": _window_reject_pct(share_stats, 24 * 3600),
-        # #196 Tier-1 telemetry backbone exposure: block-found events, hourly disk-growth
-        # samples, and ~5-min XvB-credited samples. No chart renders these yet — that's the
-        # deliberate next slice — the payload just carries the persisted series.
         "blocks": build_blocks(state_mgr.get_blocks(), range_arg, window),
-        # Confirmed payouts per chain as timeline points ({x: ms, amount: atomic}), same
-        # range/window bounds as blocks. Feeds the mine cart train's Tari marker; empty lists
-        # while payout confirmation is off.
         "payouts": build_payouts(state_mgr, range_arg, window),
         "disk_growth": build_disk_growth(state_mgr.get_disk_growth(), range_arg, window),
         "xvb_history": build_xvb_history(state_mgr.get_xvb_history(), range_arg, window),
         "egress": egress,
         "topology": topology,
+        "egress_audit": host_audit_state(),
         "ping_failures": state_mgr.get_ping_failures(8),
         "node_alert": build_node_alert(data),
         "chart": build_chart(

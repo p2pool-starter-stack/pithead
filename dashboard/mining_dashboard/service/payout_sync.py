@@ -32,6 +32,7 @@ from mining_dashboard.service.payout_identity import configured_wallet_id
 logger = logging.getLogger("DataService")
 
 DOWN_ALERT_ATTEMPTS = 3
+PAYOUT_ALERT_RETRY_SEC = 7 * 86400
 
 
 async def run_isolated(label, step):
@@ -51,6 +52,25 @@ async def run_isolated(label, step):
         logger.error("Poll step failed, continuing with the rest of the poll — %s: %s", label, e)
 
 
+async def _send_payout_alert(alert_service, chain, txid, amount):
+    try:
+        result = await alert_service.payout_confirmed_alert(chain, amount, txid)
+    except Exception as e:  # noqa: BLE001
+        logger.error("%s payout alert for %s… raised: %s", chain, txid[:8], e)
+        result = False
+    return result is not False
+
+
+async def _retry_payout_alerts(state_manager, alert_service, chain, wallet_id):
+    pending = await asyncio.to_thread(state_manager.get_payout_alert_retries, chain, wallet_id)
+    for p in pending:
+        expired = time.time() - p["first_ts"] > PAYOUT_ALERT_RETRY_SEC
+        if expired or await _send_payout_alert(alert_service, chain, p["txid"], p["amount_atomic"]):
+            await asyncio.to_thread(
+                state_manager.clear_payout_alert_retry, chain, wallet_id, p["txid"]
+            )
+
+
 async def sync_monero(state_manager, wallet_client, alert_service):
     chain = "monero"
     wallet_id = configured_wallet_id(chain)
@@ -63,9 +83,11 @@ async def sync_monero(state_manager, wallet_client, alert_service):
         return True
     min_height = await asyncio.to_thread(state_manager.get_payout_max_height, chain, wallet_id)
     payouts, answered = await asyncio.to_thread(wallet_client.scan, min_height)
-    if not answered or not payouts:
-        return answered
-    new_rows = await asyncio.to_thread(state_manager.add_payouts, chain, wallet_id, payouts)
+    new_rows = []
+    if answered and payouts:
+        new_rows = await asyncio.to_thread(
+            state_manager.add_payouts, chain, wallet_id, payouts, True
+        )
     for r in new_rows:
         logger.info(
             "Payout confirmed on-chain: %.6f XMR (tx %s…) at height %d (#381)",
@@ -73,7 +95,7 @@ async def sync_monero(state_manager, wallet_client, alert_service):
             r["txid"][:8],
             r["height"],
         )
-        await alert_service.payout_confirmed_alert(chain, r["amount_atomic"], r["txid"])
+    await _retry_payout_alerts(state_manager, alert_service, chain, wallet_id)
     return answered
 
 
@@ -89,9 +111,11 @@ async def sync_tari(state_manager, tari_wallet_client, alert_service):
         return True
     min_height = await asyncio.to_thread(state_manager.get_payout_max_height, chain, wallet_id)
     payouts, answered = await tari_wallet_client.scan(min_height)
-    if not answered or not payouts:
-        return answered
-    new_rows = await asyncio.to_thread(state_manager.add_payouts, chain, wallet_id, payouts)
+    new_rows = []
+    if answered and payouts:
+        new_rows = await asyncio.to_thread(
+            state_manager.add_payouts, chain, wallet_id, payouts, True
+        )
     for r in new_rows:
         logger.info(
             "Tari payout confirmed on-chain: %.6f XTM (tx %s…) at height %d (#462)",
@@ -99,7 +123,7 @@ async def sync_tari(state_manager, tari_wallet_client, alert_service):
             r["txid"][:8],
             r["height"],
         )
-        await alert_service.payout_confirmed_alert(chain, r["amount_atomic"], r["txid"])
+    await _retry_payout_alerts(state_manager, alert_service, chain, wallet_id)
     return answered
 
 

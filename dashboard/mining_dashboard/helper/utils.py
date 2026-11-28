@@ -4,6 +4,7 @@ import socket
 import time
 
 from mining_dashboard.config.config import TIER_DEFAULTS, XVB_STATS_STALE_AFTER_S
+from mining_dashboard.helper.time_rows import window_rows
 
 
 def finite_number(value, limit=1e15):
@@ -213,29 +214,21 @@ def pplns_block_time(pool_type):
 
 
 def shares_in_pplns_window(shares, pplns_window, block_time, now=None):
-    """Count shares whose timestamp falls within the PPLNS window.
-
-    The window spans ``pplns_window`` blocks of ``block_time`` seconds each; a share with
-    ``ts >= now - pplns_window * block_time`` counts. ``now`` defaults to ``time.time()``
-    and is injectable for tests.
-    """
     if now is None:
         now = time.time()
     cutoff = now - pplns_window * block_time
-    return sum(1 for s in shares if s.get("ts", 0) >= cutoff)
+    return sum(1 for s in window_rows(shares, "ts", cutoff) if s.get("ts", 0) >= cutoff)
 
 
 def pplns_weight_in_window(shares, pplns_window, block_time, now=None):
-    """Sum the persisted per-share ``difficulty`` over the shares inside the PPLNS window (#84).
-
-    Same cutoff math as :func:`shares_in_pplns_window`, but weighted: this is the miner's own
-    PPLNS share-weight — the figure that sizes their slice of a pool payout — NOT p2pool's
-    pool-wide ``pplnsWeight``. ``now`` defaults to ``time.time()`` and is injectable for tests.
-    """
     if now is None:
         now = time.time()
     cutoff = now - pplns_window * block_time
-    return sum(s.get("difficulty", 0) or 0 for s in shares if s.get("ts", 0) >= cutoff)
+    return sum(
+        s.get("difficulty", 0) or 0
+        for s in window_rows(shares, "ts", cutoff)
+        if s.get("ts", 0) >= cutoff
+    )
 
 
 def get_tier_info(hashrate, tiers=None):
