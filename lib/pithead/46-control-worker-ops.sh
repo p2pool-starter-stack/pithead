@@ -51,6 +51,11 @@ resolve_worker_target() { # <worker-name> <verb-for-the-host-missing-message, e.
     return 0
 }
 
+duplicate_identity_refusal() {
+    [ "$(jq -r '.duplicate_identity // false' "$1")" = "true" ] || return 1
+    DUPLICATE_IDENTITY_ERR="worker '$2' shares its rig id with another machine (a cloned stick). Control and update are blocked for it until you re-key one copy: change that copy's access token, then adopt it again. Nothing was sent to the rig."
+}
+
 # Worker config apply (#185): POST an operator's writable-key change to a RigForge rig's control API
 # and record the outcome for the dashboard's config history. The intent carries ONLY the worker NAME
 # and the CHANGES — never a host, port, or token: the runner resolves the rig's real address + bearer
@@ -78,6 +83,10 @@ control_worker_apply() { # <claimed-file> <id> <actor> <control-dir>
     # fail-closed gate worker-upgrade uses, so the two verbs can't drift out of sync on it.
     if ! resolve_worker_target "$worker" "edit"; then
         _wa_reject "$RESOLVE_WORKER_ERR"
+        return 0
+    fi
+    if duplicate_identity_refusal "$file" "$worker"; then
+        _wa_reject "$DUPLICATE_IDENTITY_ERR"
         return 0
     fi
     # Changes must be a non-empty object whose keys are ALL writable via the rig's control path (the
@@ -221,6 +230,10 @@ control_worker_upgrade() { # <claimed-file> <id> <actor> <control-dir>
     # fail-closed gate worker-apply uses, so the two verbs can't drift out of sync on it.
     if ! resolve_worker_target "$worker" "upgrade"; then
         _wu_reject "$RESOLVE_WORKER_ERR"
+        return 0
+    fi
+    if duplicate_identity_refusal "$file" "$worker"; then
+        _wu_reject "$DUPLICATE_IDENTITY_ERR"
         return 0
     fi
     local host="$RESOLVED_HOST" cport="$RESOLVED_CPORT" token="$RESOLVED_TOKEN"
