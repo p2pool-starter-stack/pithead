@@ -19,15 +19,18 @@ status_sync_case() { # <tari-required> <global-syncing> [miner state: "exited no
             esac
         }
         docker() {
+            [ -z "${STATUS_CALL_LOG:-}" ] || printf '%s\n' "$*" >>"$STATUS_CALL_LOG"
             case "$*" in
             "compose ps") return 0 ;;
-            "compose config --services") printf '%s\n' monerod tari p2pool xmrig-proxy ;;
-            "compose ps -aq "*) printf '%s\n' "${*: -1}" ;;
-            "inspect --format "*)
-                case "${*: -1}" in
-                p2pool | xmrig-proxy) printf '%s\n' "$miner" ;;
-                *) printf '%s\n' 'running healthy' ;;
-                esac
+            "compose config --services" | "compose ps -aq") tr ' ' '\n' <<<"${STATUS_SERVICES:-monerod tari p2pool xmrig-proxy}" ;;
+            "inspect --format {{index "*)
+                local id
+                for id in "${@:4}"; do
+                    case "$id" in
+                    p2pool | xmrig-proxy) printf '%s %s\n' "$id" "$miner" ;;
+                    *) printf '%s %s\n' "$id" 'running healthy' ;;
+                    esac
+                done
                 ;;
             *)
                 printf 'unexpected status docker call: %s\n' "$*" >&2
@@ -73,3 +76,13 @@ assert_not_contains "healthy running miners with optional Tari loading: no globa
 down_out="$(status_sync_case true true 'exited none' down)"
 assert_contains "dashboard unreachable keeps the old held wording" \
     "$down_out" "held until the required chains finish syncing"
+
+STATUS_CALL_LOG="$SANDBOX/status-calls.log"
+: >"$STATUS_CALL_LOG"
+status_sync_case false false >/dev/null
+status_calls_four=$(grep -c '' "$STATUS_CALL_LOG")
+: >"$STATUS_CALL_LOG"
+STATUS_SERVICES="monerod tari p2pool xmrig-proxy tor caddy dashboard docker-proxy docker-control notify wallet-rpc tari-wallet" status_sync_case false false >/dev/null
+assert_eq "status makes the same number of engine calls for 12 services as for 4 (#4458)" \
+    "$(grep -c '' "$STATUS_CALL_LOG")" "$status_calls_four"
+assert_eq "status makes 6 engine calls for a 4-service stack (#4458)" "$status_calls_four" 6

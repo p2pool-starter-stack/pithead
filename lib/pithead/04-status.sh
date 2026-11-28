@@ -147,7 +147,10 @@ stack_status() {
         problems=$((problems + 1))
     fi
     os_migration_hold_active && chain_hold=1
-    local s cid info state health
+    local s ids info state health rows=""
+    ids=$(docker compose ps -aq 2>/dev/null || true)
+    # shellcheck disable=SC2086
+    [ -n "$ids" ] && rows=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}} {{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $ids 2>/dev/null || true)
     while IFS= read -r s; do
         [ -z "$s" ] && continue
         # The bundled monerod only runs under the local_node profile; in remote mode it's
@@ -161,12 +164,11 @@ stack_status() {
             continue
         fi
 
-        cid=$(docker compose ps -aq "$s" 2>/dev/null | head -n1 || true)
-        if [ -z "$cid" ]; then
+        info=$(awk -v s="$s" '$1 == s { print $2, $3; exit }' <<<"$rows")
+        if [ -z "$info" ]; then
             state="missing"
             health="none"
         else
-            info=$(docker inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid" 2>/dev/null || echo "unknown none")
             state=${info%% *}
             health=${info##* }
         fi

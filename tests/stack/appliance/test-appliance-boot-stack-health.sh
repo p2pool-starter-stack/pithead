@@ -63,10 +63,18 @@ _bsh_status() { # <chain-state> <health>
             case "$*" in
             "compose ps") ;;
             "compose config --services") printf 'caddy\nmonerod\n' ;;
-            "compose ps -aq caddy") printf 'caddy\n' ;;
-            "compose ps -aq monerod") [ "$chain_state" != missing ] && printf 'monerod\n' ;;
-            inspect*caddy) printf 'running healthy\n' ;;
-            inspect*monerod) printf '%s %s\n' "$chain_state" "$chain_health" ;;
+            "compose ps -aq")
+                printf 'caddy\n'
+                [ "$chain_state" = missing ] || printf 'monerod\n'
+                ;;
+            "inspect --format {{.Id}}"*)
+                printf '%064d\t/caddy\trunning\t0\t2026-01-01T00:00:00Z\n' 1
+                [ "$chain_state" = missing ] || printf '%064d\t/monerod\t%s\t0\t2026-01-01T00:00:00Z\n' 2 "$chain_state"
+                ;;
+            "inspect --format {{index "*)
+                printf 'caddy running healthy\n'
+                [ "$chain_state" = missing ] || printf 'monerod %s %s\n' "$chain_state" "$chain_health"
+                ;;
             esac
         }
         PITHEAD_MIGRATION_MARKER_FILE="$_BSH/migration-marker" PITHEAD_VERSION=2.0.0 stack_status

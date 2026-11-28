@@ -33,10 +33,24 @@ case "$sub" in
 "info") exit 1 ;;
 "compose config --services")
     for kv in $FAKE_STATES; do echo "${kv%%=*}"; done ;;
-"compose ps -aq "*)
-    svc="${sub##* }"
+"compose ps -aq")
     for kv in $FAKE_STATES; do
-        [ "${kv%%=*}" = "$svc" ] && [ "${kv#*=}" != "missing" ] && echo "$svc"
+        [ "${kv#*=}" != "missing" ] && echo "${kv%%=*}"
+    done ;;
+"inspect --format {{.Id}}"*)
+    n=0
+    for cid in "${@:4}"; do
+        n=$((n + 1))
+        for kv in $FAKE_STATES; do
+            st="${kv#*=}"
+            [ "${kv%%=*}" = "$cid" ] && printf '%064d\t/%s\t%s\t0\t2026-01-01T00:00:00Z\n' "$n" "$cid" "${st%%:*}"
+        done
+    done ;;
+"inspect --format {{index "*)
+    for cid in "${@:4}"; do
+        for kv in $FAKE_STATES; do
+            [ "${kv%%=*}" = "$cid" ] && echo "$cid ${kv#*=}" | tr ':' ' '
+        done
     done ;;
 "inspect "*)
     cid="${sub##* }"

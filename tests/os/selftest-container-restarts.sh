@@ -23,7 +23,7 @@ compose)
 inspect)
     case "$3" in
     *RestartCount*) case "$3" in *$'\t'*) ;; *) exit 3 ;; esac ;;
-    *) printf '%s none\n' "${SERVICE_STATE:-running}"; exit 0 ;;
+    *) printf '%s %s none\n' "${SERVICE_NAME:-caddy}" "${SERVICE_STATE:-running}"; exit 0 ;;
     esac
     n=0
     [ ! -f "$RESTART_STATE" ] || n=$(<"$RESTART_STATE")
