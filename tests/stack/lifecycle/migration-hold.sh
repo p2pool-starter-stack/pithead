@@ -58,3 +58,6 @@ rm -f "$HOLD_LOG" "$HOLD_LOG2"
 
 bash "$ROOT/tests/os/selftest-local-miner-up.sh"
 assert_rc "up converges the appliance miner under its lifecycle lock" "$?" 0
+
+# shellcheck source=tests/stack/lifecycle/tls-dir-owner.sh
+source "$HERE/lifecycle/tls-dir-owner.sh" || return $?

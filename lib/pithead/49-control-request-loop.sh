@@ -27,6 +27,9 @@ control_tor_newnym() ( # <control-dir> <id> <actor>; isolate the lock's exit-on-
             if ! printf '%s %s\n' "$first" "$((count + 1))" >"$stamp"; then
                 control_write_result "$cdir/results" "$id" "$(jq -n '{status:"failed",error:"NEWNYM budget unavailable",ts:(now|floor)}')"
                 control_audit "$cdir/audit/control.log" "$id" "$actor" tor-newnym failed
+            elif docker exec tor /usr/local/bin/tor-control-signal.sh GUARDS >/dev/null 2>&1; then
+                control_write_result "$cdir/results" "$id" "$(jq -n '{status:"applied",action:"tor-dropguards",ts:(now|floor)}')"
+                control_audit "$cdir/audit/control.log" "$id" "$actor" tor-dropguards applied
             elif docker exec tor /usr/local/bin/tor-control-signal.sh NEWNYM >/dev/null 2>&1; then
                 control_write_result "$cdir/results" "$id" "$(jq -n '{status:"applied",action:"tor-newnym",ts:(now|floor)}')"
                 control_audit "$cdir/audit/control.log" "$id" "$actor" tor-newnym applied

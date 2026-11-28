@@ -66,8 +66,8 @@ class TestSend:
         with patch.object(tg_mod.requests, "post", return_value=resp) as post:
             n.send("x")
         assert post.call_args.kwargs["proxies"] == {
-            "http": "socks5h://tor:9050",
-            "https": "socks5h://tor:9050",
+            "http": "socks5h://notify:isolate@tor:9050",
+            "https": "socks5h://notify:isolate@tor:9050",
         }
 
     def test_send_swallows_network_error(self):

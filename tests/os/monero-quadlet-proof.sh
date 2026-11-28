@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # A disposable native unit rendered by the shipped CLI. It has separate data, a private bridge
 # network with no default route, a unique name and loopback host ports.
-set -euo pipefail
+exec 2>&1
+set -Eeuo pipefail
+trap 'echo "FAIL: native Quadlet proof stopped at line $LINENO: $BASH_COMMAND"' ERR
 no_default_route() {
     awk 'NR > 1 && $2 == "00000000" && $8 == "00000000" { default_route=1 } END { exit default_route }' "$1"
 }
@@ -141,7 +143,7 @@ snapshot() {
     podman inspect "$proof_name" | jq -c '.[0] | {State:{StartedAt:.State.StartedAt,Health:(.State.Health // .State.Healthcheck)}}'
 }
 observation() {
-    snapshot | podman run --pull=never --rm -i --name "$proof_name-client" --network "$network" --entrypoint python3 "$client_image" -c 'import json,sys
+    snapshot | podman run --pull=never --rm -i --name "$proof_name-client" --network "$network" -e TOR_SOCKS_PROXY=socks5h://127.0.0.1:9050 --entrypoint python3 "$client_image" -c 'import json,sys
 from mining_dashboard.collector.containers import parse_monero_peers,_epoch
 p=json.load(sys.stdin)
 r=parse_monero_peers(p)
