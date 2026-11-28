@@ -647,6 +647,7 @@ shell argument or a log line.
 Measured on a macOS host driving the container (#2078), not inferred. "Container" means
 `make test-container`, which runs the tier in `tests/runner/Dockerfile` against the host's Docker
 daemon. A tier that needs something the container cannot supply says so.
+
 The image's system `python3` has no `requests`, so the XvB gate-payload self-test in
 `tests/os/appliance-xvb-gate-wait.sh` runs the dashboard modules through `uv` when system `python3`
 cannot import `requests` and `uv` exists, and otherwise uses `python3`.
