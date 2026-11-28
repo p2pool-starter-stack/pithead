@@ -101,7 +101,7 @@ That's local network traffic, not an internet-facing port. See
 
 ### Is the XvB donation mandatory? Will it cost me?
 
-It's optional. XvB switching is on by default and turns off with `xvb.enabled: false`. When on,
+It's optional. Both setup wizards leave XvB off, so a wizard-made install donates nothing unless you turn it on with `xvb.enabled: true`. A hand-written config file that omits `xvb.enabled` uses the reference default of on and can turn it off with `xvb.enabled: false`. When on,
 the decision engine donates only enough hashrate to hold your target tier and routes everything
 else to P2Pool. Because the XvB raffle picks winners at random, donating above a tier's threshold
 earns nothing extra. See
