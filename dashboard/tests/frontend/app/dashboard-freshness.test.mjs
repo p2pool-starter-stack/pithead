@@ -97,12 +97,15 @@ test('focus and visibility each run one extra poll through the in-flight guard; 
     assert.equal(t.fetches.length, 3);
 });
 
-test('401 triggers a reload via the freshness hook (session expired)', async () => {
+test('an expired session (401) reloads once through the freshness hook, and a later 401 poll never reloads again', async () => {
     const t = makeEnv({ responses: [unauthorized(), unauthorized(), unauthorized(), unauthorized()], sleepFn: async () => {} });
     const d = initDashboard(t.env);
     await d.firstLoad;
-    assert.equal(t.reloads.length, 0);
-    await d.tick();
-    assert.equal(t.last().connected, true);
+    await new Promise(setImmediate);
     assert.equal(t.reloads.length, 1);
+    assert.equal(t.last().connected, true);
+    await d.tick();
+    await new Promise(setImmediate);
+    assert.equal(t.reloads.length, 1);
+    assert.equal(t.last().connected, true);
 });
