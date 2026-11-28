@@ -116,7 +116,7 @@ hold_else=$(awk '/^case "\$migration_rc" in$/{f=1} f&&/^esac$/{print; exit} f' "
 assert_not_contains "the hold decision defers fallback cleanup until commitment" "$hold_else" "restore_data_floor_after_fallback"
 assert_contains "a non-matching marker leaves chain services unheld" "$hold_else" "0) hold_chain=1 ;;
 1) ;;"
-commit_cleanup=$(awk '/^    if \[ "\$gate_pass" = 1 \]; then$/{f=1} f&&/stack is serving/{exit} f' "$BOOT")
+commit_cleanup=$(awk '/^    if \[ "\$gate_pass" = 1 \] && \[ "\$SECONDS" -lt "\$gate_deadline" \]; then$/{f=1} f&&/stack is serving/{exit} f' "$BOOT")
 assert_contains "the coordinator commits durably before fallback cleanup" "$commit_cleanup" 'rauc status mark-good && sync || fail_boot'
 assert_contains "fallback cleanup is reached after the successful commit" "$commit_cleanup" 'boot_gate_passed
         commit_config_stamp
