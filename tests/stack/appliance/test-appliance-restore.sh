@@ -393,7 +393,7 @@ printf '%s\n' '-rw------- owner with spaces 999999999 2026-01-01 item' >"$RS/res
 PATH="$RS/bin:$PATH" run_sourced "$RS" restore_setup_archive_within_limits "$RS/restore-names" "$RS/restore-verbose" 2 9
 assert_rc "restore expansion limit rejects an ambiguous owner field" "$?" 1
 printf publish-secret >"$RS/publish-source"
-out=$(PATH="$RS/bin:$PATH" run_sourced "$RS" eval 'install() { return 1; }; rm() { return 1; }; restore_setup_publish_file "$RS/publish-source" "$RS/publish-dest"' 2>&1)
+out=$(PATH="$RS/bin:$PATH" run_sourced "$RS" eval 'cp() { return 1; }; rm() { return 1; }; restore_setup_publish_file "$RS/publish-source" "$RS/publish-dest"' 2>&1)
 assert_contains "failed atomic publication reports cleanup failure" "$out" 'Could not clear temporary setup credentials'
 assert_not_contains "failed publication cleanup never reveals content" "$out" publish-secret
 mkdir "$RS/list-fixture"

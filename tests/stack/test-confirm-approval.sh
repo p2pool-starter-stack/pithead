@@ -321,7 +321,7 @@ fi
     bad "successful target setup records wizard provenance" "audit was not called"
 [ ! -f "$PROV/setup-wizard" ] && ok "successful audit consumes installer provenance marker" ||
     bad "successful audit consumes installer provenance marker" "marker remains"
-assert_contains "installer stages explicit provenance for the target" "$(grep 'install -m 600 /dev/null /boot/efi/pithead-setup-wizard' "$ROOT/lib/pithead/12-firstboot-wizard.sh")" "pithead-setup-wizard"
+assert_contains "installer stages explicit provenance for the target" "$(grep 'install_file /dev/null /boot/efi/pithead-setup-wizard' "$ROOT/lib/pithead/12-firstboot-wizard.sh")" "pithead-setup-wizard"
 assert_contains "installer carries the explicit provenance marker onto the target ESP" \
     "$(sed -n '/for seed in pithead-config.json/,/done/p' "$ROOT/os/installer/pithead-install")" "pithead-setup-wizard"
 assert_contains "direct wizard success records provenance" "$(grep 'control_audit_provisioned.*PWD/data/control' "$ROOT/lib/pithead/12-firstboot-wizard.sh")" "control_audit_provisioned"

@@ -27,7 +27,7 @@ firstboot_wizard() {
     done
     if [ -f "$PRESEED_DIR/pithead-rig.json" ] && ! installer_mode_available && [ ! -f "$PWD/rig.json" ]; then
         if jq -e 'type == "object" and ((.pool // "") | length > 0) and ((.access_token // "") | test("^[0-9a-f]{32}$"))' "$PRESEED_DIR/pithead-rig.json" >/dev/null 2>&1 &&
-            install -m 600 "$PRESEED_DIR/pithead-rig.json" "$PWD/rig.json" 2>/dev/null; then
+            install_file "$PRESEED_DIR/pithead-rig.json" "$PWD/rig.json" 2>/dev/null; then
             record_machine_role rig
             scrub_staged_rig consumed # spent, and it may hold a stratum password
             _console "This machine is now a RigForge rig ($(jq -r '.worker // "unnamed"' "$PWD/rig.json" 2>/dev/null))."
@@ -203,7 +203,7 @@ firstboot_wizard() {
                     # on its /data would turn the stick itself into a rig at the next boot, and
                     # a leftover ESP file would seed every later machine.
                     mount -o remount,rw /boot/efi 2>/dev/null || true
-                    if ! install -m 600 "$PWD/rig.json" /boot/efi/pithead-rig.json; then
+                    if ! install_file "$PWD/rig.json" /boot/efi/pithead-rig.json; then
                         rm -f "$spool/installing" "$spool/handoff.json" "$spool/handoff-ack" "$spool/install-request" "$PWD/rig.json"
                         printf 'Could not stage the rig settings for the installed system — nothing was installed.' | wizard_spool_publish "$spool" error.txt cat
                         wizard_clear_submission_transaction "$spool" || return 1
@@ -352,9 +352,9 @@ firstboot_wizard() {
                     local carry staged_ok=1
                     carry=$(restore_carry_dir)
                     if [ ! -f "$carry/archive" ]; then
-                        install -m 600 "$candidate" /boot/efi/pithead-config.json || staged_ok=0
+                        install_file "$candidate" /boot/efi/pithead-config.json || staged_ok=0
                     fi
-                    install -m 600 /dev/null /boot/efi/pithead-setup-wizard || staged_ok=0
+                    install_file /dev/null /boot/efi/pithead-setup-wizard || staged_ok=0
                     if [ "$staged_ok" -ne 1 ]; then
                         rm -f "$spool/installing" "$spool/handoff.json" "$spool/handoff-ack" "$spool/install-request"
                         printf 'Could not stage the configuration for the installed system — nothing was installed.' | wizard_spool_publish "$spool" error.txt cat

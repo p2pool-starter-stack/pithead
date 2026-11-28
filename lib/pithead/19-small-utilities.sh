@@ -225,6 +225,28 @@ safe_sed() {
     fi
 }
 
+install_file() {
+    local tmp mode="${3:-600}"
+    tmp=$(mktemp "${2}.pithead.XXXXXXXXXX") || return 1
+    if cp -- "$1" "$tmp" && chmod "$mode" "$tmp" && mv -f -- "$tmp" "$2"; then
+        return 0
+    fi
+    rm -f -- "$tmp"
+    return 1
+}
+
+sudo_install_file() {
+    local tmp
+    tmp=$(sudo mktemp "${2}.pithead.XXXXXXXXXX") || return 1
+    if sudo cp -- "$1" "$tmp" && sudo chmod "$3" "$tmp" &&
+        { [ -z "${4:-}" ] || sudo chown -- "$4" "$tmp"; } &&
+        sudo mv -f -- "$tmp" "$2"; then
+        return 0
+    fi
+    sudo rm -f -- "$tmp"
+    return 1
+}
+
 # Like safe_sed, but with sudo — for editing root-owned system files such as /etc/default/grub.
 # Same GNU/BSD in-place (-i) portability split as safe_sed.
 # ponytail: kept as a separate twin of safe_sed on purpose. Collapsing the two onto a shared

@@ -92,8 +92,8 @@ install_miner_connection_to_target() ( # <disk>
     if [ "$(jq -r '.stratum_tls' "$carry/state.json")" = true ]; then
         [ ! -L "$mnt/$rel/key.pem" ] && [ ! -L "$mnt/$rel/cert.pem" ] || return 1
         mkdir -p "$mnt/$rel" || return 1
-        install -m 600 "$carry/tls/key.pem" "$mnt/$rel/key.pem" &&
-            install -m 644 "$carry/tls/cert.pem" "$mnt/$rel/cert.pem" || return 1
+        install_file "$carry/tls/key.pem" "$mnt/$rel/key.pem" &&
+            install_file "$carry/tls/cert.pem" "$mnt/$rel/cert.pem" 644 || return 1
         chown -R "$APP_UID:$APP_GID" "$mnt/$rel" || return 1
     fi
     sync || return 1
@@ -149,7 +149,7 @@ wizard_retain_target_tls() ( # <disk> <final-dir> <private-carry>
     cert_key=$(openssl x509 -in "$dir/cert.pem" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum) || return 1
     private_key=$(openssl pkey -in "$dir/key.pem" -pubout -outform DER | sha256sum) || return 1
     [ "$cert_key" = "$private_key" ] || return 1
-    (umask 077 && mkdir -p "$3" && install -m 600 "$dir/cert.pem" "$3/cert.pem" && install -m 600 "$dir/key.pem" "$3/key.pem")
+    (umask 077 && mkdir -p "$3" && install_file "$dir/cert.pem" "$3/cert.pem" && install_file "$dir/key.pem" "$3/key.pem")
 )
 
 validate_miner_connection_install_request() { # <target-name> <wipe>

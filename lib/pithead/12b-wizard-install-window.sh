@@ -57,7 +57,7 @@ wizard_restore_installer_preseeds() { # <saved-config> <restore-consume-rc>
     if [ "$2" = 0 ]; then
         return 0 # pithead-install --no-preseeds left the source files untouched
     elif [ -n "$1" ] && [ -s "$1" ]; then
-        install -m 600 "$1" /boot/efi/pithead-config.json && rm -f "$1" || rc=1
+        install_file "$1" /boot/efi/pithead-config.json && rm -f "$1" || rc=1
     else
         rm -f /boot/efi/pithead-config.json || rc=1
     fi

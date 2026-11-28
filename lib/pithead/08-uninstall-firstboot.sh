@@ -204,7 +204,7 @@ firstboot_consume_spool() ( # <spool-dir> [<config-dest>]
     # CONFIG_FILE is readonly after sourcing; validate the candidate in a fresh process via the
     # PITHEAD_CONFIG_FILE override (the same parser setup/apply run, against the same file).
     if err=$(PITHEAD_CONFIG_FILE="$cand" PITHEAD_CONFIG_SET=1 bash -c "source '${BASH_SOURCE[0]}' && parse_and_validate_config" 2>&1); then
-        install -m 600 "$cand" "$dest" || {
+        install_file "$cand" "$dest" || {
             wizard_clear_submission_transaction "$spool" || true
             return 1
         }
@@ -253,9 +253,6 @@ record_machine_role() { # <pithead|both|rig>
 # operator's configuration outright whenever the mv failed, for a reason it had already
 # discarded. Structurally, nothing here can remove the file without a copy already on disk.
 #
-# install -m 600, not cp: config.json holds the dashboard password and the wallet address, and
-# the copy must not widen its mode.
-#
 # rc 0 = a copy was kept, 1 = it could not be.
 wizard_keep_failed_config() {
     # #2050: setup sets DEPLOYMENT_COMPLETED=true a third of the way in, so a failure past that
@@ -266,7 +263,7 @@ wizard_keep_failed_config() {
         safe_sed 's/^DEPLOYMENT_COMPLETED=.*/DEPLOYMENT_COMPLETED=false/' "$PWD/$ENV_FILE" ||
             warn "Could not clear the deployment marker — a retry from the setup page will refuse as already provisioned."
     fi
-    if install -m 600 "$PWD/config.json" "$PWD/config.json.failed" 2>/dev/null; then
+    if install_file "$PWD/config.json" "$PWD/config.json.failed" 2>/dev/null; then
         [ -f "$PWD/machine-role" ] || rm -f "$PWD/config.json"
         return 0
     fi
