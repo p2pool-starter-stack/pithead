@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, patch
 
 from mining_dashboard.service.health.tor_heal import (
     BROKEN_AFTER_SEC,
+    COMPLETING_HOLD_SEC,
     COOLDOWN_SEC,
     DISRUPTIVE_SPACING_SEC,
     NEWNYM_ATTEMPTS,
@@ -39,6 +40,17 @@ async def test_completing_circuits_hold_the_disruptive_rung_until_they_stop():
     await _read(healer, {"built_circuits": [1, 2, 3]})
     assert not healer.circuits_completing
     assert healer.decide(False, now[0]) == "heal"
+
+
+async def test_completing_circuits_hold_is_bounded():
+    now = [100000.0]
+    healer = _healer(now)
+    healer._attempts = NEWNYM_ATTEMPTS
+    healer._failing_since = now[0] - 4 * COMPLETING_HOLD_SEC
+    healer._last_attempt = now[0]
+    healer.circuits_completing = True
+    assert healer.decide(False, now[0] + COMPLETING_HOLD_SEC - 1) is None
+    assert healer.decide(False, now[0] + COMPLETING_HOLD_SEC) == "heal"
 
 
 async def test_completing_circuits_never_hold_a_newnym_rung():

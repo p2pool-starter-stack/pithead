@@ -4,7 +4,7 @@ stage=initialization
 trap 'printf "Tor heal dropcells guest failed at %s (line %s, exit %s)\n" "$stage" "$LINENO" "$?" >&2' ERR
 FAULT_SEC=$((150 * 60))
 SPACING_SEC=$((60 * 60))
-TOLERANCE_SEC=120
+TOLERANCE_SEC=60
 cd /data/pithead
 control=$(sed -n 's/^CONTROL_DIR=//p' .env)
 data=$(sed -n 's/^TOR_DATA_DIR=//p' .env)
@@ -81,6 +81,7 @@ stage=verify-fault
 [ "$open_seen" = 1 ]
 grep -Eq '^tor-(newnym|dropguards) ' "$work/timeline"
 disruptive=$(awk '$1 == "tor-restart" || $1 == "tor-reset" || ($1 == "tor-recover" && $2 == "applied") {print $NF}' "$work/timeline" | sort -n | uniq)
+[ -n "$disruptive" ]
 prev=""
 for t in $disruptive; do
     if [ -n "$prev" ] && [ $((t - prev)) -lt $((SPACING_SEC - TOLERANCE_SEC)) ]; then
@@ -101,4 +102,4 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     sleep 30
 done
 [ "$healthy" = 1 ]
-echo 'PASS: with circuit creation dropped on an open channel, disruptive rungs stay 60 minutes apart and Tor recovers once the fault lifts (#4280)'
+echo 'PASS: with data packets dropped on an open channel, disruptive rungs stay 60 minutes apart and Tor recovers once the fault lifts (#4280)'

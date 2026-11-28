@@ -69,10 +69,10 @@ exercises its wrapper without a guest.
 
 The opt-in `tor-heal-dropcells` phase provisions its own local-node guest and drops the Tor
 container's established-connection data packets with an `nft` forward rule (packets longer than
-400 bytes, so circuit-create cells are lost while keep-alive acknowledgements still pass and the
-guard channel stays open) for 150 minutes (#4280). It requires an open channel and a non-zero drop
-counter, a NEWNYM round, and every pair of disruptive rungs (state reset or Tor restart) at least 60
-minutes apart, then Tor healthy within 30 minutes of lifting the rule. The rule and Tor state are
+400 bytes, so relay cells, circuit-create cells included, are lost while keep-alive acknowledgements
+still pass and the guard channel stays open) for 150 minutes (#4280). It requires an open channel and a
+non-zero drop counter, a NEWNYM round, at least one disruptive rung, and every pair of disruptive rungs
+(state reset or Tor restart) within a minute of 60 minutes or more apart, then Tor healthy within 30 minutes of lifting the rule. The rule and Tor state are
 restored on exit. Submit it with `--timeout-minutes 240`. `selftest-tor-heal-dropcells.sh`
 exercises its wrapper without a guest.
 

@@ -34,6 +34,7 @@ FIRST_ACTION_AFTER_SEC = 5 * 60
 BROKEN_AFTER_SEC = 15 * 60
 FAST_PROBE_SEC = 60
 DISRUPTIVE_SPACING_SEC = 60 * 60
+COMPLETING_HOLD_SEC = 2 * 60 * 60
 NEWNYM_ATTEMPTS = 2
 MAX_ATTEMPTS = 4
 DISRUPTIVE_WINDOW_SEC = 24 * 3600
@@ -171,7 +172,7 @@ class TorEgressHealer(TorExhaustedMixin, TorHistoryMixin):
             if len(self._disruptive) >= MAX_DISRUPTIVE_PER_DAY:
                 self._past_cap = True
                 return "exhausted"
-            if self.circuits_completing:
+            if self.circuits_completing and now - (self._last_attempt or now) < COMPLETING_HOLD_SEC:
                 logger.warning("Tor circuits are completing; holding the next disruptive rung.")
                 return None
             if self._disruptive and now - self._disruptive[-1] < DISRUPTIVE_SPACING_SEC:
@@ -263,8 +264,6 @@ class TorEgressHealer(TorExhaustedMixin, TorHistoryMixin):
                 return
             await self._observe_tor_start()
             await self._read_history()
-            if self._clear_history:
-                self._request_history()
             if self._pending_refresh is not None:
                 result = control_service.result(self._pending_refresh)
                 if result is None:
@@ -301,7 +300,7 @@ class TorEgressHealer(TorExhaustedMixin, TorHistoryMixin):
             outage_minutes = (now - self._failing_since) / 60 if self._failing_since else 0
             action = self.decide(ok, now)
             self._disruptive_round = action == "heal" and self._attempts > NEWNYM_ATTEMPTS
-            if self._attempts:
+            if self._attempts or self._clear_history:
                 self._request_history()
             if action == "heal":
                 if self._attempts <= NEWNYM_ATTEMPTS:
