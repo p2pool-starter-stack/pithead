@@ -31,11 +31,17 @@ _xvb_short_wait() {
 }
 
 _xvb_short_route_payload() {
-    printf '%s\n' "import json" \
+    printf '%s\n' "import asyncio, json" \
         "from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient" \
         "from mining_dashboard.config.config import PROXY_API_PORT, PROXY_AUTH_TOKEN, PROXY_HOST, XVB_DONOR_ID, XVB_POOL_URL" \
-        "pools = XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, PROXY_AUTH_TOKEN).get_config().get('pools', [])" \
-        "print(json.dumps({'xvb_url': XVB_POOL_URL, 'donor': XVB_DONOR_ID, 'pools': [{'url': p.get('url'), 'user': p.get('user'), 'enabled': p.get('enabled'), 'tor': bool(p.get('socks5'))} for p in pools]}))" |
+        "from mining_dashboard.service.storage_service import StateManager" \
+        "from mining_dashboard.service.xvb.algo_service import AlgoService" \
+        "async def main():" \
+        "    client = XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, PROXY_AUTH_TOKEN)" \
+        "    await AlgoService(StateManager(), client, None).switch_miners('XVB')" \
+        "    pools = client.get_config().get('pools', [])" \
+        "    print(json.dumps({'xvb_url': XVB_POOL_URL, 'donor': XVB_DONOR_ID, 'pools': [{'url': p.get('url'), 'user': p.get('user'), 'enabled': p.get('enabled'), 'tor': bool(p.get('socks5'))} for p in pools]}))" \
+        "asyncio.run(main())" |
         base64 | tr -d '\n'
 }
 
