@@ -270,9 +270,8 @@ assert_running_state() {
         esac } || it_skip_leg "tari DNS sinkholed — no clearnet resolver (#162)" "tari.mode=$tmode (#1855) — no tari container to inspect" by-design
         # The entrypoint's fork check (#2618) reads the header at 350,000 once gRPC answers; a bench on the canonical chain must log its hash.
         [ "$tmode" = "local" ] && assert_eq "tari fork-check: header 350000 is canonical (#2618)" "$(rx "for _ in \$(seq 60); do docker logs tari 2>&1 | grep -qF '[pithead fork-check] header 350000 is canonical (663b7254df69989b33cec8325815631e2b455f7252c230976f1b50dc8daced47)' && { echo 1; exit 0; }; sleep 5; done; echo 0")" "1" || it_skip_leg "tari fork-check: header 350000 is canonical (#2618)" "tari.mode=$tmode (#1855) — no tari container to inspect" by-design
-        # Inspect PID 1 after the entrypoint has appended the password and TLS flags.
         local proxy_args
-        proxy_args="$(rx "set -o pipefail; docker exec xmrig-proxy cat /proc/1/cmdline | jq -Rs 'split(\"\\u0000\") | .[:-1]'" 2>/dev/null)"
+        proxy_args="$(rx "set -o pipefail; docker exec xmrig-proxy cat /tmp/xmrig-proxy.proc/cmdline | jq -Rs 'split(\"\\u0000\") | .[:-1]'" 2>/dev/null)"
         case "$proxy_args" in
         *'--donate-level='*) it_pass "xmrig-proxy dev-fee donate-level is explicit + live (#173)" ;;
         *) it_fail "xmrig-proxy dev-fee donate-level is explicit + live (#173)" "no --donate-level in proxy argv" ;;

@@ -109,7 +109,6 @@ if mode == "local":
     summary(4, False)
     require(request("/", BAD_AUTH)[0] == 401)
     summary(5, True)
-    # Even local wrong credentials on the exact health path are ordinary failures.
     require(request(PROBE, BAD_AUTH, headers={"X-Pithead-Boot-Probe": CAPABILITY})[0] == 401)
     data = summary(6, True)
     require(sum(e["uri"] == PROBE and e["status"] == 401 for e in data["entries"]) == 1, data)

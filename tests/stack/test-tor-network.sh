@@ -609,15 +609,13 @@ seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 
-# p2pool compose↔image coupling fail-safe (#273): clearnet is off, so apply renders P2POOL_FLAGS with
-# the #165 --socks5. doctor reads the RUNNING p2pool argv (/proc/1/cmdline, stubbed via P2POOL_PROC1)
-# and must FAIL loudly if --socks5 is absent (a stale pre-#165 image silently dropping the env flags),
-# and pass when it IS present. The config above (p2pool.pool=mini, clearnet default off) is reused.
 dr273() { cd "$V" && P2POOL_PROC1="$1" PATH="$V/bin:$PATH" ./pithead doctor 2>&1; }
 assert_contains "doctor FAILs when p2pool isn't on Tor — stale image (#273)" \
     "$(dr273 'p2pool --host 172.28.0.26 --rpc-port 18081 --mini')" "STALE p2pool image"
 assert_contains "doctor OK when p2pool IS routed over Tor (#273)" \
     "$(dr273 'p2pool --host 172.28.0.26 --mini --socks5 172.28.0.25:9050 --socks5-proxy-type tor')" "routes outbound sidechain P2P via Tor"
+assert_contains "doctor reads PID 1 of an image without the proc link (#4159)" \
+    "$(P2POOL_NO_PROC_LINK=1 dr273 'p2pool --host 172.28.0.26 --rpc-port 18081 --mini')" "STALE p2pool image"
 
 # tor wrapper entrypoint: opt-in dashboard hidden service (#343). The HiddenService block is appended
 # to the rendered torrc ONLY when DASHBOARD_ONION_ENABLED=true, targeting the bridge gateway

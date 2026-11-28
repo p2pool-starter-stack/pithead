@@ -60,7 +60,7 @@ proxy_password_matches() { # <argv-json> <configured-password> <container-env-js
 assert_proxy_password_live() { # <config-json>
     local configured argv env row="stratum password matches live daemon argv (#152/#3092)"
     if ! configured=$(printf '%s' "$1" | jq -er '.p2pool.stratum_password | if . == null then "" elif type == "string" then . else error("invalid password mode") end' 2>/dev/null) ||
-        ! argv=$(rx "set -o pipefail; docker exec xmrig-proxy cat /proc/1/cmdline | jq -Rs 'split(\"\\u0000\") | .[:-1]'" 2>/dev/null) ||
+        ! argv=$(rx "set -o pipefail; docker exec xmrig-proxy cat /tmp/xmrig-proxy.proc/cmdline | jq -Rs 'split(\"\\u0000\") | .[:-1]'" 2>/dev/null) ||
         ! env=$(rx "docker inspect xmrig-proxy --format '{{json .Config.Env}}'" 2>/dev/null); then
         it_fail "$row" "config, daemon argv or rendered environment unavailable"
     elif proxy_password_matches "$argv" "$configured" "$env" >/dev/null 2>&1; then

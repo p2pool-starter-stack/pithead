@@ -82,14 +82,15 @@ for svc in p2pool xmrig-proxy; do
         sleep 0.1
     done
     rl_same=no
-    [ "$(cat "$RL_BIN/pidfile" 2>/dev/null)" = "$rl_pid" ] && rl_same=yes
+    [ "$(readlink "/tmp/$svc.proc")" = "/proc/$(cat "$RL_BIN/pidfile" 2>/dev/null)" ] && rl_same=yes
     kill -TERM "$rl_pid" 2>/dev/null
     wait "$rl_pid" 2>/dev/null
     rl_term="$rl_term $svc:$rl_same:$(cat "$RL_BIN/termfile" 2>/dev/null)"
+    rm -f "/tmp/$svc.proc"
 done
 assert_eq "known retry line shows once per minute" "${rl_once# }" "p2pool:1 xmrig-proxy:1"
 assert_eq "hidden repeats are counted" "${rl_hidden# }" "p2pool:1 xmrig-proxy:1"
 assert_eq "a non-retry error line passes through" "${rl_err# }" "p2pool:1 xmrig-proxy:1"
 assert_eq "a final line without a newline passes through" "${rl_tail# }" "p2pool:1 xmrig-proxy:1"
 assert_eq "the child's exit status propagates" "${rl_rc# }" "p2pool:7 xmrig-proxy:7"
-assert_eq "the daemon stays PID 1 of the wrapper and receives TERM" "${rl_term# }" "p2pool:yes:term xmrig-proxy:yes:term"
+assert_eq "the proc link names the daemon and TERM to the wrapper reaches it" "${rl_term# }" "p2pool:yes:term xmrig-proxy:yes:term"

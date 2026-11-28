@@ -109,6 +109,10 @@ jobs:
       - uses: ./.github/actions/docker-registry-mirror
       - name: Build under umask 077 and prove non-root file access
         run: TMPDIR="$RUNNER_TEMP" bash tests/stack/standalone/test_image_permissions.sh "${{ matrix.service }}" "pithead-${{ matrix.service }}:ci"
+      - name: Prove the wrapper entrypoint drains the daemon's last lines and forwards stop
+        if: matrix.service == 'p2pool' || matrix.service == 'xmrig-proxy'
+        env: {TMPDIR: "${{ runner.temp }}"}
+        run: bash tests/stack/standalone/test_entrypoint_drain.sh "${{ matrix.service }}" "pithead-${{ matrix.service }}:ci"
       - name: Prove offline Tor saturated-state recovery
         if: matrix.service == 'tor'
         env: {TMPDIR: "${{ runner.temp }}"}

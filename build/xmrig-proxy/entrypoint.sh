@@ -49,10 +49,22 @@ _exec_quiet() {
     rm -f "$_qr_fifo"
     mkfifo "$_qr_fifo" 2>/dev/null || {
         echo "[$_qr_name-entrypoint] cannot create the log fifo: retry lines are not rate-limited" >&2
+        ln -sfn "/proc/$$" "/tmp/$_qr_name.proc" 2>/dev/null || :
         exec "$@"
     }
     _quiet_repeats "$_qr_pat" "$_qr_name" <"$_qr_fifo" &
-    exec "$@" >"$_qr_fifo" 2>&1
+    _qr_filter=$!
+    "$@" >"$_qr_fifo" 2>&1 &
+    _qr_pid=$!
+    ln -sfn "/proc/$_qr_pid" "/tmp/$_qr_name.proc" 2>/dev/null || :
+    trap 'kill -TERM "$_qr_pid" 2>/dev/null' TERM INT
+    while :; do
+        _qr_rc=0
+        wait "$_qr_pid" || _qr_rc=$?
+        if [ "$_qr_rc" -le 128 ] || ! kill -0 "$_qr_pid" 2>/dev/null; then break; fi
+    done
+    wait "$_qr_filter" || :
+    exit "$_qr_rc"
 }
 
 _exec_quiet 'connect error: "connection refused"' xmrig-proxy xmrig-proxy "$@"

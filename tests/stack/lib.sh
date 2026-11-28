@@ -200,7 +200,8 @@ case "$*" in
   "exec tor cat /var/lib/tor/monero/hostname") echo "mona.onion" ;;
   "exec tor cat /var/lib/tor/tari/hostname")   echo "taria.onion" ;;
   "exec tor cat /var/lib/tor/p2pool/hostname") echo "p2pa.onion" ;;
-  "exec p2pool cat /proc/1/cmdline") printf '%s' "${P2POOL_PROC1:-}" ;;  # #273: tests set the running p2pool argv
+  "exec p2pool cat /tmp/p2pool.proc/cmdline") [ -z "${P2POOL_NO_PROC_LINK:-}" ] || exit 1; printf '%s' "${P2POOL_PROC1:-}" ;;
+  "exec p2pool cat /proc/1/cmdline") printf '%s' "${P2POOL_PROC1:-}" ;;
   *hash-password*)
     # Fake `caddy hash-password` (#8): a per-password digest so enable/change paths differ, and it
     # never echoes the plaintext back (real bcrypt doesn't either) — keeps the leak checks honest.

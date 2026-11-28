@@ -556,6 +556,10 @@ A couple of things to know:
 - **No built-in redirect on a custom port.** In HTTPS mode the default setup also answers on port 80
   and redirects to HTTPS. On a custom port that redirect is switched off (it would otherwise keep
   holding port 80, defeating the point). Your fronting proxy owns the http→https bounce.
+- **The default port-80 redirect is pithead's, not Caddy's.** Caddy's automatic redirect sends
+  any `Host` header back as the target, which made port 80 an open redirector (#1123). pithead
+  turns it off and renders its own port-80 sites: the configured dashboard hosts redirect to
+  themselves, and any other host redirects to the box's own address.
 - **This does not remove Caddy or its login.** `dashboard.port` only moves the port. The dashboard
   itself still binds `127.0.0.1:8000` with no authentication of its own — Caddy checks the
   `dashboard.auth` login before a request reaches it — so keep Caddy in the path and set a password

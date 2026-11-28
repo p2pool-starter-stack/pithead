@@ -301,7 +301,7 @@ fault_p2pool_cold_cache_dns() {
     # After the waits: until the entrypoint execs p2pool, PID 1 is the shell and carries no flags.
     # Both are redacted before any assertion can print them: argv carries the wallet, the capture
     # carries bench addresses. Flag names and DNS query names survive redaction.
-    argv="$(rx "docker exec p2pool cat /proc/1/cmdline 2>/dev/null | tr '\\0' ' '" | redact)"
+    argv="$(rx "docker exec p2pool cat /tmp/p2pool.proc/cmdline 2>/dev/null | tr '\\0' ' '" | redact)"
     rx "docker exec p2pool getent hosts $ctr_canary" >/dev/null 2>&1
     cap="$(rx "docker logs itest-dnswatch 2>/dev/null; docker rm -f itest-dnswatch >/dev/null 2>&1" | redact)"
     assert_contains "port-53 capture saw the host canary lookup, so it is not blind (#2496)" "$cap" "$canary"

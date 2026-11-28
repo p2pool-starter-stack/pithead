@@ -107,12 +107,6 @@ generate_caddyfile() {
             }
         }
     }'
-    # Caddy LAN listen port (#740). An empty HOST_PORT — or a value that equals the scheme's own
-    # default (443 for HTTPS, 80 for HTTP) — keeps the standard port and renders today's Caddyfile
-    # verbatim. A custom port is appended to the site address so an existing reverse proxy on the
-    # host can keep 80/443 (co-hosting, #181). In HTTPS mode a custom port also disables Caddy's
-    # automatic :80 -> HTTPS redirect (a global option emitted once at the top of the file) so port
-    # 80 is left free for that proxy; the fronting proxy owns any http->https bounce instead.
     local dport="${HOST_PORT:-}" port_suffix="" redirects_off="" own_plain_port=0 plain_ports=" :80 127.0.0.1:80${verify_site:+ 127.0.0.1:8001}"
     if [ "$DASHBOARD_SECURE" == "true" ]; then
         [ "$dport" == "443" ] && dport=""
@@ -120,17 +114,6 @@ generate_caddyfile() {
             port_suffix=":$dport"
             redirects_off=1
         else
-            # Caddy's own HTTP->HTTPS redirect is a CATCH-ALL, and its target is the Host header the
-            # request carried: :80 answered `Host: evil.example` with `308 -> https://evil.example`
-            # (#1123, measured against the running bench appliance, not read off the config). Same
-            # open redirector #1118 closed in the setup wizard, except this one is the state the
-            # machine spends its life in, and it lands the operator on the dashboard login — the
-            # screen where they type the dashboard password.
-            #
-            # So take :80 over rather than leaving it to auto_https. The site is built below, once
-            # $site_hosts and the bind list exist: this is the port decision, that is the address
-            # decision, and the bind list is what keeps the new block from reopening the addresses
-            # #1021 closed.
             own_plain_port=1
             redirects_off=1
         fi
