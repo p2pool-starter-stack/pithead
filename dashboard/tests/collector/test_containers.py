@@ -86,6 +86,7 @@ class TestGetContainerHealth:
                 "exit_code": None,
                 "held_since_boot": False,
                 "started_at": None,
+                "circuit": None,
             }
         }
 
@@ -316,3 +317,94 @@ def test_an_impossible_observation_interval_is_unavailable():
     for start, end in ((-20, -30), (20, -30), (-20, 20)):
         payload = _peers_payload(Start=_iso(start), End=_iso(end))
         assert containers.parse_monero_peers(payload, now=_NOW) == _UNAVAILABLE
+
+
+def _circuit_payload(output='pithead-tor-circuit {"established":true}\n', **kw):
+    entry = {"Start": _iso(-31), "End": _iso(-30), "ExitCode": 0, "Output": output}
+    entry.update(kw)
+    return {"State": {"StartedAt": _iso(-600), "Health": {"Status": "healthy", "Log": [entry]}}}
+
+
+def test_a_fresh_established_circuit_reading_is_read():
+    assert containers.parse_tor_circuit(_circuit_payload(), now=_NOW) is True
+
+
+def test_a_fresh_missing_circuit_reading_is_a_real_false():
+    payload = _circuit_payload('pithead-tor-circuit {"established":false}\n')
+    assert containers.parse_tor_circuit(payload, now=_NOW) is False
+
+
+def test_an_unhealthy_tor_run_still_carries_its_circuit_reading():
+    payload = _circuit_payload('pithead-tor-circuit {"established":false}\n', ExitCode=1)
+    payload["State"]["Health"]["Status"] = "unhealthy"
+    assert containers.parse_tor_circuit(payload, now=_NOW) is False
+
+
+def test_a_stale_circuit_reading_is_unavailable():
+    payload = _circuit_payload(End=_iso(-(containers.TOR_CIRCUIT_FRESH_SEC + 1)))
+    assert containers.parse_tor_circuit(payload, now=_NOW) is None
+
+
+def test_a_circuit_reading_from_before_this_container_run_is_unavailable():
+    payload = _circuit_payload(Start=_iso(-900), End=_iso(-899))
+    assert containers.parse_tor_circuit(payload, now=_NOW) is None
+
+
+def test_only_the_last_healthcheck_run_counts_for_the_circuit():
+    payload = _circuit_payload()
+    payload["State"]["Health"]["Log"].append(
+        {"Start": _iso(-2), "End": _iso(-1), "ExitCode": 0, "Output": ""}
+    )
+    assert containers.parse_tor_circuit(payload, now=_NOW) is None
+
+
+def test_malformed_circuit_observations_are_unavailable():
+    for bad in (
+        "",
+        "pithead-tor-circuit {not json}\n",
+        "pithead-tor-circuit [1]\n",
+        'pithead-tor-circuit {"established":"yes"}\n',
+        'pithead-tor-circuit {"established":1}\n',
+        'pithead-tor-circuit {"established":null}\n',
+        'pithead-tor-circuit {"other":true}\n',
+        "Tor health: bootstrap reply unavailable.\n",
+    ):
+        assert containers.parse_tor_circuit(_circuit_payload(bad), now=_NOW) is None, bad
+
+
+def test_a_missing_or_odd_circuit_payload_is_unavailable():
+    for payload in (None, {}, {"State": {}}, {"State": {"Health": {"Log": []}}}, {"State": "x"}):
+        assert containers.parse_tor_circuit(payload, now=_NOW) is None
+
+
+async def test_get_container_health_surfaces_the_tor_circuit():
+    tor_payload = {
+        "State": {
+            "Running": True,
+            "Restarting": False,
+            "StartedAt": _iso(-600),
+            "Health": {
+                "Status": "healthy",
+                "Log": [
+                    {
+                        "Start": _iso(-31),
+                        "End": _iso(-30),
+                        "ExitCode": 0,
+                        "Output": 'pithead-tor-circuit {"established":true}\n',
+                    }
+                ],
+            },
+        },
+        "RestartCount": 0,
+    }
+    responses = [_FakeResp(200, tor_payload)] + [_FakeResp(404)] * (
+        len(containers.MONITORED_CONTAINERS) - 1
+    )
+    with (
+        patch.object(
+            containers.aiohttp, "ClientSession", return_value=_AsyncCM(_session(responses))
+        ),
+        patch.object(containers.time, "time", return_value=_NOW),
+    ):
+        out = await containers.get_container_health()
+    assert out["tor"]["circuit"] is True

@@ -41,4 +41,7 @@ jobs:
         run: bash tests/integration/mini-stack/test-real-wallets.sh
       - name: Dump dashboard logs on failure
         if: failure()
+        env:
+          PITHEAD_ITEST_CONTROL_DIR: /tmp/itest-control
+          PITHEAD_LOCK_FILE: /tmp/itest.lock
         run: docker compose -f tests/integration/mini-stack/docker-compose.fake.yml logs --no-color || true
