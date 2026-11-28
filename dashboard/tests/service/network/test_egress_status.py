@@ -10,7 +10,12 @@ from mining_dashboard.service.network.egress_status import (
     ENFORCED,
     MISSING,
     UNVERIFIED,
+    WATCHDOG_CLEAN,
+    WATCHDOG_LEAKING,
+    WATCHDOG_NOT_OBSERVED,
     egress_firewall_state,
+    live_watchdog_verdict,
+    watchdog_verdict,
     with_firewall_state,
 )
 from mining_dashboard.service.network.topology import compute_topology
@@ -104,9 +109,7 @@ def test_a_missing_firewall_warns_and_claims_nothing_is_blocked():
     assert s["label"].startswith("Tor-only egress firewall MISSING")
     assert "blocked by the egress firewall" not in s["label"]
     assert s["blocked_by_firewall"] == 0
-    assert (
-        s["leaks"] == 0
-    )
+    assert s["leaks"] == 0
     assert not any(c.get("blocked_by_firewall") for comp in p["components"] for c in comp["conns"])
     badge = _egress_badge(s)
     assert badge["variant"] == "warn"
@@ -157,13 +160,18 @@ def test_the_live_builders_read_the_host_file(tmp_path, monkeypatch):
     assert egress_status.live_firewall_state() is None
 
 
-from mining_dashboard.service.network.egress_status import (
-    WATCHDOG_CLEAN,
-    WATCHDOG_LEAKING,
-    WATCHDOG_NOT_OBSERVED,
-    watchdog_verdict,
-    live_watchdog_verdict,
-)
+def _audit(watchdog, checked_at=NOW - 60):
+    return {
+        "rc": 0,
+        "verdict": "enforced",
+        "checked_at": checked_at,
+        "host_audit": {
+            "verdict": "present",
+            "counters": [],
+            "would_drop": 42,
+            "watchdog": watchdog,
+        },
+    }
 
 
 @pytest.mark.parametrize(
@@ -172,114 +180,36 @@ from mining_dashboard.service.network.egress_status import (
         ("clean", WATCHDOG_CLEAN),
         ("leaking", WATCHDOG_LEAKING),
         ("not-observed", WATCHDOG_NOT_OBSERVED),
+        ("bogus", WATCHDOG_NOT_OBSERVED),
+        (None, WATCHDOG_NOT_OBSERVED),
     ],
 )
 def test_watchdog_verdict_reads_the_host_audit_watchdog_field(tmp_path, wd, expected):
-    path = _write(tmp_path, {
-        "rc": 0, "verdict": "enforced", "checked_at": NOW - 60,
-        "host_audit": {"verdict": "present", "counters": [], "would_drop": 42, "watchdog": wd},
-    })
-    assert watchdog_verdict(path) == expected
+    assert watchdog_verdict(_write(tmp_path, _audit(wd)), now=NOW) == expected
 
 
-def test_watchdog_verdict_returns_not_observed_when_no_file(tmp_path):
-    assert watchdog_verdict(str(tmp_path / "absent.json")) == WATCHDOG_NOT_OBSERVED
-
-
-def test_watchdog_verdict_returns_not_observed_when_no_host_audit(tmp_path):
-    path = _write(tmp_path, {"rc": 0, "verdict": "enforced", "checked_at": NOW})
-    assert watchdog_verdict(path) == WATCHDOG_NOT_OBSERVED
-
-
-def test_watchdog_verdict_returns_not_observed_when_no_watchdog_field(tmp_path):
-    path = _write(tmp_path, {
-        "rc": 0, "verdict": "enforced", "checked_at": NOW,
-        "host_audit": {"verdict": "present", "counters": [], "would_drop": 42},
-    })
-    assert watchdog_verdict(path) == WATCHDOG_NOT_OBSERVED
-
-
-def test_watchdog_verdict_returns_not_observed_when_host_audit_not_a_dict(tmp_path):
-    path = _write(tmp_path, {"rc": 0, "verdict": "enforced", "checked_at": NOW, "host_audit": "bad"})
-    assert watchdog_verdict(path) == WATCHDOG_NOT_OBSERVED
-
-
-def test_watchdog_verdict_returns_not_observed_for_unknown_value(tmp_path):
-    path = _write(tmp_path, {
-        "rc": 0, "verdict": "enforced", "checked_at": NOW,
-        "host_audit": {"verdict": "present", "counters": [], "would_drop": 42, "watchdog": "bogus"},
-    })
-    assert watchdog_verdict(path) == WATCHDOG_NOT_OBSERVED
+@pytest.mark.parametrize(
+    "body",
+    [
+        None,
+        "{not json",
+        {"rc": 0, "verdict": "enforced", "checked_at": NOW},
+        {"rc": 0, "verdict": "enforced", "checked_at": NOW, "host_audit": "bad"},
+        _audit("leaking", checked_at=NOW - 3 * 120 - 1),
+        _audit("leaking", checked_at=True),
+    ],
+)
+def test_anything_but_a_fresh_host_audit_verdict_is_not_observed(tmp_path, body):
+    path = str(tmp_path / "absent.json") if body is None else _write(tmp_path, body)
+    assert watchdog_verdict(path, now=NOW) == WATCHDOG_NOT_OBSERVED
 
 
 def test_live_watchdog_verdict_obeys_firewall_optout(tmp_path, monkeypatch):
-    monkeypatch.setattr(egress_status, "STATUS_PATH", _write(tmp_path, {
-        "rc": 0, "verdict": "enforced", "checked_at": NOW,
-        "host_audit": {"verdict": "present", "counters": [], "would_drop": 42, "watchdog": "clean"},
-    }))
+    monkeypatch.setattr(
+        egress_status, "STATUS_PATH", _write(tmp_path, _audit("leaking", checked_at=NOW))
+    )
+    monkeypatch.setattr(egress_status.time, "time", lambda: NOW)
     monkeypatch.setattr(egress.config, "TOR_EGRESS_FIREWALL", False)
     assert live_watchdog_verdict() is None
     monkeypatch.setattr(egress.config, "TOR_EGRESS_FIREWALL", True)
-    assert live_watchdog_verdict() == WATCHDOG_CLEAN
-
-
-def test_watchdog_edges_clean_to_leaking_fires_alert():
-    from mining_dashboard.service.notify.egress_firewall_edges import EgressFirewallEdgesMixin
-    m = EgressFirewallEdgesMixin()
-    m.EVT_EGRESS_WATCHDOG_LEAK = "egress_watchdog_leak"
-    m._fmt = lambda t: t
-    m._record_incident = lambda evt: None
-    assert m._egress_watchdog_edges(WATCHDOG_CLEAN) == []
-    result = m._egress_watchdog_edges(WATCHDOG_LEAKING)
-    assert len(result) == 1
-    assert result[0][0] == "egress_watchdog_leak"
-    assert "non-Tor egress" in result[0][1]
-
-
-def test_watchdog_edges_leaking_to_clean_fires_recovery():
-    from mining_dashboard.service.notify.egress_firewall_edges import EgressFirewallEdgesMixin
-    m = EgressFirewallEdgesMixin()
-    m.EVT_EGRESS_WATCHDOG_LEAK = "egress_watchdog_leak"
-    m._fmt = lambda t: t
-    m._record_incident = lambda evt: None
-    m._egress_watchdog_edges(WATCHDOG_LEAKING)
-    result = m._egress_watchdog_edges(WATCHDOG_CLEAN)
-    assert len(result) == 1
-    assert result[0][0] == "egress_watchdog_leak"
-    assert "clean" in result[0][1].lower()
-
-
-def test_watchdog_edges_not_observed_drops_baseline():
-    from mining_dashboard.service.notify.egress_firewall_edges import EgressFirewallEdgesMixin
-    m = EgressFirewallEdgesMixin()
-    m.EVT_EGRESS_WATCHDOG_LEAK = "egress_watchdog_leak"
-    m._fmt = lambda t: t
-    m._record_incident = lambda evt: None
-    assert m._egress_watchdog_edges(WATCHDOG_NOT_OBSERVED) == []
-    assert m._prev_watchdog is None
-    result = m._egress_watchdog_edges(WATCHDOG_LEAKING)
-    assert len(result) == 1
-    assert result[0][0] == "egress_watchdog_leak"
-
-
-def test_watchdog_edges_optout_clears_state():
-    from mining_dashboard.service.notify.egress_firewall_edges import EgressFirewallEdgesMixin
-    m = EgressFirewallEdgesMixin()
-    m.EVT_EGRESS_WATCHDOG_LEAK = "egress_watchdog_leak"
-    m._fmt = lambda t: t
-    m._record_incident = lambda evt: None
-    m._egress_watchdog_edges(WATCHDOG_CLEAN)
-    m._egress_watchdog_edges(None)
-    assert m._prev_watchdog is None
-
-
-def test_watchdog_edges_same_state_sends_nothing():
-    from mining_dashboard.service.notify.egress_firewall_edges import EgressFirewallEdgesMixin
-    m = EgressFirewallEdgesMixin()
-    m.EVT_EGRESS_WATCHDOG_LEAK = "egress_watchdog_leak"
-    m._fmt = lambda t: t
-    m._record_incident = lambda evt: None
-    m._egress_watchdog_edges(WATCHDOG_CLEAN)
-    assert m._egress_watchdog_edges(WATCHDOG_CLEAN) == []
-    m._egress_watchdog_edges(WATCHDOG_LEAKING)
-    assert m._egress_watchdog_edges(WATCHDOG_LEAKING) == []
+    assert live_watchdog_verdict() == WATCHDOG_LEAKING

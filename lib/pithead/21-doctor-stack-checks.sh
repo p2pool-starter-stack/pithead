@@ -397,17 +397,12 @@ check_monerod_synchronized() {
 }
 
 check_host_egress_audit() {
-    local arc=0 cj wd watchdog="n/a"
+    local arc=0 cj watchdog
     cj=$(host_egress_audit_counters) || arc=$?
     case "$arc" in
     0)
-        wd=$(printf '%s' "$cj" | jq -r '.would_drop // "unknown"' 2>/dev/null)
-        local status_dir="${CONTROL_DIR:-$PWD/data/control}/results/egress-status.json"
-        if [ -r "$status_dir" ]; then
-            watchdog=$(jq -r '.host_audit.watchdog // "n/a"' "$status_dir" 2>/dev/null) || true
-            watchdog="${watchdog:-n/a}"
-        fi
-        dr_ok "Log-only host egress audit (inet $HOST_EGRESS_AUDIT_NFT_TABLE) is loaded — would_drop counter at ${wd:-unknown} flows (watchdog $watchdog); the table drops nothing."
+        watchdog=$(jq -r '.host_audit.watchdog // empty' "$(env_get CONTROL_DIR 2>/dev/null)/results/egress-status.json" 2>/dev/null) || true
+        dr_ok "Log-only host egress audit (inet $HOST_EGRESS_AUDIT_NFT_TABLE) is loaded — would_drop counter at $(printf '%s' "$cj" | jq -r '.would_drop // "unknown"' 2>/dev/null) flows (watchdog ${watchdog:-not-observed}); the table drops nothing."
         ;;
     1)
         dr_warn_surface "The log-only host egress audit table is not loaded — nothing on this host counts or logs what a host-wide default drop would have blocked. Run './pithead up' to load it; boots restore it from then on." "The log-only host egress audit table is not loaded on this machine."

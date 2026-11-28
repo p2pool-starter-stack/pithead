@@ -7,7 +7,7 @@ import { buildSections } from "../../../mining_dashboard/web/static/config/confi
 
 test("buildSections: high-consequence fields carry their inline warning", () => {
   const tg = { bot_token: { __secret__: true }, chat_id: "1111" };
-  tg.events = { wallet_changed: true, clearnet_exposed: true, egress_watchdog_leak: true };
+  tg.events = { wallet_changed: true, clearnet_exposed: true };
   const cfg = {
     p2pool: { pool: "mini", clearnet: false },
     xvb: { tor: true },
@@ -33,7 +33,6 @@ test("buildSections: high-consequence fields carry their inline warning", () => 
   assert.match(fields["dashboard.host"].warning, /Set up again on each rig.*new name/);
   assert.match(fields["telegram.events.wallet_changed"].warning, /wallet swap could go unnoticed/);
   assert.match(fields["telegram.events.clearnet_exposed"].warning, /exposing this machine's IP/);
-  assert.match(fields["telegram.events.egress_watchdog_leak"].warning, /non-Tor egress.*host audit table/);
   assert.match(fields["telegram.enabled"].warning, /stops every Telegram alert.*tamper alarms/);
   assert.match(fields["telegram.bot_token"].warning, /stops every Telegram alert.*another bot/);
   assert.match(fields["telegram.chat_id"].warning, /stops delivery.*another chat/);

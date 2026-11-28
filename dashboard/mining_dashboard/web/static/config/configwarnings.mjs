@@ -27,8 +27,6 @@ export const FIELD_WARNINGS = {
     "Wallet-change alarm — turning it off means a payout-address change no longer alerts Telegram, so a wallet swap could go unnoticed.",
   "telegram.events.clearnet_exposed":
     "Clearnet-exposure alarm — turning it off means a node exposing this machine's IP over clearnet no longer alerts Telegram.",
-  "telegram.events.egress_watchdog_leak":
-    "Egress watchdog leak alarm — turning it off means non-Tor egress detected by the host audit table no longer alerts Telegram.",
   "dashboard.host":
     "Machine hostname changing — this is the approval-gated day-two rename: it reissues the local certificate and changes the appliance's mDNS identity. Rigs using the old name stop mining; use Set up again on each rig to point it at the new name.",
 };

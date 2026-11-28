@@ -13,6 +13,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Added
 
+- An on-box egress watchdog: every egress check compares the host audit table's `would_drop` counter with the previous check and records `clean`, `leaking` or `not-observed` in `egress-status.json`, with the rise and the time it was first seen. `doctor` and `./pithead egress-status` show it, and a rise sends one `clearnet_exposed` alert, cleared once the counter stops rising for a check interval (#4385).
 - The **Stack Topology & Egress** panel shows the host's own traffic: a scope pill, host-OS nodes for time sync, OS and release fetches and image pulls, a warning when the host audit counted flows outside the allowlist, and a not-observed notice when the audit table is not loaded. `GET /api/system/egress-audit` and `egress_audit` in `/api/state` expose the counters (#4415, #4416, #4417).
 - With `tor.auto_heal`, a Tor stuck at 95% bootstrap with no circuit and an up guard (a relay refusing circuit creation) is cured by a guard rotation (`DROPGUARDS`) on the NEWNYM budget instead of a refresh that keeps the guards, and the heal never restarts Tor after one (#4121).
 - `./pithead support-bundle` on a Docker host takes `--since` and `--until` (or `--hours`) and writes the

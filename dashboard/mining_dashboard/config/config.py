@@ -429,7 +429,6 @@ TELEGRAM_EVENTS = {
     "db_reset": _telegram_event_enabled("db_reset"),
     "xvb_no_share": _telegram_event_enabled("xvb_no_share"),
     "clearnet_exposed": _telegram_event_enabled("clearnet_exposed"),
-    "egress_watchdog_leak": _telegram_event_enabled("egress_watchdog_leak"),
     "xvb_registration": _telegram_event_enabled("xvb_registration"),
     "new_release": _telegram_event_enabled("new_release"),
     "stack_online": _telegram_event_enabled("stack_online"),

@@ -1,15 +1,13 @@
-# ruff: noqa: F401, F405
-from tests.service.notify._alert_service_support import *  # noqa: F405
-
+# ruff: noqa: F403, F405
 from mining_dashboard.service.network.egress_status import (
     ENFORCED,
     WATCHDOG_CLEAN,
     WATCHDOG_LEAKING,
     WATCHDOG_NOT_OBSERVED,
 )
+from tests.service.notify._alert_service_support import *
 
 EVT = AlertService.EVT_CLEARNET_EXPOSED
-WLEVT = AlertService.EVT_EGRESS_WATCHDOG_LEAK
 
 
 class TestEgressFirewallEdges:
@@ -71,53 +69,58 @@ class TestEgressFirewallEdges:
 
 
 class TestEgressWatchdogEdges:
-    def test_clean_to_leaking_fires_alert(self):
+    def test_a_rising_counter_alerts_once_and_clears_once(self):
         svc = _svc()
         assert _ev(svc, watchdog=WATCHDOG_CLEAN) == []
-        result = _ev(svc, watchdog=WATCHDOG_LEAKING)
-        assert len(result) == 1
-        assert result[0][0] == WLEVT
-        assert "non-Tor egress" in result[0][1]
+        ((key, text),) = _ev(svc, watchdog=WATCHDOG_LEAKING)
+        assert key == EVT
+        assert "Non-Tor egress seen" in text and "pithead doctor" in text
+        assert _ev(svc, watchdog=WATCHDOG_LEAKING) == []
+        ((key, text),) = _ev(svc, watchdog=WATCHDOG_CLEAN)
+        assert key == EVT
+        assert "stopped" in text
+        assert _ev(svc, watchdog=WATCHDOG_CLEAN) == []
 
-    def test_leaking_to_clean_fires_recovery(self):
-        svc = _svc()
-        _ev(svc, watchdog=WATCHDOG_LEAKING)
-        result = _ev(svc, watchdog=WATCHDOG_CLEAN)
-        assert len(result) == 1
-        assert result[0][0] == WLEVT
-        assert "clean" in result[0][1].lower()
+    def test_a_dashboard_starting_on_a_leak_alerts_at_once(self):
+        assert _keys(_ev(_svc(), watchdog=WATCHDOG_LEAKING)) == [EVT]
 
-    def test_not_observed_drops_baseline(self):
+    def test_not_observed_keeps_the_last_verdict(self):
         svc = _svc()
         assert _ev(svc, watchdog=WATCHDOG_NOT_OBSERVED) == []
-        result = _ev(svc, watchdog=WATCHDOG_LEAKING)
-        assert len(result) == 1
-        assert result[0][0] == WLEVT
-
-    def test_optout_clears_state(self):
-        svc = _svc()
-        _ev(svc, watchdog=WATCHDOG_CLEAN)
-        assert _ev(svc, watchdog=None) == []
-        result = _ev(svc, watchdog=WATCHDOG_LEAKING)
-        assert len(result) == 1
-        assert result[0][0] == WLEVT
-
-    def test_stable_state_sends_nothing(self):
-        svc = _svc()
-        _ev(svc, watchdog=WATCHDOG_CLEAN)
-        assert _ev(svc, watchdog=WATCHDOG_CLEAN) == []
-        _ev(svc, watchdog=WATCHDOG_LEAKING)
+        assert _keys(_ev(svc, watchdog=WATCHDOG_LEAKING)) == [EVT]
+        assert _ev(svc, watchdog=WATCHDOG_NOT_OBSERVED) == []
         assert _ev(svc, watchdog=WATCHDOG_LEAKING) == []
+        assert _ev(svc, watchdog=WATCHDOG_NOT_OBSERVED) == []
+        assert _keys(_ev(svc, watchdog=WATCHDOG_CLEAN)) == [EVT]
+        assert _ev(_svc(), watchdog=WATCHDOG_NOT_OBSERVED) == []
 
-    def test_leaking_is_an_incident_and_recovery_is_not(self):
+    def test_opting_out_resets_without_a_message(self):
+        svc = _svc()
+        assert _keys(_ev(svc, watchdog=WATCHDOG_LEAKING)) == [EVT]
+        assert _ev(svc, watchdog=None) == []
+        assert _ev(svc, watchdog=WATCHDOG_CLEAN) == []
+
+    def test_a_leak_is_an_incident_and_its_recovery_is_not(self):
         svc = _svc()
         _ev(svc, watchdog=WATCHDOG_LEAKING)
         _ev(svc, watchdog=WATCHDOG_CLEAN)
-        assert svc.drain_incidents() == {WLEVT: 1}
+        assert svc.drain_incidents() == {EVT: 1}
 
-    def test_watchdog_with_enforced_firewall_still_alerts_on_leak(self):
+    def test_a_leak_alerts_while_the_firewall_reads_enforced(self):
         svc = _svc()
         assert _ev(svc, egress_firewall=ENFORCED, watchdog=WATCHDOG_CLEAN) == []
-        result = _ev(svc, egress_firewall=ENFORCED, watchdog=WATCHDOG_LEAKING)
-        assert len(result) == 1
-        assert result[0][0] == WLEVT
+        assert _keys(_ev(svc, egress_firewall=ENFORCED, watchdog=WATCHDOG_LEAKING)) == [EVT]
+
+    async def test_process_reads_the_host_watchdog_itself(self, monkeypatch):
+        monkeypatch.setattr(alert_mod, "live_firewall_state", lambda: "enforced")
+        monkeypatch.setattr(alert_mod, "live_watchdog_verdict", lambda: WATCHDOG_LEAKING)
+        notifier = _FakeNotifier()
+        await _svc(notifier=notifier).process(
+            monero_down=False,
+            tari_down=False,
+            tari_required=True,
+            miner_released=True,
+            workers=[],
+            workers_expected=False,
+        )
+        assert notifier.sent_events == [EVT]

@@ -97,6 +97,18 @@ sync, OS and release fetches, image pulls) outside the stack. Their edges show a
 when the audit is loaded and as Unverified otherwise, never as Tor. A violation count above zero shows a
 warning and does not change the summary line.
 
+Each check also compares `would_drop` with the value the previous check saw, kept in
+`data/control/results/.egress-audit-prev`, and writes the watchdog verdict into `host_audit`:
+`watchdog` is `clean`, `leaking` (the counter rose since the last check) or `not-observed` (no audit
+table, an unreadable table, or a counter that is not a number). A `leaking` verdict also carries
+`watchdog_delta`, the rise since the last check, and `first_seen`, the check time at which the rise
+began. The first check after install records the baseline and reads `clean`; a counter that falls,
+because the table was reloaded, starts a new baseline. `./pithead egress-status` and `doctor` print the
+verdict. The dashboard sends one `clearnet_exposed` alert when the verdict turns `leaking` and one when
+a later check reads `clean`, which is a full check interval without a rise. `not-observed` and a check
+older than six minutes keep the last verdict and send nothing. Opting out of the firewall turns the
+watchdog alert off too.
+
 Opting out with `network.tor_egress_firewall: false` removes the timer. If a removal step fails
 (stopping the timer, deleting its unit files, or reloading systemd), `apply` names the step and
 does not report the timer removed, and `uninstall` exits non-zero instead of printing

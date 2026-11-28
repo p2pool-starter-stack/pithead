@@ -12,7 +12,10 @@ from mining_dashboard.config.config import (
 )
 from mining_dashboard.helper.utils import format_hashrate
 from mining_dashboard.service.health.container_health import EDGE_MESSAGES, ContainerHealthMonitor
-from mining_dashboard.service.network.egress_status import live_firewall_state, live_watchdog_verdict
+from mining_dashboard.service.network.egress_status import (
+    live_firewall_state,
+    live_watchdog_verdict,
+)
 from mining_dashboard.service.notify.alert_edges import AlertEdgesMixin, _parse_hhmm
 from mining_dashboard.service.notify.alert_retry import AlertOutbox
 from mining_dashboard.service.notify.egress_firewall_edges import EgressFirewallEdgesMixin
@@ -124,7 +127,6 @@ class AlertService(
     # Wallet-down follows the payout feature and alerting, without an event-specific toggle.
     EVT_PAYOUT_WALLET_DOWN = "payout_wallet_down"
     EVT_CONTAINER_UNHEALTHY = "container_unhealthy"
-    EVT_EGRESS_WATCHDOG_LEAK = "egress_watchdog_leak"
     EVT_RAFFLE_WIN = "raffle_win"
 
     # WorkerPresenceMonitor edge -> (event key, message template).

@@ -77,21 +77,11 @@ def live_firewall_state():
     return egress_firewall_state() if config.TOR_EGRESS_FIREWALL else None
 
 
-def watchdog_verdict(path=None):
-    try:
-        with open(path or STATUS_PATH, encoding="utf-8") as f:
-            status = json.load(f)
-    except (OSError, ValueError, RecursionError):
-        return WATCHDOG_NOT_OBSERVED
-    if not isinstance(status, dict):
-        return WATCHDOG_NOT_OBSERVED
-    ha = status.get("host_audit")
-    if not isinstance(ha, dict):
-        return WATCHDOG_NOT_OBSERVED
-    wd = ha.get("watchdog")
-    if wd in (WATCHDOG_CLEAN, WATCHDOG_LEAKING):
-        return wd
-    return WATCHDOG_NOT_OBSERVED
+def watchdog_verdict(path=None, now=None):
+    status = _fresh_status(path, now)
+    audit = status.get("host_audit") if status else None
+    verdict = audit.get("watchdog") if isinstance(audit, dict) else None
+    return verdict if verdict in (WATCHDOG_CLEAN, WATCHDOG_LEAKING) else WATCHDOG_NOT_OBSERVED
 
 
 def live_watchdog_verdict():
