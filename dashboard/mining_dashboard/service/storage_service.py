@@ -17,14 +17,12 @@ from mining_dashboard.config.config import (
 from mining_dashboard.service.event_log_store import EventLogStoreMixin
 from mining_dashboard.service.mining_store import MiningStoreMixin
 from mining_dashboard.service.storage_schema import StorageSchemaMixin
-
-from mining_dashboard.service.telemetry_store import (
+from mining_dashboard.service.telemetry_store import (  # noqa: F401
     NETWORK_HISTORY_RETENTION_SEC,
     XVB_HISTORY_RETENTION_SEC,
     TelemetryStoreMixin,
 )
-
-from mining_dashboard.service.workers.worker_config_store import (
+from mining_dashboard.service.workers.worker_config_store import (  # noqa: F401
     _RECONCILE_TERMINAL,
     WorkerConfigStoreMixin,
 )
@@ -48,8 +46,11 @@ _TELEMETRY_TABLES = ("blocks", "xvb_history", "network_history", "disk_growth", 
 
 
 class StateManager(
-    StorageSchemaMixin, EventLogStoreMixin, MiningStoreMixin,
-    TelemetryStoreMixin, WorkerConfigStoreMixin
+    StorageSchemaMixin,
+    EventLogStoreMixin,
+    MiningStoreMixin,
+    TelemetryStoreMixin,
+    WorkerConfigStoreMixin,
 ):
     """
     Manages persistent application state including hashrate history and mining mode statistics.

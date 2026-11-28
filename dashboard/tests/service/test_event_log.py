@@ -1,7 +1,4 @@
-import time as _time_module
 from unittest.mock import patch
-
-import pytest
 
 from mining_dashboard.service.storage_service import StateManager
 
@@ -41,8 +38,7 @@ def test_error_opens_episode():
     sm = _sm(clock)
     p = _patch_time(clock)
     try:
-        sm.record_event("connect", "pool", "Connect to pool", "error",
-                        "connection refused", {})
+        sm.record_event("connect", "pool", "Connect to pool", "error", "connection refused", {})
         episodes = sm.get_open_episodes()
         assert len(episodes) == 1
         assert episodes[0]["kind"] == "connect"
@@ -56,8 +52,7 @@ def test_error_opens_episode():
 
 def test_normal_event_does_not_open_episode():
     sm = StateManager(db_path=":memory:")
-    sm.record_event("connect", "pool", "Connect to pool", "normal",
-                    "connected", {})
+    sm.record_event("connect", "pool", "Connect to pool", "normal", "connected", {})
     assert len(sm.get_open_episodes()) == 0
     sm.close()
 
@@ -67,11 +62,9 @@ def test_repeat_increments_count_and_updates_ts():
     sm = _sm(clock)
     p = _patch_time(clock)
     try:
-        sm.record_event("connect", "pool", "Connect to pool", "error",
-                        "connection refused", {})
+        sm.record_event("connect", "pool", "Connect to pool", "error", "connection refused", {})
         clock.advance(60)
-        sm.record_event("connect", "pool", "Connect to pool", "error",
-                        "connection refused", {})
+        sm.record_event("connect", "pool", "Connect to pool", "error", "connection refused", {})
         episodes = sm.get_open_episodes()
         assert len(episodes) == 1
         assert episodes[0]["count"] == 2
@@ -85,11 +78,9 @@ def test_repeat_bypasses_per_minute_rate_limit():
     sm = _sm(clock)
     p = _patch_time(clock)
     try:
-        sm.record_event("connect", "pool", "Connect to pool", "error",
-                        "connection refused", {})
+        sm.record_event("connect", "pool", "Connect to pool", "error", "connection refused", {})
         clock.advance(5)
-        sm.record_event("connect", "pool", "Connect to pool", "error",
-                        "connection refused", {})
+        sm.record_event("connect", "pool", "Connect to pool", "error", "connection refused", {})
         episodes = sm.get_open_episodes()
         assert len(episodes) == 1
         assert episodes[0]["count"] == 2
@@ -103,11 +94,9 @@ def test_close_by_success():
     sm = _sm(clock)
     p = _patch_time(clock)
     try:
-        sm.record_event("connect", "pool", "Connect to pool", "error",
-                        "connection refused", {})
+        sm.record_event("connect", "pool", "Connect to pool", "error", "connection refused", {})
         clock.advance(30)
-        sm.record_event("connect", "pool", "Connect to pool", "normal",
-                        "connected", {})
+        sm.record_event("connect", "pool", "Connect to pool", "normal", "connected", {})
         episodes = sm.get_open_episodes()
         assert len(episodes) == 0
     finally:
@@ -120,11 +109,9 @@ def test_close_by_success_different_kind_does_not_close():
     sm = _sm(clock)
     p = _patch_time(clock)
     try:
-        sm.record_event("connect", "pool", "Connect to pool", "error",
-                        "connection refused", {})
+        sm.record_event("connect", "pool", "Connect to pool", "error", "connection refused", {})
         clock.advance(30)
-        sm.record_event("sync", "chain", "Sync chain", "normal",
-                        "synced", {})
+        sm.record_event("sync", "chain", "Sync chain", "normal", "synced", {})
         episodes = sm.get_open_episodes()
         assert len(episodes) == 1
         assert episodes[0]["kind"] == "connect"
@@ -138,11 +125,14 @@ def test_close_by_timeout():
     sm = _sm(clock)
     p = _patch_time(clock)
     try:
-        sm.record_event("connect", "pool", "Connect to pool", "error",
-                        "connection refused", {})
+        sm.record_event("connect", "pool", "Connect to pool", "error", "connection refused", {})
         clock.advance(30 * 60 + 1)
-        episodes = sm.get_open_episodes()
-        assert len(episodes) == 1
+        assert sm.get_open_episodes() == []
+        row = sm._conn.execute("SELECT ts, end_ts FROM event_log").fetchone()
+        assert row["end_ts"] == row["ts"]
+        sm.record_event("connect", "pool", "Connect to pool", "error", "connection refused", {})
+        assert len(sm.get_open_episodes()) == 1
+        assert sm._conn.execute("SELECT COUNT(*) FROM event_log").fetchone()[0] == 2
     finally:
         p.stop()
     sm.close()
@@ -153,14 +143,11 @@ def test_reopen_after_close_by_success():
     sm = _sm(clock)
     p = _patch_time(clock)
     try:
-        sm.record_event("connect", "pool", "Connect to pool", "error",
-                        "connection refused", {})
+        sm.record_event("connect", "pool", "Connect to pool", "error", "connection refused", {})
         clock.advance(30)
-        sm.record_event("connect", "pool", "Connect to pool", "normal",
-                        "connected", {})
+        sm.record_event("connect", "pool", "Connect to pool", "normal", "connected", {})
         clock.advance(10)
-        sm.record_event("connect", "pool", "Connect to pool", "error",
-                        "reconnection failed", {})
+        sm.record_event("connect", "pool", "Connect to pool", "error", "reconnection failed", {})
         episodes = sm.get_open_episodes()
         assert len(episodes) == 1
         assert episodes[0]["count"] == 1
@@ -192,8 +179,7 @@ def test_episode_state_survives_restart(tmp_path):
     p = _patch_time(clock)
     try:
         sm = StateManager(db_path=db)
-        sm.record_event("connect", "pool", "Connect", "error",
-                        "refused", {})
+        sm.record_event("connect", "pool", "Connect", "error", "refused", {})
         sm.close()
 
         sm2 = StateManager(db_path=db)
@@ -204,3 +190,34 @@ def test_episode_state_survives_restart(tmp_path):
         sm2.close()
     finally:
         p.stop()
+
+
+def test_closed_connection_and_db_errors_are_tolerated():
+    sm = _sm()
+    sm.close()
+    sm.record_event("connect", "pool", "Connect to pool", "error", "x", {})
+    assert sm.get_open_episodes() == []
+    sm2 = _sm()
+    sm2._conn.execute("DROP TABLE event_log")
+    sm2.record_event("connect", "pool", "Connect to pool", "error", "x", {})
+    assert sm2.get_open_episodes() == []
+    sm2.close()
+
+
+def test_formatted_text_and_prune_sampler():
+    sm = _sm()
+    with patch("mining_dashboard.service.event_log_store.random.random", return_value=0.0):
+        sm.record_event("connect", "pool", "Connect", "info", "to {host}", {"host": "a"})
+    assert sm._conn.execute("SELECT text FROM event_log").fetchone()[0] == "to a"
+    sm.close()
+
+
+def test_load_tolerates_missing_event_log_table(tmp_path):
+    db = str(tmp_path / "load.db")
+    sm = StateManager(db_path=db)
+    sm.record_event("connect", "pool", "Connect", "error", "refused", {})
+    sm._conn.execute("DROP TABLE event_log")
+    sm._conn.commit()
+    sm.load()
+    assert sm.state["event_log"] == []
+    sm.close()

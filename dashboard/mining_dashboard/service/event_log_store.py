@@ -3,8 +3,15 @@ import sqlite3
 import time
 from typing import Any
 
+EPISODE_SILENCE_SEC = 30 * 60
+
 
 class EventLogStoreMixin:
+    def _close_stale_episodes(self, now: float) -> None:
+        self._conn.execute(
+            "UPDATE event_log SET end_ts = ts WHERE end_ts IS NULL AND ts < ?",
+            (now - EPISODE_SILENCE_SEC,),
+        )
 
     def record_event(
         self,
@@ -25,6 +32,7 @@ class EventLogStoreMixin:
                 if not self._conn:
                     return
                 with self._conn:
+                    self._close_stale_episodes(ts)
                     if severity == "error":
                         row = self._conn.execute(
                             "SELECT id, count FROM event_log "
@@ -81,12 +89,18 @@ class EventLogStoreMixin:
         except sqlite3.Error as e:
             self._db_error("Event Log Insert Error", e)
         with self._lock:
-            self.state.setdefault("event_log", []).append({
-                "kind": kind, "subject": subject, "label": label,
-                "severity": severity, "text": text,
-                "opened": opened, "closed": closed,
-                "is_episode_repeat": is_episode_repeat,
-            })
+            self.state.setdefault("event_log", []).append(
+                {
+                    "kind": kind,
+                    "subject": subject,
+                    "label": label,
+                    "severity": severity,
+                    "text": text,
+                    "opened": opened,
+                    "closed": closed,
+                    "is_episode_repeat": is_episode_repeat,
+                }
+            )
             cutoff = time.time() - 30 * 24 * 3600
             self.state["event_log"] = [
                 e for e in self.state["event_log"] if e.get("_ts", ts) >= cutoff
@@ -97,6 +111,8 @@ class EventLogStoreMixin:
             with self._db_lock:
                 if not self._conn:
                     return []
+                with self._conn:
+                    self._close_stale_episodes(time.time())
                 cursor = self._conn.cursor()
                 cursor.execute(
                     "SELECT id, ts, end_ts, count, kind, subject, label, severity, text "

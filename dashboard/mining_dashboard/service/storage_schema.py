@@ -5,13 +5,11 @@ from mining_dashboard.config.config import (
     HASHRATE_WINDOW_COLUMNS,
     HISTORY_RETENTION_SEC,
 )
-
 from mining_dashboard.service.telemetry_store import (  # noqa: F401 — re-export
     NETWORK_HISTORY_RETENTION_SEC,
     XVB_HISTORY_RETENTION_SEC,
     TelemetryStoreMixin,
 )
-
 from mining_dashboard.service.workers.worker_config_store import (  # noqa: F401
     _RECONCILE_TERMINAL,
     WorkerConfigStoreMixin,
