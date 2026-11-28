@@ -240,11 +240,15 @@ changes that were already merged. Merge commits are enabled on the repository fo
 
 Ahead of stage 1, and outside the numbered pipeline the tool prints, `release.sh` runs one
 additional preflight check: it requires a successful `bench-ci/tier4` commit status on the exact
-release SHA from the dedicated bench-ci GitHub App. Both `BENCH_CI_APP_ID` (that App's numeric id)
-and `BENCH_CI_APP_SLUG` (`pithead-bench-ci`) are required on the release box, with no defaults. They
-may come from the [release env file](release-server.md#the-lintrelease-toolchain). Dry runs enforce
-the lint/test toolchain on the run's effective PATH, just as a real cut does. A dry run still does
-not run `make test` or the integration matrix: it prints their commands. The
+release SHA from a dedicated GitHub App. The settings
+`RELEASE_REQUIRED_STATUS_APP_ID` (that App's numeric id) and
+`RELEASE_REQUIRED_STATUS_APP_SLUG` (`pithead-bench-ci`) control the check and may come from the
+[release env file](release-server.md#the-lintrelease-toolchain). The gate is optional: when
+all three settings (`RELEASE_REQUIRED_STATUS_CONTEXT`, `RELEASE_REQUIRED_STATUS_APP_ID`, and
+`RELEASE_REQUIRED_STATUS_APP_SLUG`) are unset, it skips with a log message so a release box that
+has not yet published its own status can still cut. When any one is set, all three are required.
+Dry runs enforce the lint/test toolchain on the run's effective PATH, just as a real cut does. A
+dry run still does not run `make test` or the integration matrix: it prints their commands. The
 bench publishes that status only after its full tier-4 suite completes; a missing, failed,
 unreadable, or wrong-App status aborts the cut before anything is built. Under `--dry-run` the
 verdict is printed as a warning and the rehearsal continues, so a preview still runs end to end.
@@ -321,7 +325,7 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
 
 Set `PITHEAD_REHEARSAL=1` and `PITHEAD_REGISTRY` to a non-production registry namespace.
 Rehearsal refuses the production namespace even with `--dry-run`. It runs every normal gate
-(preflight including signing, tier-4 status, the test gate and smoke), promotes and signs the
+(preflight including signing, the release status gate, the test gate and smoke), promotes and signs the
 scratch images, then stops before `publish`: no git tag, GitHub Release or install bundle is
 published. Release runs, including draft releases, require the owner's sign-off.
 
@@ -415,7 +419,7 @@ tolerated-known-failure habit the flag exists to end.
 ### Which gates are automated, and which are not
 
 The release lane requires a successful `bench-ci/tier4` status on its release SHA, and the `main`
-ruleset already requires the same context pinned to the bench-ci App's `integration_id` — both
+ruleset already requires the same context pinned to the integration App's `integration_id` — both
 provisioned under [#2237](https://github.com/p2pool-starter-stack/pithead/issues/2237). The bench
 publishes that status after its full tier-4 suite; `release.sh` checks the exact SHA, context, App
 slug, and numeric App id before stage 1. `release-gate.yml` stays dispatch-only as an operator
@@ -527,8 +531,8 @@ Every KVM job is bound to the exact tag SHA. `SHA` is the commit that will be ta
 after the battery, including a digest re-pin or a version bump, makes the whole KVM set stale:
 rerun the boot group, the four rig-group splits, provision and crossupdate on the new SHA and
 read them again before submitting e2e. `release.sh` refuses to publish unless the tag SHA itself carries a successful
-`bench-ci/tier4` status from the bench-ci App, but that check reads only the status on the
-release commit and never the KVM jobs' `commit` fields (`require_bench_tier4` in
+`bench-ci/tier4` status from the integration App, but that check reads only the status on the
+release commit and never the KVM jobs' `commit` fields (`require_release_status_gate` in
 `scripts/release/preflight.sh`). Confirming the rerun before publishing is therefore a
 procedural step the operator verifies, not a tool enforcement. The
 2.0.2 release shipped one commit after the commit its crossupdate and provision jobs proved
@@ -581,7 +585,7 @@ jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$E2E_KEY" --arg mode "$E2E_MO
 Read the completed e2e job's full status, log, artifacts and evidence. All eight jobs must carry
 the same SHA and ref. A failed or cancelled leg cannot yield a
 successful aggregate status. Confirm the exact commit's newest `bench-ci/tier4` status is
-`success` and its creator is the configured bench-ci App before running `release.sh`; record all
+`success` and its creator is the configured integration App before running `release.sh`; record all
 eight job IDs and the SHA in the release issue. Remove a rehearsal branch after confirming its
 status with `git push origin --delete "$REF"`. If a submission is refused, stop and report it to
 bench-ci; retain its printed idempotency key for a retry.
@@ -589,7 +593,7 @@ bench-ci; retain its printed idempotency key for a retry.
 | Gate | When | Run by | Blocking |
 | --- | --- | --- | --- |
 | `make test` (tiers 1–3) + `make lint` | every PR | CI | yes |
-| Bench full tier-4 suite (`bench-ci/tier4`) | before `release.sh` stage 1 | bench-ci | yes |
+| Bench full tier-4 suite (`bench-ci/tier4`) | before `release.sh` stage 1 | bench-ci (the integration App) | yes |
 | `make test` again, on the release box | `release.sh` stage 2 | the cut | yes |
 | #54 live matrix, `--readiness` | `release.sh` stage 2 | the cut | yes |
 | Targeted e2e with a borrowed rig | before `make release` | you | yes — by policy, not by code |
