@@ -10,7 +10,7 @@ repos:
         args: ["--config", ".config/gitleaks.toml", "--gitleaks-ignore-path", ".config/gitleaksignore"]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       # Cheap, high-value guards across every surface.
       - id: detect-private-key  # never commit an onion/wallet/SSH private key

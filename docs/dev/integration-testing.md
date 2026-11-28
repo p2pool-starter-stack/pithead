@@ -349,7 +349,12 @@ only copy. The five keys:
 A refusal by the pregate's current-state check phase adds no `readiness` line, because that phase
 reads the deployed branch. A dashboard that does not answer the post-deploy wait or the Tari timeout prints no Tari key, because the branch may have broken it.
 The pregate records both of each phase's output streams and classifies only what it recorded. If a
-recording or a read of it fails, the pregate refuses the destructive phases and prints no line.
+recording or a read of it fails, the pregate refuses the destructive phases and adds no marker.
+A phase marker already forwarded to stdout may remain; a failed recording does not guarantee
+that its output reached stdout. The selftest injects capture failures that either discard or
+forward the stream before returning nonzero, independently of file-size limits and `tee` write
+ordering. Each forwarding control fails one capture stream while the other records normally.
+It checks refusal in both cases and preserves a Tari marker only when it was forwarded.
 Any `--check` run can print `workers-offline`, the pregate's check phase included; bench-ci accepts
 it only in its `check` mode. Within one process only the first line prints, and the pregate prints
 `readiness` only when its readiness phase printed no line itself. [`tests/integration/lib/e2e-env.sh`](../../tests/integration/lib/e2e-env.sh) holds the
@@ -538,8 +543,25 @@ via an `EXIT` trap):
    checks and just before "restore complete", finds P2Pool and xmrig-proxy running and healthy. If either is stopped, the
    harness waits up to 600 seconds for the dashboard to readmit it, logging the start and the
    elapsed time, and never starts it itself. A service still down at the bound fails the restore
-   with a message naming xmrig-proxy and the seconds waited. The re-check is skipped when an earlier restore or control proof has already failed,
+   with a message naming xmrig-proxy, the seconds waited and the dashboard's rejection reason —
+   the last `Mining work is not valid (…)` line of the baseline dashboard container log (the
+   monero-down or tari-down reason sits inside its parentheses) — or the message says explicitly
+   that no reason line was found, or that the dashboard log could not be read
+   ([#4168](https://github.com/p2pool-starter-stack/pithead/issues/4168)).
+   The re-check first clears the two evidence files, so a green run cannot collect a previous
+   run's; at both capture moments — when the wait starts and at expiry — the harness saves the
+   evidence the next stack recreate would destroy: the dashboard log tail (last 400 lines, capped
+   at 64 KiB) to `results/restore-mining-dashboard-log.txt` and each service's state, health
+   status and failing streak to `results/restore-mining-services.txt`, both under the e2e results
+   dir the job collects as artifacts. The dashboard tail goes through the harness's `redact()`,
+   the same redaction the other saved container logs use: KEY=value and JSON-key masking over the
+   shared key vocabulary, credential `--flags`, wallet and merge-mine addresses, long base64/hex
+   blobs, the generated dashboard password by literal, onion hostnames and private IPv4/IPv6
+   addresses; the service lines are kept to a fixed grammar that can carry no free text.
+   The re-check is skipped when an earlier restore or control proof has already failed,
    so "baseline stack healthy again" never precedes a "RESTORE NOT PROVEN" verdict.
+   `selftest-restore-mining-ready.sh` pins the reason capture, the explicit no-reason wording,
+   both artifact files and the redaction.
 7. Proves the restored stack matches the on-disk config
    ([#971](https://github.com/p2pool-starter-stack/pithead/issues/971)): the credential marker
    baked into the running dashboard container (`docker inspect`) must equal the on-disk `.env`
@@ -878,6 +900,16 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   be installed, canonical, and in a chain no forwarded packet traverses — which is exactly how the
   appliance shipped fail-open. This suite covers the Docker/`DOCKER-USER` backend; the
   podman/netavark backend's live coverage is `tests/os/appliance-egress-leg.sh` in the KVM battery.
+- Per-purpose SOCKS credentials isolate Tor circuits
+  ([#4209](https://github.com/p2pool-starter-stack/pithead/issues/4209)/[#4324](https://github.com/p2pool-starter-stack/pithead/issues/4324)).
+  Right after the dial pair, `assert_purpose_circuits` runs `tests/integration/lib/purpose-circuit-probe.py` inside the
+  dashboard image on `mining_net`. For the `health` and `notify` purposes it builds each proxy with
+  `purpose_proxy` and reads the exit address from `https://1.1.1.1/cdn-cgi/trace`. The row passes only when
+  both purposes answer, the addresses differ and the probe prints its own verdict line. It proves the
+  helper-built credentials get separate circuits on a live Tor; each product caller's wiring is
+  covered by its own unit tests. Two circuits can share an exit relay by chance, so on a
+  collision the probe retries once with fresh `-2` purpose labels before failing. The probe prints only the
+  label and address family, never an address or a credential.
 - Payout confirmation is live (the view-key row only). `PAYOUT_CONFIRM_ENABLED`/
   `TARI_PAYOUT_CONFIRM_ENABLED` in `.env` match the config, and the dashboard's own
   `earnings.confirmed.enabled`/`earnings.tari_confirmed.enabled` flags read `true`

@@ -379,8 +379,7 @@ check_monerod_synchronized() {
     url=$(env_get MONERO_RPC_URL 2>/dev/null)
     [ -n "$url" ] || url="http://127.0.0.1:18081"
     if [ -n "$user" ]; then
-        body=$(printf 'user = %s\n' "$(printf '%s:%s' "$user" "$pass" | jq -Rs .)" |
-            curl -fsS --max-time 8 --digest --config - "$url/get_info" 2>/dev/null)
+        body=$(printf 'user = %s\n' "$(printf '%s:%s' "$user" "$pass" | jq -Rs .)" | curl -fsS --max-time 8 --digest --config - "$url/get_info" 2>/dev/null)
     else
         body=$(curl -fsS --max-time 8 "$url/get_info" 2>/dev/null)
     fi
@@ -395,4 +394,20 @@ check_monerod_synchronized() {
         dr_warn_surface "monerod is running but reports NOT synchronized — normal during initial sync; if it stays like this on a previously-synced node (peers lost after a Tor restart), './pithead restart monerod' re-dials and recovers in about a minute." "monerod is running but reports NOT synchronized — normal during initial sync. If it stays like this on a node that was synced before, its peers were lost after a Tor restart; there is no dashboard control that restarts monerod on its own."
     fi
     return 0
+}
+
+check_host_egress_audit() {
+    local arc=0 cj wd
+    cj=$(host_egress_audit_counters) || arc=$?
+    case "$arc" in
+    0)
+        wd=$(printf '%s' "$cj" | jq -r '.would_drop // "unknown"' 2>/dev/null)
+        dr_ok "Log-only host egress audit (inet $HOST_EGRESS_AUDIT_NFT_TABLE) is loaded — would_drop counter at ${wd:-unknown} flows; the table drops nothing."
+        ;;
+    1)
+        dr_warn_surface "The log-only host egress audit table is not loaded — nothing on this host counts or logs what a host-wide default drop would have blocked. Run './pithead up' to load it; boots restore it from then on." "The log-only host egress audit table is not loaded on this machine."
+        ;;
+    2) dr_info "Host egress audit check skipped — nft is not installed." ;;
+    *) dr_info "Host egress audit check skipped — the audit table could not be read on this machine; nothing is dropped." ;;
+    esac
 }

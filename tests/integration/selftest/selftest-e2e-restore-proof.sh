@@ -369,6 +369,7 @@ check_restore() { # <before> <units now> [sticky] -> "<rc> <units after> <remova
                 removals=$((removals + 1))
                 [ "$STICKY" = 1 ] || UNITS=absent
                 ;;
+            *"systemctl cat pithead-egress-check"*) if [ "$STICKY" = 2 ]; then echo present; else echo "$UNITS"; fi ;;
             *"systemctl cat pithead-egress"*) echo "$UNITS" ;;
             esac
         }
@@ -380,6 +381,7 @@ assert_eq "a check pair this run added is removed, and the absence proven" "$(ch
 assert_eq "a check pair the baseline already had is left alone" "$(check_restore present present)" "0 present 0"
 assert_eq "a check pair that survives the removal fails the restore proof" "$(check_restore absent present 1)" "1 present 1"
 assert_eq "an unrecorded baseline fails closed and removes nothing" "$(check_restore "" present)" "1 present 0"
+assert_eq "a check service left behind on its own fails the restore proof" "$(check_restore absent present 2)" "1 absent 1"
 assert_contains "verify_restore_proof runs the check pair restore" "$(declare -f verify_restore_proof)" "restore_egress_check_units"
 assert_contains "e2e.sh records the timer before deploy_branch installs it" "${RESTORE_UNIT_MAP[*]}" 'EGRESS_CHECK_BEFORE:pithead-egress.timer'
 assert_contains "e2e.sh records the LAN timer before deploy_branch installs it" "${RESTORE_UNIT_MAP[*]}" 'LAN_CHECK_BEFORE:pithead-lan.timer'
@@ -387,6 +389,8 @@ assert_contains "restore proof removes a LAN timer added by the run" "$(declare 
 # shellcheck source=tests/integration/tools/restore-lan-check-proof-cases.sh
 source "$HERE/../tools/restore-lan-check-proof-cases.sh"
 
+# shellcheck source=tests/integration/tools/restore-image-proof-cases.sh
+source "$HERE/../tools/restore-image-proof-cases.sh"
 echo ""
 printf 'restore-proof self-test: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"
 [ "$IT_FAIL" -eq 0 ]

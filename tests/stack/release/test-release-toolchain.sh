@@ -13,14 +13,13 @@ ln -sf "$(command -v stat)" "$RTB/stat"
 ln -sf "$(command -v id)" "$RTB/id"
 
 rt_drive() {
-    # A separate bash prevents run.sh's && source stanza from disabling errexit in the driven code.
     # shellcheck disable=SC1090,SC1091
     RT_REL="$REL" RT_BIN="$RTB" RT_KEYPATH="$RT_KEYS" RT_EXTRA="$RT_TOOLS" \
         "$RT_BASH" -c '
         set --
         source "$RT_REL"
         RELEASE_KEY_DIR="$RT_KEYPATH"
-        unset PITHEAD_RELEASE_ENV BENCH_CI_APP_ID BENCH_CI_APP_SLUG RELEASE_INTEGRATION_ARGS RELEASE_TOOL_PATH
+        unset PITHEAD_RELEASE_ENV RELEASE_REQUIRED_STATUS_CONTEXT RELEASE_REQUIRED_STATUS_APP_ID RELEASE_REQUIRED_STATUS_APP_SLUG RELEASE_INTEGRATION_ARGS RELEASE_TOOL_PATH
         export PATH="$RT_BIN"
         source /dev/stdin
     ' 2>&1
@@ -150,19 +149,17 @@ SH
 )"
 assert_rc "every tool directory is validated" "$?" "1"
 
-printf 'BENCH_CI_APP_ID=%s\nBENCH_CI_APP_SLUG=%s\nRELEASE_INTEGRATION_ARGS=%s\nRELEASE_TOOL_PATH=%s\n' \
-    "$RT_SENTINEL" "$RT_SENTINEL" "$RT_SENTINEL" "$RT_SENTINEL" >"$RT_KEYS/env"
+printf 'RELEASE_REQUIRED_STATUS_CONTEXT=%s\nRELEASE_REQUIRED_STATUS_APP_ID=%s\nRELEASE_REQUIRED_STATUS_APP_SLUG=%s\nRELEASE_INTEGRATION_ARGS=%s\nRELEASE_TOOL_PATH=%s\n' \
+    "$RT_SENTINEL" "$RT_SENTINEL" "$RT_SENTINEL" "$RT_SENTINEL" "$RT_SENTINEL" >"$RT_KEYS/env"
 chmod 0600 "$RT_KEYS/env"
 rt_out="$(
     rt_drive <<'SH'
-# Preflight must load the file and apply its PATH before any subsequent gate.
 RELEASE_TOOL_PATH="${RT_EXTRA}"
-# The file must supply the App setting while the environment supplies the tool directory.
 bash() { :; }
 git() { printf '%s\n' "$PWD"; }
 docker() { :; }
 require_clean_release_tree() {
-    [ "$BENCH_CI_APP_ID" = release-env-sentinel-3446 ] || exit 2
+    [ "$RELEASE_REQUIRED_STATUS_APP_ID" = release-env-sentinel-3446 ] || exit 2
     [ "${PATH%%:*}" = "$RT_EXTRA" ] || exit 3
     /bin/sh -c 'command -v shfmt'
     exit 0
@@ -177,11 +174,12 @@ assert_contains "preflight child sees tool directory" "$rt_out" "$RT_TOOLS/shfmt
 rt_out="$(
     rt_drive <<'SH'
 load_release_env
-for name in BENCH_CI_APP_ID BENCH_CI_APP_SLUG RELEASE_INTEGRATION_ARGS RELEASE_TOOL_PATH; do
+for name in RELEASE_REQUIRED_STATUS_CONTEXT RELEASE_REQUIRED_STATUS_APP_ID RELEASE_REQUIRED_STATUS_APP_SLUG RELEASE_INTEGRATION_ARGS RELEASE_TOOL_PATH; do
     [ "${!name}" = release-env-sentinel-3446 ] || exit 2
 done
-/bin/sh -c '[ "$BENCH_CI_APP_ID" = release-env-sentinel-3446 ] &&
-    [ "$BENCH_CI_APP_SLUG" = release-env-sentinel-3446 ] &&
+/bin/sh -c '[ "$RELEASE_REQUIRED_STATUS_CONTEXT" = release-env-sentinel-3446 ] &&
+    [ "$RELEASE_REQUIRED_STATUS_APP_ID" = release-env-sentinel-3446 ] &&
+    [ "$RELEASE_REQUIRED_STATUS_APP_SLUG" = release-env-sentinel-3446 ] &&
     [ "$RELEASE_INTEGRATION_ARGS" = release-env-sentinel-3446 ] &&
     [ "$RELEASE_TOOL_PATH" = release-env-sentinel-3446 ]'
 SH
@@ -190,23 +188,19 @@ SH
 assert_rc "env values loaded and exported" "$?" "0"
 # MUTATION PROOF: log a loaded value rather than its name.
 assert_not_contains "loader never logs values" "$rt_out" "$RT_SENTINEL"
-for name in BENCH_CI_APP_ID BENCH_CI_APP_SLUG RELEASE_INTEGRATION_ARGS RELEASE_TOOL_PATH; do
-    # MUTATION PROOF: omit per-name provenance logging.
+for name in RELEASE_REQUIRED_STATUS_CONTEXT RELEASE_REQUIRED_STATUS_APP_ID RELEASE_REQUIRED_STATUS_APP_SLUG RELEASE_INTEGRATION_ARGS RELEASE_TOOL_PATH; do
     assert_contains "loader names each setting" "$rt_out" "loaded $name"
 done
-# MUTATION PROOF: omit the loaded count.
-assert_contains "loader reports count" "$rt_out" "4 loaded, 0 retained"
+assert_contains "loader reports count" "$rt_out" "5 loaded, 0 retained"
 rt_out="$(
     rt_drive <<'SH'
-export BENCH_CI_APP_ID=existing BENCH_CI_APP_SLUG=''
+export RELEASE_REQUIRED_STATUS_APP_ID=existing RELEASE_REQUIRED_STATUS_APP_SLUG=''
 load_release_env
-[ "$BENCH_CI_APP_ID" = existing ] && [ "$BENCH_CI_APP_SLUG" = '' ]
+[ "$RELEASE_REQUIRED_STATUS_APP_ID" = existing ] && [ "$RELEASE_REQUIRED_STATUS_APP_SLUG" = '' ]
 SH
 )"
-# MUTATION PROOF: overwrite already-set values, including the empty string.
 assert_rc "environment values win, including empty" "$?" "0"
-# MUTATION PROOF: report overridden settings as loaded.
-assert_contains "loader reports retained names and count" "$rt_out" "2 loaded, 2 retained"
+assert_contains "loader reports retained names and count" "$rt_out" "3 loaded, 2 retained"
 # MUTATION PROOF: include skipped file values in the log.
 assert_not_contains "retained settings do not leak file values" "$rt_out" "$RT_SENTINEL"
 
@@ -224,7 +218,7 @@ SH
     # MUTATION PROOF: print the rejected line's value.
     assert_not_contains "rejected values are never logged" "$rt_out" "$RT_SENTINEL"
 done
-for line in "$RT_SENTINEL" 'BENCH_CI_APP_ID="unclosed' "BENCH_CI_APP_ID='"; do
+for line in "$RT_SENTINEL" 'RELEASE_REQUIRED_STATUS_APP_ID="unclosed' "RELEASE_REQUIRED_STATUS_APP_ID='"; do
     printf '# comment\n%s\n' "$line" >"$RT_KEYS/env"
     rt_out="$(
         rt_drive <<'SH'
@@ -241,20 +235,19 @@ done
 cat >"$RT_KEYS/env" <<'ENV'
 
 # comment
-export BENCH_CI_APP_ID="quoted value"
-BENCH_CI_APP_SLUG='$HOME'
+export RELEASE_REQUIRED_STATUS_APP_ID="quoted value"
+RELEASE_REQUIRED_STATUS_APP_SLUG='$HOME'
 RELEASE_INTEGRATION_ARGS=--local --dir literal=path --readiness
 RELEASE_TOOL_PATH=`literal`~$HOME
 ENV
 rt_out="$(
     rt_drive <<'SH'
 load_release_env
-[ "$BENCH_CI_APP_ID" = 'quoted value' ]
-[ "$BENCH_CI_APP_SLUG" = '$HOME' ]
+[ "$RELEASE_REQUIRED_STATUS_APP_ID" = 'quoted value' ]
+[ "$RELEASE_REQUIRED_STATUS_APP_SLUG" = '$HOME' ]
 [ "$RELEASE_TOOL_PATH" = '`literal`~$HOME' ]
 DRY_RUN=1
 SKIP_TESTS=1
-# Assert command content independently of terminal colors, using the real run() printer.
 C_RESET="" C_YELLOW=""
 test_gate
 SH
@@ -288,7 +281,7 @@ rm "$RT_KEYS/env"
 rt_out="$(
     rt_drive <<'SH'
 load_release_env
-[ -z "${BENCH_CI_APP_ID+x}${BENCH_CI_APP_SLUG+x}${RELEASE_INTEGRATION_ARGS+x}${RELEASE_TOOL_PATH+x}" ]
+[ -z "${RELEASE_REQUIRED_STATUS_CONTEXT+x}${RELEASE_REQUIRED_STATUS_APP_ID+x}${RELEASE_REQUIRED_STATUS_APP_SLUG+x}${RELEASE_INTEGRATION_ARGS+x}${RELEASE_TOOL_PATH+x}" ]
 SH
 )"
 # MUTATION PROOF: fail or set defaults when the optional env file is missing.

@@ -357,6 +357,7 @@ require_clean_bench() {
 }
 cleanup() {
     local approval_cleanup_rc=0
+    declare -F netwatch_window_abort >/dev/null && netwatch_window_abort
     package_appliance_cleanup || approval_cleanup_rc=$?
     declare -F approval_fixture_cleanup >/dev/null && approval_fixture_cleanup || approval_cleanup_rc=$?
     if [ "$FAIL" -gt 0 ] && [ -s "$SERIAL" ] && [ ! -f "$SERIAL.failed" ]; then # Preserve the console on failure.

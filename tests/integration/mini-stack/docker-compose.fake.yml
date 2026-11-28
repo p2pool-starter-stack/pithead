@@ -14,6 +14,9 @@ x-fake-image: &fake_image pithead-dashboard:itest
 networks:
   itestnet:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.250.0/24
 
 volumes:
   dashboard_data:
@@ -54,12 +57,12 @@ services:
     environment:
       HOST_IP: "127.0.0.1"
       TZ: "Etc/UTC"
-      MONERO_RPC_URL: "http://fake-monerod:18081"
+      MONERO_RPC_URL: "http://172.30.250.11:18081"
       MONERO_NODE_USERNAME: ""
       MONERO_NODE_PASSWORD: ""
-      MONERO_NODE_HOST: "fake-monerod"
+      MONERO_NODE_HOST: "172.30.250.11"
       # Override in scenario 11 to exercise the remote RPC path against the same fake.
-      LOCAL_MONERO_HOST: "${LOCAL_MONERO_HOST:-fake-monerod}"
+      LOCAL_MONERO_HOST: "${LOCAL_MONERO_HOST:-172.30.250.11}"
       MONERO_PRUNE: "true"
       TARI_GRPC_ADDRESS: "fake-tari:18142"
       DOCKER_PROXY_URL: "tcp://docker-proxy:2375"
@@ -77,13 +80,13 @@ services:
       P2POOL_URL: "itest-p2pool:3333"
       MONERO_WALLET_ADDRESS: "49iTestWalletPlaceholderXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
       PAYOUT_CONFIRM_ENABLED: "${PAYOUT_CONFIRM_ENABLED:-true}"
-      MONERO_WALLET_RPC_URL: "http://fake-wallet-rpc:18082/json_rpc"
+      MONERO_WALLET_RPC_URL: "http://172.30.250.12:18082/json_rpc"
       WALLET_RPC_USERNAME: ""
       WALLET_RPC_PASSWORD: ""
       TARI_PAYOUT_CONFIRM_ENABLED: "${TARI_PAYOUT_CONFIRM_ENABLED:-true}"
       TARI_WALLET_ADDRESS: "tari-test-wallet"
       TARI_WALLET_GRPC_ADDRESS: "fake-tari-wallet:18143"
-      PROXY_HOST: "xmrig-proxy"
+      PROXY_HOST: "172.30.250.14"
       PROXY_API_PORT: "3344"
       PROXY_AUTH_TOKEN: "itest"
       UPDATE_INTERVAL: "2"
@@ -91,12 +94,8 @@ services:
       TARI_NODE_DOWN_AFTER_SEC: "4"
       NODE_RECOVERY_AFTER_SEC: "3"
       MINING_GUARD_GRACE_SEC: "8"
-      # Healthchecks.io dead-man's switch (#79), pointed at the fake receiver so the e2e proves the
-      # REAL loop fires a heartbeat over a real HTTP call (not a mock). The ping URL is the on switch;
-      # the first ping fires immediately (throttle starts unarmed). There's no Tor container here, so
-      # blank the shared TOR_SOCKS_PROXY — the client then pings the fake receiver directly.
       HEALTHCHECKS_PING_URL: "http://fake-hc:9000/ph"
-      TOR_SOCKS_PROXY: ""
+      TOR_SOCKS_PROXY: "socks5h://172.30.250.14:1080"
       DASHBOARD_CONTROL_ENABLED: "true"
       TELEGRAM_ENABLED: "${TELEGRAM_ENABLED:-true}"
       TELEGRAM_BOT_TOKEN: "itest-token"
@@ -106,12 +105,14 @@ services:
       NTFY_URL: "${NTFY_URL-http://fake-sink:9000/ntfy}"
       NTFY_TOKEN: "itest-token"
       NOTIFY_TOR: "false"
-    depends_on: [fake-monerod, fake-tari, fake-wallet-rpc, fake-tari-wallet, docker-control, docker-proxy, p2pool, xmrig-proxy, fake-hc, fake-sink]
+    depends_on: [fake-monerod, fake-tari, fake-wallet-rpc, fake-tari-wallet, docker-control, docker-proxy, p2pool, xmrig-proxy, fake-hc, fake-sink, fake-socks]
 
   fake-monerod:
     image: *fake_image
     container_name: itest-fake-monerod
-    networks: [itestnet]
+    networks:
+      itestnet:
+        ipv4_address: 172.30.250.11
     entrypoint: []
     # Boot mid-sync so the dashboard holds the miner; the runner flips it to synced/down.
     command: ["python3", "/fakes/fake_monerod.py", "--port", "18081", "--mode", "syncing"]
@@ -137,10 +138,22 @@ services:
   fake-wallet-rpc:
     image: *fake_image
     container_name: itest-fake-wallet-rpc
-    networks: [itestnet]
+    networks:
+      itestnet:
+        ipv4_address: 172.30.250.12
     entrypoint: []
     command: ["python3", "/fakes/fake_wallet_rpc.py", "--port", "18082"]
     volumes: ["../fakes:/fakes:ro"]
+
+  fake-wallet-down:
+    profiles: [wallet-outage]
+    image: *fake_image
+    container_name: itest-fake-wallet-down
+    networks:
+      itestnet:
+        ipv4_address: 172.30.250.12
+    entrypoint: []
+    command: ["sleep", "3600"]
 
   fake-tari-wallet:
     image: *fake_image
@@ -154,7 +167,7 @@ services:
   # keeps the container alive long enough for Docker to record the failed gRPC healthcheck.
   tari-wallet-broken:
     profiles: [wallet-health]
-    image: ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d
+    image: ghcr.io/tari-project/minotari_console_wallet:v6.3.0-pre.0-mainnet@sha256:b655139fa60274e3d904e2ea75d7c3e1a4f3b7f4880e161378c1d4f2209cb9de
     container_name: itest-tari-wallet-broken
     networks: [itestnet]
     entrypoint: ["/bin/sh", "-c", "/wallet-config/entrypoint.sh || sleep 60"]
@@ -172,7 +185,7 @@ services:
   # Stand-ins for the miner containers: real, named containers the dashboard genuinely
   # stops/starts via docker-control. They just idle.
   p2pool:
-    image: busybox:1.36
+    image: busybox:1.38
     container_name: itest-p2pool
     networks: [itestnet]
     command: ["sh", "-c", "while true; do sleep 30; done"]
@@ -180,10 +193,22 @@ services:
       - dashboard_stats:/stats
 
   xmrig-proxy:
-    image: busybox:1.36
+    image: busybox:1.38
     container_name: itest-xmrig-proxy
-    networks: [itestnet]
+    networks:
+      itestnet:
+        ipv4_address: 172.30.250.13
     command: ["sh", "-c", "while true; do sleep 30; done"]
+
+  fake-socks:
+    image: *fake_image
+    container_name: itest-fake-socks
+    networks:
+      itestnet:
+        ipv4_address: 172.30.250.14
+    entrypoint: []
+    command: ["python3", "/fakes/fake_socks.py", "0.0.0.0", "1080"]
+    volumes: ["../fakes:/fakes:ro"]
 
   # Fake Healthchecks.io ping receiver (#79 e2e): records each ping path to a file the runner greps
   # via `compose exec`. Logs to /tmp (world-writable — the image runs non-root, uid 1000 #255, so a
@@ -208,7 +233,7 @@ services:
 
   # Read-only socket proxy (stats/logs) — mirrors the production docker-proxy.
   docker-proxy:
-    image: tecnativa/docker-socket-proxy:v0.5.0
+    image: tecnativa/docker-socket-proxy:3.4
     container_name: itest-docker-proxy
     networks: [itestnet]
     environment: ["CONTAINERS=1", "LOGS=1"]
@@ -216,7 +241,7 @@ services:
 
   # Write proxy scoped to start/stop only — mirrors the production docker-control.
   docker-control:
-    image: tecnativa/docker-socket-proxy:v0.5.0
+    image: tecnativa/docker-socket-proxy:3.4
     container_name: itest-docker-control
     networks: [itestnet]
     environment: ["POST=1", "ALLOW_START=1", "ALLOW_STOP=1"]

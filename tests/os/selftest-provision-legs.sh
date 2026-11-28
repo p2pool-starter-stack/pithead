@@ -37,6 +37,8 @@ grep -q '#4123' "$work/info"
 source "$ROOT/tests/os/phases/tor-heal.sh"
 # shellcheck source=tests/os/phases/pool-heal.sh
 source "$ROOT/tests/os/phases/pool-heal.sh"
+# shellcheck source=tests/os/phases/monerod-redial.sh
+source "$ROOT/tests/os/phases/monerod-redial.sh"
 _phase_provision_initial() {
     printf '%s' "${OS_RESERVED_NODE_CONSUMER:-consumer}" >"$work/flag"
     return 1
@@ -45,6 +47,9 @@ phase_tor_heal >>"$work/out" 2>&1 || true
 grep -qx 0 "$work/flag"
 rm "$work/flag"
 phase_p2pool_heal >>"$work/out" 2>&1 || true
+grep -qx 0 "$work/flag"
+rm "$work/flag"
+phase_monerod_redial >>"$work/out" 2>&1 || true
 grep -qx 0 "$work/flag"
 rm "$work/flag"
 

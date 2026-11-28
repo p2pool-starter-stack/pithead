@@ -88,3 +88,19 @@ def test_rig_config_is_surfaced_for_the_editor_prefill(monkeypatch, rigforge, ex
 def test_rig_config_is_none_for_a_worker_that_is_not_in_the_snapshot(monkeypatch):
     d = _detail(monkeypatch, "ghost", workers=[], descriptors=[])
     assert d["rig_config"] is None
+
+
+class TestWorkerDetailRigId:
+    def test_rig_id_is_the_feed_recorded_value(self, monkeypatch):
+        rid = "0123456789abcdef0123456789abcdef"
+        d = _detail(
+            monkeypatch,
+            "rig1",
+            workers=[{"name": "rig1", "status": "online", "rigforge": {"rig_id": rid}}],
+        )
+        assert d["rig_id"] == rid
+
+    def test_rig_id_is_none_without_a_feed_or_worker(self, monkeypatch):
+        d = _detail(monkeypatch, "rig1", workers=[{"name": "rig1", "status": "online"}])
+        assert d["rig_id"] is None
+        assert _detail(monkeypatch, "ghost", workers=[])["rig_id"] is None

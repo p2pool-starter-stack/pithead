@@ -91,8 +91,8 @@ write_poison() {
 }
 newnym_applied() {
     find "$control/results" -maxdepth 1 -name '*.json' -type f -exec \
-        jq -e --argjson started "$1" 'select(.action == "tor-newnym" and .status == "applied" and .ts >= $started)' {} \; 2>/dev/null |
-        grep 'tor-newnym' | wc -l
+        jq -e --argjson started "$1" 'select((.action == "tor-newnym" or .action == "tor-dropguards") and .status == "applied" and .ts >= $started)' {} \; 2>/dev/null |
+        grep -E "tor-(newnym|dropguards)" | wc -l
 }
 poison() {
     docker compose stop tor >"$work/stop.log" 2>&1

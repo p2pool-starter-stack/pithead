@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpcre2-8-0 \
     libsqlite3-0 \
     libssl3t64 \
+    libzstd1 \
     openssl \
     openssl-provider-legacy \
     perl-base \
@@ -44,8 +45,10 @@ COPY pyproject.toml uv.lock ./
 COPY mining_dashboard/ ./mining_dashboard/
 RUN chmod -R a+rX mining_dashboard
 
+FROM ghcr.io/astral-sh/uv:0.12.13@sha256:b485bd65cc2cf1c9a93b3554012c9c3778cf7b1b5fd3d3096ce9e1226c97e1e6 AS uv
+
 FROM base AS build
-COPY --from=ghcr.io/astral-sh/uv:0.12.13@sha256:b485bd65cc2cf1c9a93b3554012c9c3778cf7b1b5fd3d3096ce9e1226c97e1e6 /uv /bin/
+COPY --from=uv /uv /bin/
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked
 
 # ==========================================================================
@@ -56,6 +59,7 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked
 FROM build AS test
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --extra test
 COPY tests/ ./tests/
+COPY healthcheck.sh ./
 RUN python -m pytest --cov=mining_dashboard --cov-report=term-missing --cov-fail-under=80
 
 # ==========================================================================

@@ -78,14 +78,19 @@ class TestProbe:
             ok, evidence = TorEgressHealer._probe_egress()
             assert ok is True
             assert "answered" in evidence
-            assert get.call_args.kwargs["proxies"]["https"].startswith("socks5h://")
+            proxy = get.call_args.kwargs["proxies"]["https"]
+            assert proxy.startswith("socks5h://")
+            assert proxy == get.call_args.kwargs["proxies"]["http"]
+            assert evidence.split("circuit ")[1][:8] in proxy
 
     def test_network_failure_is_broken_egress(self):
         with patch(
             "mining_dashboard.service.health.tor_heal.bounded_get",
             side_effect=requests.ConnectionError("circuit timeout"),
         ):
-            assert TorEgressHealer._probe_egress()[0] is False
+            ok, evidence = TorEgressHealer._probe_egress()
+        assert ok is False
+        assert "isolate@" not in evidence and "circuit timeout" not in evidence
 
     def test_one_bad_circuit_does_not_count_as_failed_egress(self):
         with patch(
@@ -101,3 +106,9 @@ class TestProbe:
         )
         assert ":isolate@" in get.call_args_list[0].kwargs["proxies"]["https"]
         assert "cloudflare" in evidence
+
+
+def test_schemeless_proxy_is_a_failed_probe_not_an_exception(monkeypatch):
+    monkeypatch.setattr("mining_dashboard.service.health.tor_heal.TOR_SOCKS_PROXY", "tor:9050")
+    ok, evidence = TorEgressHealer._probe_egress()
+    assert ok is False and "ValueError" in evidence

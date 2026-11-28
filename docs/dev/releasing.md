@@ -59,6 +59,37 @@ reports and never bumps: a Tari or
 request to merge. Dependabot covers the base images it can see and is set to ignore minor and major
 bumps on the component pins for the same reason.
 
+Four pins that no Dependabot ecosystem can read are bumped by `.github/workflows/pin-bump.yml`, which runs
+daily and on `workflow_dispatch` (a dispatch defaults to a dry run that only reports). For each of the
+`monero`, `p2pool` and `xmrig-proxy` ARG pairs and the appliance's `RIGFORGE_REF`,
+`scripts/watch/pin-bump.sh` reads the latest stable upstream release, downloads the asset and
+refuses to go on unless its sha256 equals the digest GitHub publishes for it (Monero: the entry in
+`hashes.txt`, whose signature is not verified), then opens one `dependencies`-labelled PR per upstream
+version that moves the version and hash together, so a stale hash never lands. `RIGFORGE_REF` is
+resolved from the release tag to its commit. Monero only moves within its pinned minor: a release in
+a new minor is reported and never proposed, because that move stays a human decision (#1129). The Actions token
+opens these PRs, so they trigger no checks of their own: a maintainer pushes to the branch to start
+tiers 1 to 3, and the PR body names the `tier4-e2e` or `tier4-kvm` proof it needs before merge. A newer
+release supersedes the open PR for an older one of the same component, and a closed PR is taken as declined.
+
+Advisories are the one thing the watch cannot see: `monerod`, `p2pool` and `xmrig-proxy` install
+sha256-verified static binaries with no package metadata, so the Trivy sweep reports no CVEs for
+them and the watch reports newer versions, not advisories (#4277). Bumping any of the three, by hand or from a pin-bump PR (whose body asks for it), checks
+the upstream release notes and security advisories for the new version, and records that check in
+the bump PR. The weekly report states the gap, so the duty travels with the stale row that triggers
+the bump.
+
+Dependabot has no apt or apk ecosystem either, so the installed OS packages have their own watch. Each release attaches
+`os-packages-<tag>.txt`, one `<image> <OSV ecosystem> <source package> <version>` line per package
+in every published image (#4254). Every Monday `.github/workflows/os-package-watch.yml` runs
+`scripts/watch/os-package-watch.py` on the latest release's list: it asks [OSV](https://osv.dev)
+which recorded packages have an advisory that the distribution has fixed in a newer package, and
+opens or edits one issue labelled `dependencies` that lists them. Base images are pinned by digest,
+so shipping a fix means moving the listed image to a current base digest and package index and
+rebuilding it; the issue closes on the first weekly run whose release has no such package. A failed
+lookup is listed as unchecked, leaves the issue as it was and fails the run. A release cut
+before #4254 has no list, and the watch reports that instead.
+
 The release ingredients manifest records the appliance's baked RigForge commit from
 `RIGFORGE_REF` in `os/rootfs/Dockerfile` alongside the stack component pins.
 The built-in miner's RigForge tree is baked at image build because nothing can be installed later: apt cannot
@@ -198,10 +229,10 @@ Release notes, where operators actually read it. The branch model itself is in
 
 ### Forward merges into release-line branches
 
-Work for upcoming releases integrates on release-line branches named `develop-vX.Y.Z`: the
-patch line while a patch cut is in flight (for example `develop-v2.0.3`) and the next feature
-line (`develop-v2.1.0`). After every patch release is published, forward-merge `develop` into
-each open release-line branch, so the cut commit and every fix on `develop` reach those lines.
+`develop` carries the next patch release, and every security and bug fix lands there. A
+release-line branch named `develop-vX.Y.Z`, for example `develop-v2.1.0`, takes feature work for a
+later release only. After every patch release is published, forward-merge `develop` into each open
+release-line branch, so the cut commit and every fix on `develop` reach those lines.
 
 The `develop-v*` branches carry the same protection as `develop`: the same required checks and
 `adversarial-review` status, one approving review, stale approvals dismissed, admins included,
@@ -232,21 +263,51 @@ gh pr merge <n> --merge
 
 This is the one PR that is not squashed. A squash or rebase mints new commits, so `develop`
 never becomes an ancestor of the release line, and every later forward merge conflicts again on
-changes that were already merged. Merge commits are enabled on the repository for this case only.
+changes that were already merged. Merge commits are enabled on the repository for this case and
+the fold below only.
 
 [#3664]: https://github.com/p2pool-starter-stack/pithead/issues/3664
+
+### Folding a release line back into develop
+
+When a release line's work moves onto `develop`, fold the line back with a merge commit, as
+`develop-v2.0.3` was in [#3959]. First forward-merge `develop` into the line, so both sides carry
+the same version metadata and the line's `[Unreleased]` changelog entries already include
+`develop`'s. Then cut a `fold/` branch from `develop`, merge the line into it, and open the PR into
+`develop`:
+
+```bash
+git fetch origin develop develop-v2.0.5
+git switch -c fold/develop-v2.0.5-into-develop origin/develop
+git merge --no-ff origin/develop-v2.0.5
+git push origin fold/develop-v2.0.5-into-develop
+```
+
+The result keeps `develop`'s `VERSION`. Merge the PR with `gh pr merge <n> --merge`. The line then
+becomes an ancestor of `develop`, so the open PRs into the line retarget to `develop` with no
+rebase. Retarget them after the merge. The line branch is protected against deletion, so removing
+it is the owner's decision.
+
+[#3959]: https://github.com/p2pool-starter-stack/pithead/pull/3959
 
 ### Pipeline: stage → smoke-test → promote
 
 Ahead of stage 1, and outside the numbered pipeline the tool prints, `release.sh` runs one
-additional preflight check: it requires a successful `bench-ci/tier4` commit status on the exact
-release SHA from the dedicated bench-ci GitHub App. Both `BENCH_CI_APP_ID` (that App's numeric id)
-and `BENCH_CI_APP_SLUG` (`pithead-bench-ci`) are required on the release box, with no defaults. They
-may come from the [release env file](release-server.md#the-lintrelease-toolchain). Dry runs enforce
-the lint/test toolchain on the run's effective PATH, just as a real cut does. A dry run still does
-not run `make test` or the integration matrix: it prints their commands. The
+additional preflight check: the release status gate. When enabled it requires a successful
+commit status, under the context named by `RELEASE_REQUIRED_STATUS_CONTEXT`, on the exact
+release SHA, published by the GitHub App identified by `RELEASE_REQUIRED_STATUS_APP_ID` (that
+App's numeric id) and `RELEASE_REQUIRED_STATUS_APP_SLUG` (its slug). All three are settings with
+no defaults and may come from the
+[release env file](release-server.md#the-lintrelease-toolchain); when any one is set, all three
+are required. The gate is optional: with all three unset it skips with a log message, for a
+release lane that has not provisioned its status-publishing App yet. That skip is attested, not
+assumed — the manual attestation is then the only gate: before the cut, read the exact release
+SHA's status and job evidence by hand and record it in the release issue, as the e2e step below
+does. This repo's lane sets all three: context `bench-ci/tier4`, App `pithead-bench-ci`. The
 bench publishes that status only after its full tier-4 suite completes; a missing, failed,
-unreadable, or wrong-App status aborts the cut before anything is built. Under `--dry-run` the
+unreadable, or wrong-App status aborts the cut before anything is built. Dry runs enforce the
+lint/test toolchain on the run's effective PATH, just as a real cut does. A dry run still does
+not run `make test` or the integration matrix: it prints their commands. Under `--dry-run` the
 verdict is printed as a warning and the rehearsal continues, so a preview still runs end to end.
 
 1. Preflight: check the clean working tree, then build the git-ignored `pithead` executable from
@@ -282,7 +343,9 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
    not start a stack, which would collide with the release host's live deployment. A fuller
    functional run is opt-in: set `RELEASE_SMOKE_CMD` to a command to run during this stage, or
    point the [#54](https://github.com/p2pool-starter-stack/pithead/issues/54) harness at the
-   staged tag. Abort on failure.
+   staged tag. Abort on failure. Then `scripts/release/capture-packages.sh` reads `/etc/os-release`
+   and the dpkg or apk database out of each captured digest and records its installed source
+   packages; a failed capture stops the release, and publish refuses to run without the list.
 6. Promote by digest: re-tag the exact digests just smoke-tested to `:vX.Y.Z` and `:latest`,
    then push. Promotion is by digest (no rebuild), so the released bundle is bit-for-bit what was
    validated. Same version on every image.
@@ -321,7 +384,7 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
 
 Set `PITHEAD_REHEARSAL=1` and `PITHEAD_REGISTRY` to a non-production registry namespace.
 Rehearsal refuses the production namespace even with `--dry-run`. It runs every normal gate
-(preflight including signing, tier-4 status, the test gate and smoke), promotes and signs the
+(preflight including signing, the release status gate, the test gate and smoke), promotes and signs the
 scratch images, then stops before `publish`: no git tag, GitHub Release or install bundle is
 published. Release runs, including draft releases, require the owner's sign-off.
 
@@ -527,8 +590,8 @@ Every KVM job is bound to the exact tag SHA. `SHA` is the commit that will be ta
 after the battery, including a digest re-pin or a version bump, makes the whole KVM set stale:
 rerun the boot group, the four rig-group splits, provision and crossupdate on the new SHA and
 read them again before submitting e2e. `release.sh` refuses to publish unless the tag SHA itself carries a successful
-`bench-ci/tier4` status from the bench-ci App, but that check reads only the status on the
-release commit and never the KVM jobs' `commit` fields (`require_bench_tier4` in
+`bench-ci/tier4` status from the configured App, but that check reads only the status on the
+release commit and never the KVM jobs' `commit` fields (`require_release_status_gate` in
 `scripts/release/preflight.sh`). Confirming the rerun before publishing is therefore a
 procedural step the operator verifies, not a tool enforcement. The
 2.0.2 release shipped one commit after the commit its crossupdate and provision jobs proved
@@ -581,7 +644,7 @@ jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$E2E_KEY" --arg mode "$E2E_MO
 Read the completed e2e job's full status, log, artifacts and evidence. All eight jobs must carry
 the same SHA and ref. A failed or cancelled leg cannot yield a
 successful aggregate status. Confirm the exact commit's newest `bench-ci/tier4` status is
-`success` and its creator is the configured bench-ci App before running `release.sh`; record all
+`success` and its creator is the configured App before running `release.sh`; record all
 eight job IDs and the SHA in the release issue. Remove a rehearsal branch after confirming its
 status with `git push origin --delete "$REF"`. If a submission is refused, stop and report it to
 bench-ci; retain its printed idempotency key for a retry.
@@ -633,6 +696,18 @@ blob to be refused. That round trip catches a digest that no longer pulls, an im
 cosign it claims to be, and a committed `cosign.pub` that is no longer the public half of
 `COSIGN_KEY` — each of which would otherwise surface as *signature verification failed* on every
 install, which reads as tampering rather than as our own pin having moved.
+
+The verifier image is declared once, as the `FROM` line of `build/cosign/Dockerfile`, by tag and
+digest, where Dependabot bumps it. `scripts/build-pithead.sh` writes the digest reference, without
+the tag, into `COSIGN_IMAGE` in the generated `pithead`; `scripts/cosign-image.sh` prints the same
+reference for the live-upgrade and fixture scripts. A second literal anywhere else fails the tier-1
+signing test.
+
+The digest is the security control, not housekeeping. Verifying release images by first pulling a
+verifier is itself an unverified pull. Pinned by digest, a hostile registry can serve only those
+exact bytes or fail the pull. On a tag it could serve a `cosign` that exits 0 on everything and turn
+the gate off. Treat a bump as a supply-chain change: review the Dependabot PR, and the preflight
+round trip above must pass on it.
 
 `pithead` verifies before it changes anything:
 
@@ -835,6 +910,9 @@ What exists today:
   pipeline cosign-signs the promoted digests + the bundle, `pithead upgrade` and the dashboard
   upgrade verify against the committed `cosign.pub` and fail closed. See
   [Signed releases](#signed-releases).
+- ✅ Installed OS packages recorded per release (#4254): the GitHub Release carries
+  `os-packages-<tag>.txt`, the ingredients manifest counts each image's packages, and a weekly watch
+  checks the list against OSV and keeps one `dependencies` issue of the packages with fixed advisories.
 - ✅ Pull-based install: `${STACK_VERSION}` wired through `docker-compose.yml`. Each first-party
   service now carries an `image: ${PITHEAD_REGISTRY:-…}/pithead-<svc>:${STACK_VERSION:-dev}` ref
   alongside its `build:`. pithead picks build-vs-pull automatically: a source checkout (the image

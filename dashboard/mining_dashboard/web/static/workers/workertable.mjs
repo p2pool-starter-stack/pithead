@@ -37,17 +37,16 @@ const RigUpdateBadge = ({ up, name, onInspect }) => {
     : null;
 };
 
-// The worker's xmrig-API badge (#1857). One probe verdict answers two different questions and the
-// row has to tell them apart: an ADOPTED rig whose configured feed then failed is a real fault, and
-// the red badge's config advice is right for it; a rig the dashboard holds no control token for
-// gets the neutral `badge-outline` the version badge uses (#1836). That is NOT a claim it is
-// healthy: `workers.list` defaults to [], so a hand-configured miner with a real API fault lands
-// here too, and the tooltip names BOTH remedies rather than promising adoption fixes it.
-// The tooltip branches on `onInspect` for the same reason the name button does: with dashboard
-// control off there is no way into the rig from this table and no Adopt form (workerview.mjs), so
-// "open it and adopt" would be an impossible instruction. When control IS on it renders as a
-// button, like RigUpdateBadge, so the tooltip carrying the instruction is keyboard-reachable.
 const ApiBadge = ({ w, onInspect }) => {
+  if (w.identity_change) {
+    const title =
+      "This rig reports a rig_id that differs from the one recorded for it — the dashboard adopted nothing onto your existing entry. " +
+      "It may be a replaced, reprovisioned or renamed rig: open it and confirm its identity before editing. " +
+      "The id is a lookup hint only; the control token remains the sole credential.";
+    return onInspect
+      ? html` <button type="button" class="badge badge-bad" onClick=${() => onInspect(w.name)} title=${title}>identity changed</button>`
+      : html` <span class="badge badge-bad" title=${title}>identity changed</span>`;
+  }
   if (w.api_ok !== false) return null;
   if (w.adopted)
     return html` <span class="badge badge-bad" title="The dashboard couldn't read this worker's xmrig API, so uptime and per-miner hashrate are unavailable (it still mines — figures come from the proxy). Check workers.api_auth / api_port, or the miner's xmrig http settings.">api ⚠</span>`;

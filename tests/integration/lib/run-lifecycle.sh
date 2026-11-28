@@ -93,11 +93,12 @@ _run_lifecycle() {
             "$(rx "stat -c %u $(quote_arg "$own_probe") 2>/dev/null")" "1000"
         rx "sudo rm -f $(quote_arg "$own_probe")" >/dev/null 2>&1 || true
     fi
-    # .pool.type lags a sidechain switch until peers on the new chain connect — wait + three-way
-    # verdict, don't assert cold on a peer-timing state (#54, #687).
     assert_pool_switched "pool actually changed" "$(pool_label "$other")"
-    # Node-down failover (#31): stop monerod -> status non-zero (node down), dashboard rejects
-    # workers (xmrig-proxy stopped) -> start monerod -> readmitted -> status 0 again.
+    if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
+        prove_readmit_after_recreate
+    else
+        it_skip_leg "xmrig-proxy readmission bound after the pool recreate (#4166)" "remote mode: no local guarded services to watch" "by-design"
+    fi
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
         it_step "stopping monerod to exercise node-down failover…"
         lifecycle_mining_step node-down rx "docker compose stop monerod >/dev/null 2>&1"
@@ -375,12 +376,14 @@ _pred_monerod_missing() { _monerod_is missing; }
 _pred_monerod_unhealthy() { _monerod_is running unhealthy; }
 _pred_monerod_healthy() { _monerod_is running healthy; }
 _pred_proxy_stopped() { [ "$(svc_state_of "$(service_state xmrig-proxy)")" != "running" ]; }
+_pred_proxy_running() { [ "$(svc_state_of "$(service_state xmrig-proxy)")" = "running" ]; }
+_pred_guarded_services_healthy() {
+    local s
+    _pred_monerod_healthy && _pred_tor_healthy || return 1
+    s="$(service_state p2pool)"
+    [ "$(svc_state_of "$s")" = "running" ] && { [ "$(svc_health_of "$s")" = "healthy" ] || [ "$(svc_health_of "$s")" = "none" ]; }
+}
 _pred_failover_armed() {
-    # `/api/state` never carried the raw monero_sync/miner_released/workers_rejected fields
-    # (docs/dev/testing-strategy.md §F: this class of internal state is surfaced through
-    # `sync.monero.state` and the badges list, never as its own machine-queryable booleans) —
-    # so read the same contract the dashboard's own client reads, not internal names that were
-    # never part of the response.
     local st badges
     st="$(api_state)"
     badges="$(jq_get "$st" '.badges | map(.text) | join("")')"
@@ -395,4 +398,21 @@ _pred_tor_healthy() {
     local s
     s="$(service_state tor)"
     [ "$(svc_state_of "$s")" = "running" ] && { [ "$(svc_health_of "$s")" = "healthy" ] || [ "$(svc_health_of "$s")" = "none" ]; }
+}
+
+READMIT_BOUND_SEC=150
+prove_readmit_after_recreate() {
+    if ! wait_for 600 10 "guarded services healthy after the pool recreate (#4166)" _pred_guarded_services_healthy; then
+        it_fail "guarded services healthy after the pool recreate (#4166)" \
+            "monerod, p2pool or tor did not report healthy within 600s of the pool recreate"
+        return 0
+    fi
+    if wait_for "$READMIT_BOUND_SEC" 5 "xmrig-proxy running within the readmission bound (#4166)" _pred_proxy_running; then
+        it_pass "xmrig-proxy running within the readmission bound after the pool recreate (#4166)"
+    else
+        it_fail "xmrig-proxy running within the readmission bound after the pool recreate (#4166)" \
+            "xmrig-proxy still not running ${READMIT_BOUND_SEC}s after monerod, p2pool and tor reported healthy; dashboard reason lines:"
+        rx "timeout 30 docker compose logs --no-color --since 60m dashboard 2>&1 | grep -a -e 'not valid' -e 'readmit' -e 'holding' | tail -n 5" 2>/dev/null |
+            redact | sed 's/^/        /'
+    fi
 }
