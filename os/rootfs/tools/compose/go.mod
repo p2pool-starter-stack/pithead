@@ -2,7 +2,7 @@ module pithead.invalid/rootfs-tools/compose
 
 go 1.27
 
-require github.com/docker/compose/v5 v5.7.2
+require github.com/docker/compose/v5 v5.8.0
 
 require (
 	github.com/Microsoft/go-winio v0.6.4 // indirect
