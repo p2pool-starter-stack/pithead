@@ -22,15 +22,11 @@ PREFILL, and every field here is exactly what the operator typed or edited in th
 import ipaddress
 import re
 
-# Mirrors pithead's per-entry regexes (``validate_worker_endpoints``, pithead ~L5901) byte for
-# byte: the host charset in particular is the #122 guard — letters/digits/dot/dash/underscore
-# only, so a submitted value can never smuggle a port, path, or userinfo into a probe URL.
 NAME_RE = re.compile(r"^[!-~]{1,128}$")
 HOST_RE = re.compile(r"^[A-Za-z0-9._-]{1,253}$")
 TOKEN_RE = re.compile(r"^[!-~]{1,128}$")
+RIG_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
-# RigForge's default read and writable control API ports; the adopt form prefills both and the
-# operator may override them, same as ``workers.list[].port`` / ``control_port``.
 DEFAULT_API_PORT = 8081
 DEFAULT_CONTROL_PORT = 8082
 
@@ -68,6 +64,13 @@ def validate_worker_descriptor(entry):
     token = entry.get("token")
     if not isinstance(token, str) or not TOKEN_RE.fullmatch(token):
         return f"worker '{name}': a control token is required — the rig's control API is bearer-mandatory."
+    if "rig_id" in entry:
+        rig_id = entry["rig_id"]
+        if not isinstance(rig_id, str) or not RIG_ID_RE.fullmatch(rig_id):
+            return (
+                f"worker '{name}': rig_id must be the rig's 32-character lowercase hex "
+                "identity id (RigForge rig_id)."
+            )
     return ""
 
 

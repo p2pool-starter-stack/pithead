@@ -187,6 +187,7 @@ def build_workers(workers, rigforge_release=None):
                     "telemetry_h15": worker.get("telemetry_h15"),
                     "api_ok": worker.get("api_ok"),
                     "adopted": worker.get("adopted"),
+                    "identity_change": worker.get("identity_change"),
                     "rigforge": _rigforge_display(
                         worker.get("rigforge"), worker.get("status") == "online"
                     ),

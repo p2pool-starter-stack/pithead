@@ -20,7 +20,8 @@ dashboard/mining_dashboard/web/static/app/chart.mjs	663
 dashboard/mining_dashboard/web/static/app/logic.mjs	534
 dashboard/mining_dashboard/web/static/config/configview.mjs	555
 dashboard/mining_dashboard/web/static/system/osupdate.mjs	404
-dashboard/mining_dashboard/web/views/views.py	422
+dashboard/mining_dashboard/web/views/infra_views.py	401
+dashboard/mining_dashboard/web/views/views.py	403
 dashboard/mining_dashboard/web/views/xvb_views.py	682
 dashboard/mining_dashboard/wizard/server.py	664
 dashboard/tests/client/test_xmrig_client.py	489
@@ -28,6 +29,7 @@ dashboard/tests/client/test_xvb_client.py	402
 dashboard/tests/collector/test_containers.py	410
 dashboard/tests/config/test_config.py	445
 dashboard/tests/frontend/system/osupdate.test.mjs	427
+dashboard/tests/frontend/workers/workeradopt.test.mjs	422
 dashboard/tests/frontend/workers/workerview.test.mjs	409
 dashboard/tests/helper/test_http.py	495
 dashboard/tests/service/health/test_monerod_redial.py	541
