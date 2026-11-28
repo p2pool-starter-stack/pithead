@@ -45,7 +45,7 @@ COPY pyproject.toml uv.lock ./
 COPY mining_dashboard/ ./mining_dashboard/
 RUN chmod -R a+rX mining_dashboard
 
-FROM ghcr.io/astral-sh/uv:0.12.13@sha256:b485bd65cc2cf1c9a93b3554012c9c3778cf7b1b5fd3d3096ce9e1226c97e1e6 AS uv
+FROM ghcr.io/astral-sh/uv:0.12.24@sha256:3af4716e991d6956a41e573eab705d0ee08500cd829ed30293eb8472f372c65a AS uv
 
 FROM base AS build
 COPY --from=uv /uv /bin/
