@@ -13,9 +13,9 @@
 # Nothing here reaches a user. The release bundle (scripts/release/bundle.sh) and the appliance
 # image (os/rootfs/Dockerfile) are strict allowlists of named paths, and no tests/ path can enter
 # either — tests/stack/release asserts that rather than trusting it.
-FROM ghcr.io/astral-sh/uv:0.12.13@sha256:b485bd65cc2cf1c9a93b3554012c9c3778cf7b1b5fd3d3096ce9e1226c97e1e6 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.10@sha256:a3ea1357342c1a4bf9a0c53a3deb1b55379aefa037338d8113d5771efa01774f AS uv
 
-FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+FROM node:26-bookworm-slim@sha256:0042e17d232a87a2cd485be1da7900fca4d10a4ad11b29e9285da1d2e54798c9
 
 # The versions come from the Makefile — it is the one place either is written (#1679, #1688) — and
 # are passed in by scripts/test-container.sh via `make -s print-*-version`. The sha256s are tied to
