@@ -213,11 +213,6 @@ class BaseNodeStub(object):
                 request_serializer=base__node__pb2.GetShardKeyRequest.SerializeToString,
                 response_deserializer=base__node__pb2.GetShardKeyResponse.FromString,
                 _registered_method=True)
-        self.GetTemplateRegistrations = channel.unary_stream(
-                '/tari.rpc.BaseNode/GetTemplateRegistrations',
-                request_serializer=base__node__pb2.GetTemplateRegistrationsRequest.SerializeToString,
-                response_deserializer=base__node__pb2.GetTemplateRegistrationResponse.FromString,
-                _registered_method=True)
         self.GetSideChainUtxos = channel.unary_stream(
                 '/tari.rpc.BaseNode/GetSideChainUtxos',
                 request_serializer=base__node__pb2.GetSideChainUtxosRequest.SerializeToString,
@@ -485,13 +480,6 @@ class BaseNodeServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GetTemplateRegistrations(self, request, context):
-        """Get templates
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
     def GetSideChainUtxos(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -695,11 +683,6 @@ def add_BaseNodeServicer_to_server(servicer, server):
                     servicer.GetShardKey,
                     request_deserializer=base__node__pb2.GetShardKeyRequest.FromString,
                     response_serializer=base__node__pb2.GetShardKeyResponse.SerializeToString,
-            ),
-            'GetTemplateRegistrations': grpc.unary_stream_rpc_method_handler(
-                    servicer.GetTemplateRegistrations,
-                    request_deserializer=base__node__pb2.GetTemplateRegistrationsRequest.FromString,
-                    response_serializer=base__node__pb2.GetTemplateRegistrationResponse.SerializeToString,
             ),
             'GetSideChainUtxos': grpc.unary_stream_rpc_method_handler(
                     servicer.GetSideChainUtxos,
@@ -1668,33 +1651,6 @@ class BaseNode(object):
             '/tari.rpc.BaseNode/GetShardKey',
             base__node__pb2.GetShardKeyRequest.SerializeToString,
             base__node__pb2.GetShardKeyResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def GetTemplateRegistrations(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_stream(
-            request,
-            target,
-            '/tari.rpc.BaseNode/GetTemplateRegistrations',
-            base__node__pb2.GetTemplateRegistrationsRequest.SerializeToString,
-            base__node__pb2.GetTemplateRegistrationResponse.FromString,
             options,
             channel_credentials,
             insecure,

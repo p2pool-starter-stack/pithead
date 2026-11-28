@@ -25,9 +25,9 @@ source "$HERE/../lib/run-mergemine-localnet.sh"
 OUT_DIR="$(mktemp -d)"
 trap 'rm -rf "$OUT_DIR"' EXIT
 RX_LOG="$OUT_DIR/rx.log"
-SHIP="ghcr.io/tari-project/minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce"
-SHIP_FACTS="80a52117 PATH=/bin dockerfile_version=v6.0.1-pre.0 TARI_NETWORK=mainnet TARI_TARGET_NETWORK=mainnet"
-LN_FACTS="80a52117 PATH=/bin dockerfile_version=v6.0.1-pre.0 TARI_NETWORK=esme TARI_TARGET_NETWORK=testnet"
+SHIP="ghcr.io/tari-project/minotari_node:v6.2.0-mainnet@sha256:427a0b9caef47a5ed9a31d"
+SHIP_FACTS="1fe8cff5 PATH=/bin dockerfile_version=v6.2.0 TARI_NETWORK=mainnet TARI_TARGET_NETWORK=mainnet"
+LN_FACTS="1fe8cff5 PATH=/bin dockerfile_version=v6.2.0 TARI_NETWORK=esme TARI_TARGET_NETWORK=testnet"
 STUB_MONEROD=198.51.100.26 STUB_NODE_UP=1 STUB_SHIP_INSPECT_RC=1 STUB_JUDGE=""
 rx() {
     printf '%s\n' "$1" >>"$RX_LOG"
@@ -76,7 +76,7 @@ reset
 _mml_target_row "$SHIP_FACTS" "$LN_FACTS" >/dev/null 2>&1
 check "same revision, mainnet vs testnet passes" "$IT_PASS/$IT_FAIL" 1/0
 reset
-_mml_target_row "$SHIP_FACTS" "${LN_FACTS/80a52117/97aa59ec}" >/dev/null 2>&1
+_mml_target_row "$SHIP_FACTS" "${LN_FACTS/1fe8cff5/97aa59ec}" >/dev/null 2>&1
 check "a different revision fails" "$IT_FAIL" 1
 reset
 _mml_target_row "$SHIP_FACTS" "$SHIP_FACTS" >/dev/null 2>&1

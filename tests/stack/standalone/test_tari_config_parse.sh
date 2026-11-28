@@ -98,8 +98,8 @@ echo "  ✓ minotari_node accepted the rendered config (still running after the 
 # from the tari container instead of through the stack's tor. That Tor keeps its data under
 # <base_path>/<network>/libtor (Tari's get_base_path() appends the network, as the log4rs path
 # /var/tari/node/mainnet/... shows), created before the node starts networking.
-libtor_dir() { find "$1" -mindepth 2 -maxdepth 2 -type d -name libtor -print -quit 2>/dev/null; }
-if [ -n "$(libtor_dir "$WORK_DIR/node")" ]; then
+libtor_dir() { docker exec "$1" find "$2" -mindepth 2 -maxdepth 2 -type d -name libtor -print -quit 2>/dev/null; }
+if [ -n "$(libtor_dir "$CONTAINER" /var/tari/node)" ]; then
     echo "$output" >&2
     echo "FAIL: minotari_node started its in-process Tor (<base_path>/<network>/libtor exists) (#2653)" >&2
     exit 1
@@ -119,12 +119,14 @@ docker run -d --network none --name "$CALIBRATION" --user root -e WAIT_FOR_TOR=0
     --entrypoint /var/tari/config/entrypoint.sh \
     "$TARI_IMAGE" --disable-splash-screen --non-interactive >/dev/null
 for _ in $(seq 1 20); do
-    [ -n "$(libtor_dir "$WORK_DIR/calibration-node")" ] && break
+    [ -n "$(libtor_dir "$CALIBRATION" /var/tari/node)" ] && break
     sleep 1
 done
-if [ -z "$(libtor_dir "$WORK_DIR/calibration-node")" ]; then
+if [ -z "$(libtor_dir "$CALIBRATION" /var/tari/node)" ]; then
     docker logs "$CALIBRATION" >&2 || true
     echo "FAIL: calibration: a Tor transport with use_libtor at its default created no <base_path>/<network>/libtor" >&2
+    docker inspect -f 'calibration container: {{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' "$CALIBRATION" >&2 || true
+    docker exec "$CALIBRATION" sh -c 'grep -n "use_libtor\|type = " /tmp/tari-runtime-config.toml; ls -ld /var/tari/node /var/tari/node/*; find /var/tari/node -mindepth 1 -maxdepth 5 -print; find /var/tari/node -type f -name "*.log" -exec tail -n 40 {} +' >&2 2>/dev/null || true
     exit 1
 fi
 echo "  ✓ calibration: the same image on a Tor transport with use_libtor at its default starts libtor"

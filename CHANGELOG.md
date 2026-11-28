@@ -27,6 +27,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 - Tor auto-heal now works on **No login** appliances through a host-restricted healing channel. General dashboard control remains disabled, and state recovery retains its evidence, onion-identity, lock and six-hour cooldown checks (#3166).
 - XvB sync regression tests now check real stored stats, reward estimates and raffle wins. Failed fetches and unparseable round aggregates must retain the last good readings and freshness timestamps; a local failure-count update remains allowed (#3056).
 
+### Tari
+
+- Bump Tari node and wallet to v6.2.0-mainnet, digest-pinned (node `sha256:427a0b9c...`, wallet
+  `sha256:655e8046...`), and move the vendored gRPC schema with them to the v6.2.0 tag: upstream
+  deleted the template-registration, eviction-proof and encoded-merkle-proof RPC surface, which no
+  dashboard caller uses (#4318).
+
 ### Security
 
 - The appliance rootfs builds Compose and Cosign with Go 1.26.11, clearing CVE-2026-97054

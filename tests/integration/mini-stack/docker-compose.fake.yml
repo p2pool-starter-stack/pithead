@@ -155,7 +155,7 @@ services:
   # keeps the container alive long enough for Docker to record the failed gRPC healthcheck.
   tari-wallet-broken:
     profiles: [wallet-health]
-    image: ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d
+    image: ghcr.io/tari-project/minotari_console_wallet:v6.2.0-mainnet@sha256:655e804656350559bd4338539b2c625fe2799456b5027f1c2d859d48a9c3c49e
     container_name: itest-tari-wallet-broken
     networks: [itestnet]
     entrypoint: ["/bin/sh", "-c", "/wallet-config/entrypoint.sh || sleep 60"]

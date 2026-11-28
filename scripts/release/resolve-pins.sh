@@ -114,7 +114,7 @@ if [ "${1:-}" = "--self-test" ]; then
     cat >"$fx1" <<'EOF'
     image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-dashboard:${STACK_VERSION:-dev}
     image: caddy:2.11.4@sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1
-    image: ghcr.io/tari-project/minotari_node:v6.0.0-mainnet@sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2
+    image: ghcr.io/tari-project/minotari_node:v6.2.0-mainnet@sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2
 EOF
     st "extraction finds exactly the digest-pinned refs" "$(extract_pins "$fx1" | wc -l | tr -d ' ')" "2"
     st "a \${VAR} first-party image is skipped" "$(extract_pins "$fx1" | grep -c '\${' || true)" "0"

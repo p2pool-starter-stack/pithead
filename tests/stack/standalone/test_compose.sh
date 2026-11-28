@@ -149,7 +149,7 @@ expect_min "log rotation on every service" "max-size:" 9
 # the split the separate-proxy design exists to prevent.
 expect_min "tecnativa socket-proxy pinned by digest (both proxies)" "tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459" 2
 expect_present "caddy pinned by digest" "caddy:2.11.7@sha256:36c24ad91a7ff7bc4c87fe22bfa8df3c4b18da0773d73fc12ee2c52b98c0bb7e"
-expect_present "tari node pinned by digest" "minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec"
+expect_present "tari node pinned by digest" "minotari_node:v6.2.0-mainnet@sha256:427a0b9caef47a5ed9a31dba1def13437e2567c66a6c6fa34b6fe6cdcbffaf9c"
 
 # Per-service precision checks via the JSON render.
 JSON="$(docker compose --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" config --format json 2>/dev/null)"
@@ -329,7 +329,7 @@ jq_assert "tari-wallet runs under an init that reaps and forwards signals (#2657
 # it is not in that render at all. Here it is, for the same reason the healthcheck assertion above
 # is. Whole reference, not the `tag@sha256:` prefix, for the reason given at the other three.
 jq_assert "tari console wallet pinned by digest (#1137)" \
-    '.services["tari-wallet"].image == "ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d"'
+    '.services["tari-wallet"].image == "ghcr.io/tari-project/minotari_console_wallet:v6.2.0-mainnet@sha256:655e804656350559bd4338539b2c625fe2799456b5027f1c2d859d48a9c3c49e"'
 # The two Tari images are one component, bumped together, so a tag that moves on one and not the
 # other is a silent split-brain — the node speaking one protocol version and the wallet another.
 # Nothing compared them, and `scripts/release/release.sh pin tari` reads the NODE only (#1138), so a wallet

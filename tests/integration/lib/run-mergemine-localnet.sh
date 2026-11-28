@@ -20,7 +20,7 @@
 # No live stack container is touched. P2Pool pays the box's configured wallets, as in V6.
 
 # The `-esme` twin of the minotari_node pin in docker-compose.yml; the selftest keeps the versions equal.
-MML_TARI_IMAGE="ghcr.io/tari-project/minotari_node:v6.0.1-pre.0-esme@sha256:7ff4e7e3884bee360110ccf6166fdb4d50718cd2299face638d4a4369253c0b0"
+MML_TARI_IMAGE="ghcr.io/tari-project/minotari_node:v6.2.0-esme@sha256:c7ed7febd5128bd1b9ccd0b17632f504df4bb75e85c08a10f26e0ef770100205"
 MML_NET=itest-mm-localnet
 MML_GRPC_PORT=18142
 MML_WANT_HEIGHTS=5

@@ -4,7 +4,7 @@ After=tor.service
 Requires=tor.service
 [Container]
 ContainerName=tari
-Image=ghcr.io/tari-project/minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec
+Image=ghcr.io/tari-project/minotari_node:v6.2.0-mainnet@sha256:427a0b9caef47a5ed9a31dba1def13437e2567c66a6c6fa34b6fe6cdcbffaf9c
 Network=mining.network
 IP=172.28.0.27
 User=1000:1000

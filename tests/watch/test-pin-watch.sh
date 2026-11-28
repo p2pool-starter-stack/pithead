@@ -20,11 +20,11 @@ st "a digest suffix is not part of the version" \
 # And the comparison must still SEE a real gap.
 st "a real gap survives normalisation" \
     "$([ "$(norm 'v5.3.1-mainnet')" = "$(norm 'v5.6.0')" ] && echo same || echo differs)" "differs"
-st "pinned prerelease is newer than older stable" "$(version_status v6.0.1-pre.0 v6.0.0)" ahead
-st "same pinned version is current" "$(version_status v6.0.1-pre.0 v6.0.1-pre.0)" current
-st "newer stable is ahead" "$(version_status v6.0.1-pre.0 v6.0.2)" stale
-st "matching stable supersedes prerelease" "$(version_status v6.0.1-pre.0 v6.0.1)" stale
-st "newer prerelease is ahead" "$(version_status v6.0.1-pre.0 v6.0.1-pre.1)" stale
+st "pinned prerelease is newer than older stable" "$(version_status v6.2.0 v6.0.0)" ahead
+st "same pinned version is current" "$(version_status v6.2.0 v6.2.0)" current
+st "newer stable is ahead" "$(version_status v6.2.0 v6.0.2)" ahead
+st "matching stable supersedes prerelease" "$(version_status v6.2.0 v6.0.1)" ahead
+st "newer prerelease is ahead" "$(version_status v6.2.0 v6.0.1-pre.1)" ahead
 st "numeric components beat text ordering" "$(version_order v6.0.9 v6.0.10)" older
 st "prerelease numbers beat text ordering" "$(version_order v6.0.1-pre.9 v6.0.1-pre.10)" older
 st "prerelease labels use precedence" "$(version_order v6.0.1-pre.9 v6.0.1-rc.0)" older
@@ -33,13 +33,13 @@ st "unrecognized version is unchecked" \
 st "unreadable prerelease feed is unchecked" \
     "$(
         gh() { return 1; }
-        newer_tari_prereleases v6.0.1-pre.0 >/dev/null && echo accepted || echo refused
+        newer_tari_prereleases v6.2.0 >/dev/null && echo accepted || echo refused
     )" refused
 st "unreadable feed marks report unchecked and increments failures" \
     "$(
         gh() { return 1; }
         failed=0 tari_prereleases=""
-        add_tari_prerelease_report v6.0.1-pre.0
+        add_tari_prerelease_report v6.2.0
         printf '%s|%s' "$failed" "$tari_prereleases"
     )" \
     "1|**prerelease lookup failed — NOT checked**"
@@ -47,14 +47,14 @@ st "newer prereleases stay separate" \
     "$(
         gh() {
             [[ "$*" != *'prerelease == true'* ]] || return 1 # A prerelease-shaped Tari tag can have false metadata.
-            printf '%s\n' v6.0.1-pre.1 v6.0.1-pre.0 v6.0.0-pre.0 v4.10.0
+            printf '%s\n' v6.3.0-pre.0 v6.2.0 v6.0.1-pre.0 v4.10.0
         }
-        newer_tari_prereleases v6.0.1-pre.0
-    )" v6.0.1-pre.1
+        newer_tari_prereleases v6.2.0
+    )" "v6.3.0-pre.0"
 st "no newer prerelease is a completed check" \
     "$(
-        gh() { printf '%s\n' v6.0.1-pre.0; }
-        newer_tari_prereleases v6.0.1-pre.0 >/dev/null && echo checked || echo failed
+        gh() { printf '%s\n' v6.2.0; }
+        newer_tari_prereleases v6.2.0 >/dev/null && echo checked || echo failed
     )" checked
 # UNREACHABLE MUST NOT READ AS CURRENT — the defect this whole script is aimed at.
 st "a release lookup that cannot run fails" \
@@ -109,24 +109,23 @@ st "a version pin is compared against the tag, with no lookup at all" \
 # Both sides of that comparison go through norm(), so norm must leave a commit sha untouched.
 st "normalisation leaves a commit sha alone" \
     "$(norm 60aa883901fc74ea39ed2f21962b8ba7f96d73ba)" "60aa883901fc74ea39ed2f21962b8ba7f96d73ba"
-st "a Tari node pin, release or pre-release (#2604), selects the matching upstream proto tag" \
-    "$(tari_proto_ref 'x:v6.0.0-mainnet@sha256:aaaa') $(tari_proto_ref 'x:v6.0.1-pre.0-mainnet@sha256:aaaa')" "v6.0.0 v6.0.1-pre.0"
+st "a Tari node pin, release or pre-release (#2604), selects the matching upstream proto tag" "$(tari_proto_ref 'x:v6.0.0-mainnet@sha256:aaaa') $(tari_proto_ref 'x:v6.2.0-mainnet@sha256:aaaa')" "v6.0.0 v6.2.0"
 st "a malformed Tari pin is refused" \
     "$(tari_proto_ref 'ghcr.io/tari-project/minotari_node:latest' >/dev/null 2>&1 && echo accepted || echo refused)" "refused"
 run_buf() {
     case "$1" in
     build)
         [ "$2" = . ] && return "${ST_LOCAL_BUILD_RC:-0}"
-        [ "$2" = "https://github.com/tari-project/tari.git#tag=v6.0.0,subdir=applications/minotari_app_grpc/proto" ] || return 3
+        [ "$2" = "https://github.com/tari-project/tari.git#tag=v6.2.0,subdir=applications/minotari_app_grpc/proto" ] || return 3
         return "${ST_UPSTREAM_BUILD_RC:-0}"
         ;;
     breaking)
-        [ "$2" = "https://github.com/tari-project/tari.git#tag=v6.0.0,subdir=applications/minotari_app_grpc/proto" ] && [ "$3" = --against ] && [ "$4" = . ] || return 3
+        [ "$2" = "https://github.com/tari-project/tari.git#tag=v6.2.0,subdir=applications/minotari_app_grpc/proto" ] && [ "$3" = --against ] && [ "$4" = . ] || return 3
         return "${ST_BUF_BREAKING_RC:-0}"
         ;;
     esac
 }
-tree_pin() { printf '%s' 'ghcr.io/tari-project/minotari_node:v6.0.0-mainnet@sha256:aaaa'; }
+tree_pin() { printf '%s' 'ghcr.io/tari-project/minotari_node:v6.2.0-mainnet@sha256:aaaa'; }
 row() { ST_ROW="$*"; }
 proto_report() {
     failed=0 stale=0 ST_ROW=""
@@ -134,17 +133,17 @@ proto_report() {
     printf '%s|%s|%s' "$failed" "$stale" "$ST_ROW"
 }
 ST_LOCAL_BUILD_RC=0 ST_UPSTREAM_BUILD_RC=0 ST_BUF_BREAKING_RC=0
-st "matching Tari protos render current in the weekly report" "$(proto_report)" "0|0|tari gRPC schema \`f42e14d\` \`v6.0.0\` compatible"
+st "matching Tari protos render current in the weekly report" "$(proto_report)" "0|0|tari gRPC schema \`1fe8cff5\` \`v6.2.0\` compatible"
 ST_BUF_BREAKING_RC=100
-st "a node-side deletion renders breaking drift" "$(proto_report)" "0|1|tari gRPC schema \`f42e14d\` \`v6.0.0\` **breaking drift**"
+st "a node-side deletion renders breaking drift" "$(proto_report)" "0|1|tari gRPC schema \`1fe8cff5\` \`v6.2.0\` **breaking drift**"
 ST_BUF_BREAKING_RC=0
-st "a node-side addition stays compatible" "$(proto_report)" "0|0|tari gRPC schema \`f42e14d\` \`v6.0.0\` compatible"
+st "a node-side addition stays compatible" "$(proto_report)" "0|0|tari gRPC schema \`1fe8cff5\` \`v6.2.0\` compatible"
 ST_BUF_BREAKING_RC=1
-st "a failed comparison keeps its own unchecked report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v6.0.0\` **schema comparison failed — NOT checked**"
+st "a failed comparison keeps its own unchecked report" "$(proto_report)" "1|0|tari gRPC schema \`1fe8cff5\` \`v6.2.0\` **schema comparison failed — NOT checked**"
 ST_UPSTREAM_BUILD_RC=1 ST_BUF_BREAKING_RC=0
-st "a failed upstream build renders unchecked in the weekly report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v6.0.0\` **upstream schema fetch/build failed — NOT checked**"
+st "a failed upstream build renders unchecked in the weekly report" "$(proto_report)" "1|0|tari gRPC schema \`1fe8cff5\` \`v6.2.0\` **upstream schema fetch/build failed — NOT checked**"
 ST_UPSTREAM_BUILD_RC=0 ST_LOCAL_BUILD_RC=100
-st "a local parse failure keeps its own unchecked report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v6.0.0\` **vendored schema build failed — NOT checked**"
+st "a local parse failure keeps its own unchecked report" "$(proto_report)" "1|0|tari gRPC schema \`1fe8cff5\` \`v6.2.0\` **vendored schema build failed — NOT checked**"
 st "the real weekly report invokes the Tari proto row" "$(grep -c '^add_tari_proto_row$' "$0")" "1"
 integration_root=$(mktemp -d)
 trap 'rm -rf "$integration_root"' EXIT

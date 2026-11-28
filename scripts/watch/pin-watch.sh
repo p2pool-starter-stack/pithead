@@ -204,27 +204,27 @@ add_tari_proto_row() {
     local raw ref rc=0
     raw=$(tree_pin tari 2>/dev/null) || raw=""
     if ! ref=$(tari_proto_ref "$raw"); then
-        row "tari gRPC schema" "\`f42e14d\`" "—" "**could not read the pinned node tag — NOT checked**"
+        row "tari gRPC schema" "\`1fe8cff5\`" "—" "**could not read the pinned node tag — NOT checked**"
         failed=$((failed + 1))
         return
     fi
     check_tari_protos "$ref" || rc=$?
     case "$rc" in
-    0) row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "compatible" ;;
+    0) row "tari gRPC schema" "\`1fe8cff5\`" "\`$ref\`" "compatible" ;;
     1)
-        row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "**vendored schema build failed — NOT checked**"
+        row "tari gRPC schema" "\`1fe8cff5\`" "\`$ref\`" "**vendored schema build failed — NOT checked**"
         failed=$((failed + 1))
         ;;
     2)
-        row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "**upstream schema fetch/build failed — NOT checked**"
+        row "tari gRPC schema" "\`1fe8cff5\`" "\`$ref\`" "**upstream schema fetch/build failed — NOT checked**"
         failed=$((failed + 1))
         ;;
     3)
-        row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "**breaking drift**"
+        row "tari gRPC schema" "\`1fe8cff5\`" "\`$ref\`" "**breaking drift**"
         stale=$((stale + 1))
         ;;
     *)
-        row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "**schema comparison failed — NOT checked**"
+        row "tari gRPC schema" "\`1fe8cff5\`" "\`$ref\`" "**schema comparison failed — NOT checked**"
         failed=$((failed + 1))
         ;;
     esac
