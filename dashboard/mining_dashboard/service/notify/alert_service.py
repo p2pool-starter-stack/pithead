@@ -14,6 +14,7 @@ from mining_dashboard.helper.utils import format_hashrate
 from mining_dashboard.service.health.container_health import EDGE_MESSAGES, ContainerHealthMonitor
 from mining_dashboard.service.network.egress_status import live_firewall_state
 from mining_dashboard.service.notify.alert_edges import AlertEdgesMixin, _parse_hhmm
+from mining_dashboard.service.notify.alert_retry import AlertOutbox
 from mining_dashboard.service.notify.egress_firewall_edges import EgressFirewallEdgesMixin
 from mining_dashboard.service.notify.monero_health_edges import MoneroHealthEdgesMixin
 from mining_dashboard.service.notify.notify_sinks import config_sinks
@@ -149,6 +150,7 @@ class AlertService(
         # webhook/ntfy sinks — each with `enabled` / `event_enabled(evt)` / `send(text, evt)`.
         # On a default stack this is just the (disabled) Telegram notifier, so nothing new runs.
         self.sinks = list(sinks) if sinks is not None else [self.notifier, *config_sinks()]
+        self._outbox = AlertOutbox()
         self.workers = worker_monitor if worker_monitor is not None else WorkerPresenceMonitor()
         self.containers = (
             container_monitor if container_monitor is not None else ContainerHealthMonitor()
@@ -384,14 +386,13 @@ class AlertService(
                     logger.debug("Container-health update failed (%s)", type(exc).__name__)
             return []
         signals.setdefault("egress_firewall", live_firewall_state())  # the host's verdict, #2599
+        await self._outbox.send([], self._event_sinks)
         try:
             alerts = self.evaluate(**signals)
         except Exception as exc:  # never let an alerting bug break the data loop
-            logger.debug("Alert evaluation failed (%s)", type(exc).__name__)
+            logger.warning("Alert evaluation failed (%s)", type(exc).__name__)
             return []
-        for evt, text in alerts:
-            for sink in self._event_sinks(evt):
-                await asyncio.to_thread(sink.send, text, evt)
+        await self._outbox.send(alerts, self._event_sinks)
         return alerts
 
     async def degradation_alert(self, kind, drop_frac):
@@ -415,14 +416,6 @@ class AlertService(
         return text
 
     async def payout_confirmed_alert(self, chain, amount_atomic, txid):
-        """Push a payout-confirmed alert (#381): the view-only wallet saw an incoming payout land
-        on-chain — the ground truth behind the earnings estimate. "Alert once" is enforced upstream
-        (the caller only invokes this for genuinely-new ``(chain, txid)`` rows the idempotent
-        ``payouts`` table just inserted), so a dashboard restart re-scanning the tip replays nothing.
-        Carries the chain so the shared table/event serves Tari's sibling (#462), and the chain
-        also picks the atomic-unit divisor — Monero stores piconero (1e12/XMR), Tari microTari
-        (1e6/XTM) — so the same alert formats both correctly. No-op when the event is toggled off.
-        Returns the text sent (handy for tests), else ``None``."""
         sinks = self._event_sinks(self.EVT_PAYOUT_CONFIRMED)
         if not sinks:
             return None
@@ -432,9 +425,11 @@ class AlertService(
             f"\U0001f4b0 Payout CONFIRMED on-chain: {amount:.6f} {chain.upper()} "
             f"landed in your wallet (tx {txid[:8]}…)."
         )
+        delivered = False
         for sink in sinks:
-            await asyncio.to_thread(sink.send, text, self.EVT_PAYOUT_CONFIRMED)
-        return text
+            if await asyncio.to_thread(sink.send, text, self.EVT_PAYOUT_CONFIRMED):
+                delivered = True
+        return text if delivered else False
 
     async def payout_wallet_down_alert(self, chain, reason):
         """One debounced edge per enabled payout wallet; no event-specific opt-out."""

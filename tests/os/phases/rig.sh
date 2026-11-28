@@ -238,13 +238,13 @@ phase_rig() {
         ok "a rig that never ran the helper holds no off-host connection beyond pool, ssh, time sync and DNS" ||
         bad "unexpected off-host connections on a rig that never ran the helper: $odd_conn"
 
-    tor_run=$(_ssh "PITHEAD_TOR_TIMEOUT=300 pithead-tor sh -c 'ss -ltn 2>/dev/null | grep -q 127.0.0.1:9253 && echo LISTENER-UP; curl -sS -m 90 -o /dev/null -w %{http_code} https://api.github.com/repos/p2pool-starter-stack/pithead/releases/latest' 2>&1; echo rc=\$?" 2>/dev/null | tr -d '\r' | tr '\n' ' ')
+    tor_run=$(_ssh "PITHEAD_TOR_TIMEOUT=300 pithead-tor sh -c 'ss -ltn 2>/dev/null | grep -q 127.0.0.1:9253 && echo LISTENER-UP; curl -sS -m 90 -D - https://check.torproject.org/api/ip' 2>&1; echo rc=\$?" 2>/dev/null | tr -d '\r' | tr '\n' ' ')
     [[ "$tor_run" == *LISTENER-UP* ]] &&
         ok "the helper holds the SOCKS listener on loopback while its command runs" ||
         bad "the caller saw no SOCKS listener during the run: $tor_run"
-    [[ "$tor_run" =~ ([1-5][0-9][0-9])rc=0 ]] &&
-        ok "the helper's command fetched over a live Tor circuit (the release API answered HTTP ${BASH_REMATCH[1]})" ||
-        bad "the release API was not fetched over Tor during the run: $tor_run"
+    [[ "$tor_run" =~ (^|[[:space:]])HTTP/[0-9.]+\ 200[[:space:]] && "$tor_run" == *'"IsTor":true'* ]] &&
+        ok "the helper's command fetched over a live Tor circuit (check.torproject.org answered 200 and reported a Tor exit)" ||
+        bad "check.torproject.org was not fetched over Tor during the run: $tor_run"
     [ -z "$(_ssh 'pgrep -x tor 2>/dev/null' | tr -d '\r')" ] &&
         ok "Tor stopped when the helper's command ended" ||
         bad "tor is still running after the helper returned"

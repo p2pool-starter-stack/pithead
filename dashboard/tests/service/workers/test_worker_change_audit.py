@@ -216,22 +216,17 @@ class TestTheRevisionTableIsBounded:
             sm.close()
 
     def test_prune_does_not_evict_a_row_a_live_rig_still_touches(self, monkeypatch):
-        # The ruling's guard: do not evict a row a live rig's Inspect provenance still points at.
-        # `ts` is rewritten on every poll, so a rig still being polled refreshes its own row
-        # before the sweep below ever runs -- only a name that has gone silent for the full
-        # window is a candidate, and this proves it against the real table, not by inspection.
         monkeypatch.setattr(wcs, "HISTORY_RETENTION_SEC", 100)
-        monkeypatch.setattr(wcs.random, "random", lambda: 0.0)  # force the prune sampler to fire
+        monkeypatch.setattr(wcs.random, "random", lambda: 0.0)
+        monkeypatch.setattr(wcs, "_REVISION_REFRESH_SEC", 50)
+        now = [time.time()]
+        monkeypatch.setattr(wcs.time, "time", lambda: now[0])
         svc, sm = _svc()
         try:
-            stale_ts = time.time() - 1000
-            sm._conn.execute(
-                "INSERT INTO worker_config_revision "
-                "(worker, revision, last_change_id, ts, drift_from) VALUES (?, ?, ?, ?, ?)",
-                ("stale-rig", "rev", None, stale_ts, None),
-            )
-            sm._conn.commit()
-            _poll(svc, "live-rig", "aaa")  # writes + refreshes its own row, then the sweep runs
+            _poll(svc, "stale-rig", "rev")
+            for _ in range(7):
+                _poll(svc, "live-rig", "aaa")
+                now[0] += 30
             assert set(_revision_rows(sm)) == {"live-rig"}
         finally:
             sm.close()

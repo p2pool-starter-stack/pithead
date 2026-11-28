@@ -40,7 +40,7 @@ check "an absent title yields nothing" "$(bash scripts/watch/find-open-issue.sh 
 check "a prefix of the title does not match" "$(bash scripts/watch/find-open-issue.sh "Weekly")" ""
 check "no workflow keeps the capped lookup" \
     "$(grep -l 'issue list --state open' .github/workflows/*.yml | tr '\n' ' ')" ""
-for w in pin-watch trivyignore-watch scheduled-run-watch ci; do
+for w in pin-watch trivyignore-watch scheduled-run-watch ci os-package-watch; do
     check "$w uses the shared lookup" "$(grep -c 'scripts/watch/find-open-issue.sh' ".github/workflows/$w.yml")" "1"
 done
 exit "$fail"

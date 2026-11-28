@@ -146,6 +146,10 @@ st "a failed upstream build renders unchecked in the weekly report" "$(proto_rep
 ST_UPSTREAM_BUILD_RC=0 ST_LOCAL_BUILD_RC=100
 st "a local parse failure keeps its own unchecked report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v6.0.0\` **vendored schema build failed — NOT checked**"
 st "the real weekly report invokes the Tari proto row" "$(grep -c '^add_tari_proto_row$' "$0")" "1"
+st "the weekly report states the static-binary CVE gap (#4277)" \
+    "$(static_binary_gap_note)" \
+    "The monerod, p2pool and xmrig-proxy pins are sha256-verified static binaries with no package metadata: Trivy reports no CVEs for them and this report tracks newer versions, not advisories. Bump any of the three only after checking the upstream release notes and security advisories for the new version, and record that check in the bump PR."
+st "the real weekly report carries the static-binary gap note" "$(grep -c 'static_binary_gap_note' "$0")" "2"
 integration_root=$(mktemp -d)
 trap 'rm -rf "$integration_root"' EXIT
 mkdir -p "$integration_root/os/rootfs" "$integration_root/scripts/watch"
