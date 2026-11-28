@@ -75,7 +75,7 @@ export function createFreshness({
         const answered = await fetchFn("/api/state?range=1h", {
           signal: AbortSignal.timeout(10000),
         }).then(
-          (res) => res.ok,
+          (res) => res.ok || res.status === 401,
           () => false,
         );
         if (answered) {

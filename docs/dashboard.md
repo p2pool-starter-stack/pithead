@@ -120,13 +120,16 @@ on the initial loading screen and during chain sync. Reload the page or open the
 a new tab to inspect a browser warning or login prompt. On an appliance, an address change can
 replace the certificate even when the hostname stays the same. Compare a replacement
 certificate's SHA-256 fingerprint with the current one on the appliance console; stop on a
-mismatch and accept only a match. Polling reconnects after trust is restored. The page cannot
-distinguish certificate, network and authentication failures.
+mismatch and accept only a match. Polling reconnects after trust is restored. Certificate and
+network failures look alike; an expired session does not — a refresh answered 401 reloads the
+tab to the sign-in page, as described below.
 
 A tab remembers the version from its first successful refresh. When a later refresh reports a
 different version, or the first successful refresh after the disconnected banner, the page shows
 "Pithead was updated or restarted. Reloading…" and reloads itself, so an open tab does not keep
-running old code after a restart, rollback or update. The page reloads only after the dashboard
+running old code after a restart, rollback or update. A refresh answered 401 — an expired
+session — shows "Pithead restarted or the page is out of date. Reloading…" and reloads on the
+first poll, landing on the sign-in page. The page reloads only after the dashboard
 has answered, never into a browser error page, and at most once every 2 minutes per tab: a
 trigger inside that window shows the message but leaves the reload to a later refresh. The page
 also checks once when the window regains focus or becomes visible. An update-dialog step in

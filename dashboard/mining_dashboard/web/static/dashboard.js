@@ -59,6 +59,7 @@ export function initDashboard({
   schedule = (fn, ms) => setInterval(fn, ms),
   renderApp = null,
   now = () => Date.now(),
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
   reload,
   store,
   onWindowEvent = (fn) => {
@@ -99,11 +100,18 @@ export function initDashboard({
     doc.documentElement.setAttribute("data-theme", theme);
   }
 
-  let state = null; // latest /api/state payload, or null before the first response
-  let connected = true; // false after a failed fetch (we keep showing the last snapshot)
+  let state = null;
+  let connected = true;
   let disconnectedSince = null;
-  let inflight = false; // guard against overlapping fetches if one is slow
-  const freshness = installFreshness({ reload, store, fetchFn, now, onChange: () => rerender() });
+  let inflight = false;
+  const freshness = installFreshness({
+    reload,
+    store,
+    fetchFn,
+    now,
+    sleep,
+    onChange: () => rerender(),
+  });
 
   const paint =
     renderApp ??
@@ -161,6 +169,10 @@ export function initDashboard({
         headers: { "X-Requested-With": "fetch" },
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
+      if (res.status === 401) {
+        freshness.reportPageStale();
+        return;
+      }
       if (!res.ok) throw new Error("HTTP " + res.status);
       const recovered = !connected;
       state = await res.json();
