@@ -427,6 +427,25 @@ no `control` block at all (plain xmrig, or a rig that has never taken a control-
 parses to nothing — a slow-terminal outcome on those rigs stays `accepted` until the rig reports a
 status the dashboard recognizes.
 
+#### A cloned, moved or dead stick
+
+The rig id identifies a stick, so the dashboard can tell three look-alike situations apart. It
+reads the id from each connected row's feed on every poll and remembers which connecting IPs
+answered with it.
+
+| Situation | What you see | What to do |
+| --- | --- | --- |
+| **Clone** — two machines boot from copies of one stick, so both carry the same name, token and rig id | Two online rows answer with the same id within three poll intervals (90 seconds at the default `UPDATE_INTERVAL`). The workers carry a **duplicate identity** fault, and Worker Inspect's apply and upgrade refuse before anything is sent to either rig: *shares its rig id with another machine … re-key one copy*. | Re-key one copy: change its access token, then adopt it again. The fault clears the moment the id is served from one source only. |
+| **Moved stick** — the same stick in different hardware | One IP keeps answering with the same id while the display hints (MAC prefix, board UUID, CPU model) change. It is recorded once as an info event, `rig-identity` / `moved-hardware`, in the Security panel's event log. Nothing is blocked. | Nothing: the record, history and token follow the id. |
+| **Dead stick** — the machine is gone or off | The row goes offline and stops answering. No fault is raised, and a replacement booted from a copy is not a clone while the original stays off. | Adopt the replacement; remove the dead entry once the replacement is live. |
+
+A clone shares the token, so rotating the token on one rig (the Remove rig action, tracked in
+#4016) reaches only the copy that answers the rotation; the other copy keeps the old token until it
+is re-keyed, which is why the fault stays up until one copy is re-keyed. The fault state is held in
+memory: a dashboard restart forgets it and raises it again within the window if both copies still
+answer. A stick whose DHCP address changes can raise the fault for up to one window while the old
+row lingers online, then it clears on its own.
+
 #### RigForge new-release badge
 
 When `dashboard.check_for_updates` is on, the dashboard also compares each rig's reported RigForge

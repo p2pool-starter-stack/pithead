@@ -22,6 +22,7 @@ import uuid
 
 from mining_dashboard.config import config, documents
 from mining_dashboard.service import audit_service, config_operations, request_spool
+from mining_dashboard.service.workers import worker_identity
 
 logger = logging.getLogger("ControlService")
 
@@ -348,6 +349,7 @@ def submit_worker_apply(worker, changes, actor="", intent_id=None):
         "worker": worker,
         "changes": changes,
     }
+    worker_identity.stamp(request)
     return request_spool.write(request)
 
 
@@ -362,6 +364,7 @@ def submit_worker_upgrade(worker, version, actor="", intent_id=None, appliance=F
     }
     if appliance:
         request["appliance"] = True
+    worker_identity.stamp(request)
     return request_spool.write(request)
 
 

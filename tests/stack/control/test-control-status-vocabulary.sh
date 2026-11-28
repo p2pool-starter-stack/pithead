@@ -46,3 +46,39 @@ assert_contains "control_worker_apply's terminal case arm was actually found" "$
 assert_contains "control_worker_upgrade's terminal case arm was actually found" "$_csv_upgrade_arms" "applied"
 assert_eq "control_worker_apply + control_worker_upgrade terminal arms union to exactly the fixture's terminal words" \
     "$_csv_union_arms" "$_csv_fixture_terminal"
+
+echo "== control channel: a duplicate-identity rig is refused before any dial (#4182) =="
+DI="$SANDBOX/ctrl4182"
+mkdir -p "$DI/staged" "$DI/results" "$DI/audit" "$DI/bin"
+cat >"$DI/config.json" <<'JSON'
+{ "workers": { "list": [
+    { "name": "rig1", "host": "10.0.0.9", "control_port": 8082, "token": "tok-rig1" }
+] } }
+JSON
+cat >"$DI/bin/curl" <<STUB
+#!/usr/bin/env bash
+echo "dialed \$*" >>"$DI/dials.log"
+exit 7
+STUB
+chmod +x "$DI/bin/curl"
+di_run() { # <intent-json>
+    printf '%s\n' "$1" >"$DI/req.json"
+    PATH="$DI/bin:$PATH" CONTROL_WA_BUDGET=0 CONTROL_WU_BUDGET=0 PITHEAD_CONFIG_FILE="$DI/config.json" \
+        run_sourced_e "$SANDBOX" control_process_request "$DI/req.json" "$DI" >/dev/null 2>&1
+}
+di_err() { jq -r '.error // ""' "$DI/results/$1.json"; }
+da1="41820000-0001-4001-8001-000000000001"
+da2="41820000-0002-4002-8002-000000000002"
+du1="41820000-0003-4003-8003-000000000003"
+du2="41820000-0004-4004-8004-000000000004"
+di_run "{\"id\":\"$da1\",\"action\":\"worker-apply\",\"actor\":\"admin\",\"worker\":\"rig1\",\"changes\":{\"DONATION\":2},\"duplicate_identity\":true}"
+di_run "{\"id\":\"$da2\",\"action\":\"worker-apply\",\"actor\":\"admin\",\"worker\":\"rig1\",\"changes\":{\"DONATION\":2}}"
+di_run "{\"id\":\"$du1\",\"action\":\"worker-upgrade\",\"actor\":\"admin\",\"worker\":\"rig1\",\"version\":\"v1.11.2\",\"duplicate_identity\":true}"
+di_run "{\"id\":\"$du2\",\"action\":\"worker-upgrade\",\"actor\":\"admin\",\"worker\":\"rig1\",\"version\":\"v1.11.2\"}"
+assert_eq "worker-apply of a duplicate-identity rig is rejected" "$(jq -r '.status' "$DI/results/$da1.json")" "rejected"
+assert_contains "the apply refusal names the duplicate identity" "$(di_err "$da1")" "shares its rig id"
+assert_contains "the apply refusal gives the cure" "$(di_err "$da1")" "re-key one copy"
+assert_contains "the same apply without the fault gets past the gate" "$(di_err "$da2")" "too many worker config changes"
+assert_contains "worker-upgrade of a duplicate-identity rig is refused with the cure" "$(di_err "$du1")" "re-key one copy"
+assert_contains "the same upgrade without the fault gets past the gate" "$(di_err "$du2")" "already in this cycle"
+assert_eq "no refusal dialed the rig" "$(cat "$DI/dials.log" 2>/dev/null)" ""

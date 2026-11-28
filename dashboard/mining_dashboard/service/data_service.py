@@ -75,7 +75,7 @@ from mining_dashboard.service.data_xvb_sync import (
 )
 from mining_dashboard.service.metrics import build_metrics, share_reject_pct
 from mining_dashboard.service.notify.telegram_commands import format_daily_summary
-from mining_dashboard.service.workers import worker_refresh
+from mining_dashboard.service.workers import worker_identity, worker_identity_poll, worker_refresh
 
 logger = logging.getLogger("DataService")
 
@@ -175,8 +175,8 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     # 3. Augment with Direct Worker Stats (Uptime, Hashrate) via Local API
                     worker_results = await self._prober.probe(worker_client, proxy_workers)
 
-                    # Reconcile pending rig edits and flag out-of-band edits using this poll.
                     await self._reconcile_worker_config(proxy_workers, worker_results)
+                    await worker_identity_poll.observe_poll(self, proxy_workers, worker_results)
 
                     # 3a-2. Out-of-band audit (#530): a config.json change not made through the
                     # control channel, plus mirroring the #33 log into the durable audit_events
@@ -191,9 +191,8 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     final_workers = _merge_direct_stats(
                         proxy_workers, worker_results, active_pool_port
                     )
-                    # 3b. Track per-worker connection lifecycle: fill true uptime for online workers
-                    # (#169) and drop stale offline rows past the fall-off window (#182).
                     final_workers = self._lifecycle.update(final_workers, time.time())
+                    worker_identity.mark_duplicates(self, final_workers)
 
                     total_hr, total_h10 = _aggregate_hashrate(final_workers)
 
