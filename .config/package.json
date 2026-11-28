@@ -1,0 +1,11 @@
+{
+  "name": "pithead-ci-tools",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Pinned npm tools for pithead CI (biome, markdownlint-cli2, taplo)",
+  "dependencies": {
+    "@biomejs/biome": "2.5.0",
+    "markdownlint-cli2": "0.18.1",
+    "@taplo/cli": "0.7.0"
+  }
+}

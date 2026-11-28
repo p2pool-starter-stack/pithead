@@ -106,6 +106,24 @@ def check_entries(text, problems):
                 problems.append(problem)
 
 
+def check_hadolint_pin(text, problems):
+    rows = entries(text)
+    if not any("/.config/hadolint" in directories(body) for eco, body in rows if eco == "docker"):
+        problems.append("/.config/hadolint must sit in a docker entry")
+    if not any("/.config" in directories(body) for eco, body in rows if eco == "npm"):
+        problems.append("/.config must have an npm entry for the lint tool lockfile")
+    froms = re.findall(r"(?m)^FROM (\S+)$", read(".config/hadolint/Dockerfile"))
+    if len(froms) != 1 or not re.fullmatch(
+        r"[a-z0-9./_-]+(:[\w.-]+)?@sha256:[0-9a-f]{64}", froms[0]
+    ):
+        problems.append(".config/hadolint/Dockerfile must have one digest-pinned FROM")
+    elif "/" in froms[0] and ("." in (host := froms[0].split("/", 1)[0]) or host == "localhost"):
+        problems.append("the hadolint FROM must be a bare image name Dependabot can read")
+    ci = read(".github/workflows/ci.yml")
+    if ".config/hadolint/Dockerfile" not in ci or "hadolint/hadolint" in ci:
+        problems.append("ci.yml must read the hadolint image from .config/hadolint/Dockerfile")
+
+
 def check_rootfs(text, problems):
     if "go env GOVERSION" not in text:
         problems.append(
@@ -136,6 +154,7 @@ def check_copy_from(dockerfiles, problems):
 def main():
     problems = []
     check_entries(read(".github/dependabot.yml"), problems)
+    check_hadolint_pin(read(".github/dependabot.yml"), problems)
     check_rootfs(read("os/rootfs/Dockerfile"), problems)
     check_uv_stage(read("dashboard/Dockerfile"), "dashboard/Dockerfile", problems)
     check_uv_stage(read("tests/runner/Dockerfile"), "tests/runner/Dockerfile", problems)

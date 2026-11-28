@@ -322,14 +322,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: "Install hadolint (pinned + sha256-verified, #286)"
-        run: |
-          curl -fsSL -o /tmp/hadolint \
-            https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
-          echo "56de6d5e5ec427e17b74fa48d51271c7fc0d61244bf5c90e828aab8362d55010  /tmp/hadolint" | sha256sum -c -
-          sudo install -m 0755 /tmp/hadolint /usr/local/bin/hadolint
       - name: Lint all build/* and dashboard/ Dockerfiles (config in .config/hadolint.yaml)
-        run: hadolint --config .config/hadolint.yaml build/*/Dockerfile dashboard/Dockerfile
+        run: |
+          image="$(sed -n 's/^FROM //p' .config/hadolint/Dockerfile)"
+          docker run --rm -v "$PWD":/repo -w /repo "$image" \
+            hadolint --config .config/hadolint.yaml build/*/Dockerfile dashboard/Dockerfile
 
   python-lint:
     name: Python lint + format (ruff)

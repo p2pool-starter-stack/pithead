@@ -132,6 +132,7 @@ updates:
       - "/tests/integration/tor-client"
       - "/tests/runner"
       - "/tests/integration/mergemine"
+      - "/.config/hadolint"
     schedule:
       interval: "weekly"
     groups:
@@ -140,6 +141,11 @@ updates:
 
   - package-ecosystem: "npm"
     directory: "/dashboard/tests/browser"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directory: "/.config"
     schedule:
       interval: "weekly"
 
