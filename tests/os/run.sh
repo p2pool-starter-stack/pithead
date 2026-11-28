@@ -226,6 +226,8 @@ source "$SCRIPT_DIR/phases/update-dashboard.sh" || exit $?
 source "$SCRIPT_DIR/phases/update-healthgate-leg.sh" || exit $?
 # shellcheck source=tests/os/phases/update-wedged-tor-legs.sh
 source "$SCRIPT_DIR/phases/update-wedged-tor-legs.sh" || exit $?
+# shellcheck source=tests/os/phases/update-signing-legs.sh
+source "$SCRIPT_DIR/phases/update-signing-legs.sh" || exit $?
 # shellcheck source=tests/os/phases/install.sh
 source "$SCRIPT_DIR/phases/install.sh" || exit $?
 # shellcheck source=tests/os/phases/provision.sh

@@ -324,6 +324,20 @@ is signed under it — a keyring is not something a device can be told to add ou
   of each box with a fresh keyring. Call it out in the release notes and, as with cosign, have
   operators verify the first post-incident image by hand against the new published root.
 
+#### Signing key lifetime and rotation
+
+A rig, including a stick rig that updates only on request, verifies a bundle against the root baked into its running slot and nothing else. The calendar therefore has to run ahead of the oldest image still in the field. The rules:
+
+- **Lifetimes.** The root is valid for 3650 days and the leaf for 825 days, as in the commands above. Neither number changes without an owner decision.
+- **Custody.** The root private key stays offline and out of the release shell, as under *Storage*. Only the operator signs bundles, with the leaf.
+- **Leaf lead time.** Issue the next leaf at least 90 days before the current one expires. A reissue needs no image change (*Routine, or a leaf compromise*).
+- **Root lead time.** Start the root transition at least two years before the root expires, so a new root is in a released image well before any rig needs it. Ship the transition bundle first, then wait until the fleet has taken it (*Root rotation*). Drop the old root only in a later bundle, and only once the oldest image you still support carries the transition keyring.
+- **Never ship the cliff.** A release whose signing leaf expires within 90 days, or whose baked root expires within two years and has no transition keyring in the same or an earlier release, is not cut.
+
+**A wrong clock.** RAUC checks the signer's validity period against the system time, and a stick rig may boot with no reliable RTC. The checks stay on, because switching them off would make an expired or retired leaf verify forever (RAUC's `--no-check-time` and `use-bundle-signing-time` both do that, and neither is used). `pithead os-update` and the dashboard's update verbs instead apply one bounded rule: a clock earlier than the `notBefore` of the baked keyring is certainly wrong, so the update is refused before RAUC runs, with a message that names the clock and says to let the rig set its time or run `timedatectl set-time`. A rig that is offline and ahead of the true time can still see a valid certificate as expired; RAUC's verdict (`certificate has expired` or `not yet valid`) is then reported with the clock reading and a pointer to this section, and the dashboard keeps the staged download rather than deleting it as a bad signature. The rig is never told to trust a time source it cannot check.
+
+The rotated and transition keyrings, the refusal on an expired certificate with a correct clock and the real RAUC verdict text are exercised by legs 8 and 9 of the `update` phase (`tests/os/phases/update-signing-legs.sh`); the clock rule is a tier-1 case in `tests/os/selftest-os-update-clock.sh`.
+
 The dev/bench loop is unchanged — `os/rauc/mkimage.sh --dev` still auto-generates a throwaway into
 the gitignored `os/rauc/certs/` and needs none of the above.
 
