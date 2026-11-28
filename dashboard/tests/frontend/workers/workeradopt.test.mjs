@@ -420,3 +420,15 @@ test("AdoptRigForm: a malformed rig_id is refused before any request", async () 
   assert.equal(inst.state.result.status, "error");
   assert.match(inst.state.result.error, /rig_id/);
 });
+
+test("Worker Inspect: the adopt form receives the detail's rig_id and shows its field", () => {
+  const rid = "0123456789abcdef0123456789abcdef";
+  const withId = renderToString(
+    inspectInstance({ ...BASE_DETAIL, editable: false, control_enabled: true, ip: "10.0.0.9", rig_id: rid }).render(),
+  );
+  assert.match(withId, new RegExp(`value="${rid}"`));
+  const without = renderToString(
+    inspectInstance({ ...BASE_DETAIL, editable: false, control_enabled: true, ip: "10.0.0.9", rig_id: null }).render(),
+  );
+  assert.doesNotMatch(without, /placeholder="the rig's identity id/);
+});
