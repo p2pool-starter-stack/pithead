@@ -24,7 +24,7 @@ runs:
   steps:
     - id: attempt1
       continue-on-error: true
-      uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+      uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
       with:
         version: ${{ inputs.version }}
         cache: true
@@ -34,7 +34,7 @@ runs:
     - id: attempt2
       if: steps.attempt1.outcome == 'failure'
       continue-on-error: true
-      uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+      uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
       with:
         version: ${{ inputs.version }}
         cache: true
@@ -42,7 +42,7 @@ runs:
       run: sleep 30
       shell: bash
     - if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
-      uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+      uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
       with:
         version: ${{ inputs.version }}
         cache: true
