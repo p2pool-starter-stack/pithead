@@ -229,10 +229,10 @@ Release notes, where operators actually read it. The branch model itself is in
 
 ### Forward merges into release-line branches
 
-Work for upcoming releases integrates on release-line branches named `develop-vX.Y.Z`: the
-patch line while a patch cut is in flight (for example `develop-v2.0.3`) and the next feature
-line (`develop-v2.1.0`). After every patch release is published, forward-merge `develop` into
-each open release-line branch, so the cut commit and every fix on `develop` reach those lines.
+`develop` carries the next patch release, and every security and bug fix lands there. A
+release-line branch named `develop-vX.Y.Z`, for example `develop-v2.1.0`, takes feature work for a
+later release only. After every patch release is published, forward-merge `develop` into each open
+release-line branch, so the cut commit and every fix on `develop` reach those lines.
 
 The `develop-v*` branches carry the same protection as `develop`: the same required checks and
 `adversarial-review` status, one approving review, stale approvals dismissed, admins included,
@@ -263,9 +263,32 @@ gh pr merge <n> --merge
 
 This is the one PR that is not squashed. A squash or rebase mints new commits, so `develop`
 never becomes an ancestor of the release line, and every later forward merge conflicts again on
-changes that were already merged. Merge commits are enabled on the repository for this case only.
+changes that were already merged. Merge commits are enabled on the repository for this case and
+the fold below only.
 
 [#3664]: https://github.com/p2pool-starter-stack/pithead/issues/3664
+
+### Folding a release line back into develop
+
+When a release line's work moves onto `develop`, fold the line back with a merge commit, as
+`develop-v2.0.3` was in [#3959]. First forward-merge `develop` into the line, so both sides carry
+the same version metadata and the line's `[Unreleased]` changelog entries already include
+`develop`'s. Then cut a `fold/` branch from `develop`, merge the line into it, and open the PR into
+`develop`:
+
+```bash
+git fetch origin develop develop-v2.0.5
+git switch -c fold/develop-v2.0.5-into-develop origin/develop
+git merge --no-ff origin/develop-v2.0.5
+git push origin fold/develop-v2.0.5-into-develop
+```
+
+The result keeps `develop`'s `VERSION`. Merge the PR with `gh pr merge <n> --merge`. The line then
+becomes an ancestor of `develop`, so the open PRs into the line retarget to `develop` with no
+rebase. Retarget them after the merge. The line branch is protected against deletion, so removing
+it is the owner's decision.
+
+[#3959]: https://github.com/p2pool-starter-stack/pithead/pull/3959
 
 ### Pipeline: stage → smoke-test → promote
 

@@ -167,7 +167,7 @@ services:
   # keeps the container alive long enough for Docker to record the failed gRPC healthcheck.
   tari-wallet-broken:
     profiles: [wallet-health]
-    image: ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d
+    image: ghcr.io/tari-project/minotari_console_wallet:v6.3.0-pre.0-mainnet@sha256:b655139fa60274e3d904e2ea75d7c3e1a4f3b7f4880e161378c1d4f2209cb9de
     container_name: itest-tari-wallet-broken
     networks: [itestnet]
     entrypoint: ["/bin/sh", "-c", "/wallet-config/entrypoint.sh || sleep 60"]
@@ -185,7 +185,7 @@ services:
   # Stand-ins for the miner containers: real, named containers the dashboard genuinely
   # stops/starts via docker-control. They just idle.
   p2pool:
-    image: busybox:1.36
+    image: busybox:1.38
     container_name: itest-p2pool
     networks: [itestnet]
     command: ["sh", "-c", "while true; do sleep 30; done"]
@@ -193,7 +193,7 @@ services:
       - dashboard_stats:/stats
 
   xmrig-proxy:
-    image: busybox:1.36
+    image: busybox:1.38
     container_name: itest-xmrig-proxy
     networks:
       itestnet:
@@ -233,7 +233,7 @@ services:
 
   # Read-only socket proxy (stats/logs) — mirrors the production docker-proxy.
   docker-proxy:
-    image: tecnativa/docker-socket-proxy:v0.5.0
+    image: tecnativa/docker-socket-proxy:3.4
     container_name: itest-docker-proxy
     command: &socket-proxy-command ["sh", "-c", "sed -i 's/timeout server 0/timeout server 10m/' /tmp/haproxy.cfg; exec haproxy -W -db -f /tmp/haproxy.cfg"]
     networks: [itestnet]
@@ -242,7 +242,7 @@ services:
 
   # Write proxy scoped to start/stop only — mirrors the production docker-control.
   docker-control:
-    image: tecnativa/docker-socket-proxy:v0.5.0
+    image: tecnativa/docker-socket-proxy:3.4
     container_name: itest-docker-control
     command: *socket-proxy-command
     networks: [itestnet]
