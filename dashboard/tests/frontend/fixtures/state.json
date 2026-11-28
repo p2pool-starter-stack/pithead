@@ -249,6 +249,13 @@
       "unverified": 0
     }
   },
+  "egress_audit": {
+    "counters": [],
+    "host_violations": 0,
+    "loaded": false,
+    "unmonitored": true,
+    "would_drop": 0
+  },
   "energy": {
     "available": true,
     "cost_per_kwh": 0.0,
@@ -615,6 +622,27 @@
         "label": "container API",
         "route": "local",
         "to": "docker"
+      },
+      {
+        "from": "host-time-sync",
+        "kind": "egress",
+        "label": "htpdate time sync",
+        "route": "unknown",
+        "to": "internet"
+      },
+      {
+        "from": "host-updates",
+        "kind": "egress",
+        "label": "release + OS update fetches",
+        "route": "unknown",
+        "to": "internet"
+      },
+      {
+        "from": "host-containers",
+        "kind": "egress",
+        "label": "container image pulls",
+        "route": "unknown",
+        "to": "internet"
       }
     ],
     "nodes": [
@@ -666,6 +694,24 @@
         "id": "docker",
         "internal": true,
         "label": "docker-proxy",
+        "zone": "host"
+      },
+      {
+        "id": "host-time-sync",
+        "label": "time sync",
+        "scope": "host",
+        "zone": "host"
+      },
+      {
+        "id": "host-updates",
+        "label": "OS + release fetches",
+        "scope": "host",
+        "zone": "host"
+      },
+      {
+        "id": "host-containers",
+        "label": "image pulls",
+        "scope": "host",
         "zone": "host"
       },
       {

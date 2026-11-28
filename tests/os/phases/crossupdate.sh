@@ -217,15 +217,24 @@ phase_crossupdate() {
         bad "unit(s) failed after the cross-version update: $failed_units"
     fi
 
-    # The reseed of the workspace miner from the slot's baked build is only proven here, on a guest that carried the older one.
-    if _ssh "cmp -s /data/rigforge/data/worker/xmrig/build/xmrig /opt/rigforge/prebuilt/xmrig/build/xmrig"; then
-        ok "the workspace miner is the candidate slot's baked binary byte for byte"
+    local baked_commit have_commit miner_sum recorded_sum
+    baked_commit=$(_ssh "cat /opt/rigforge/prebuilt/xmrig/.rigforge-commit 2>/dev/null" | tr -d '\r\n')
+    have_commit=$(_ssh "cat /data/rigforge/data/worker/xmrig/.rigforge-commit 2>/dev/null" | tr -d '\r\n')
+    if [ -n "$baked_commit" ] && [ "$have_commit" = "$baked_commit" ]; then
+        ok "the workspace miner carries the candidate slot's pinned XMRig commit marker"
     else
-        bad "the workspace miner is not the candidate slot's baked binary — the update did not reseed it"
+        bad "the workspace miner's commit marker is '${have_commit:-none}', the candidate bakes '${baked_commit:-none}' — the update did not reseed it"
+    fi
+    miner_sum=$(_ssh "sha256sum /data/rigforge/data/worker/xmrig/build/xmrig 2>/dev/null" | awk '{print $1}')
+    recorded_sum=$(_ssh "cat /data/rigforge/data/worker/xmrig/.rigforge-sha256 2>/dev/null" | tr -d '\r\n')
+    if [ -n "$miner_sum" ] && [ "$miner_sum" = "$recorded_sum" ]; then
+        ok "the workspace miner matches its integrity record, so RigForge starts it without a rebuild"
+    else
+        bad "the workspace miner does not match its .rigforge-sha256 record ('${miner_sum:-unreadable}' vs '${recorded_sum:-none}') — first boot would rebuild or fail"
     fi
     donate_min=$(_ssh "cat /data/rigforge/data/worker/xmrig/.rigforge-donate-min" 2>/dev/null | tr -d '\r\n')
-    [ "$donate_min" = "0" ] && ok "the reseeded miner carries the zero donate minimum (.rigforge-donate-min 0)" ||
-        bad "the reseeded miner's .rigforge-donate-min is '${donate_min:-none}', expected 0"
+    [ "$donate_min" = "0" ] && ok "the workspace miner carries the zero donate minimum (.rigforge-donate-min 0)" ||
+        bad "the workspace miner's .rigforge-donate-min is '${donate_min:-none}', expected 0"
 
     # Deterministic, not a 360s HTTP poll (#2056 review, round 3): job 360 spent its whole marker
     # budget getting "nothing" back from /static/os-test-marker.txt while the dashboard was

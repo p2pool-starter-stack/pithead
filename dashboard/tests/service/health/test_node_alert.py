@@ -75,7 +75,7 @@ def test_egress_failure_past_the_broken_window_alerts_without_a_monero_verdict()
     ]
 
 
-def test_spent_attempt_cap_says_it_stopped():
+def test_spent_attempt_cap_says_it_realerts():
     healer, clock = _healer()
     healer.decide(False, clock.t)
     for _ in range(MAX_ATTEMPTS):
@@ -83,5 +83,7 @@ def test_spent_attempt_cap_says_it_stopped():
         assert healer.decide(False, clock.t) == "heal"
     alert = build_node_alert(_data(RED, tor_heal_status(healer)))
     assert alert["heal"][0].startswith("Tor auto-heal last action: recovery attempt")
-    assert alert["heal"][1].startswith(f"Tor auto-heal stopped after {MAX_ATTEMPTS} attempts")
+    assert alert["heal"][1].startswith(
+        f"Tor auto-heal is past its cap after {MAX_ATTEMPTS} attempts"
+    )
     assert "./pithead doctor" in alert["heal"][1]

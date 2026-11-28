@@ -48,3 +48,28 @@ else ok "nft readback rejects stale choice exemptions"; fi
 if run_sourced "$V" tor_egress_sync_rules_match iptables "$CN_CHOICE_RULES"; then
     bad "readback rejects stale choice exemptions" "accepted stale public-dial rules"
 else ok "readback rejects stale choice exemptions"; fi
+cnfw_apply false false '' false false true true false
+assert_eq "donation off Tor exempts the proxy address" "$(run_sourced "$V" tor_egress_sync_ips)" "172.28.0.29"
+assert_eq "donation off Tor is an active choice" "$(run_sourced "$V" tor_egress_choice_active donation && echo yes)" yes
+cnfw_apply false false '' false true false true false
+assert_eq "XvB and donation together list the proxy address once" "$(run_sourced "$V" tor_egress_sync_ips)" "172.28.0.29"
+cnfw_apply false false '' false false true true true
+assert_eq "donation on Tor never exempts the proxy" "$(run_sourced "$V" tor_egress_sync_ips)" ""
+assert_eq "donation on Tor is not an active choice" "$(run_sourced "$V" tor_egress_choice_active donation && echo yes)" ""
+cnfw_apply false false '' false false true false false
+assert_eq "disabled donation never exempts the proxy" "$(run_sourced "$V" tor_egress_sync_ips)" ""
+assert_eq "disabled donation is not an active choice" "$(run_sourced "$V" tor_egress_choice_active donation && echo yes)" ""
+cnfw_apply false false '' false false true true false
+CN_DON_BOOT="$(run_sourced "$V" render_tor_egress_boot_unit "$V/bin/choice-boot-iptables" 172.28.0.0/24 172.28.0.25 172.28.0.29)"
+assert_contains "boot checks the donation choice marker for the proxy address" "$CN_DON_BOOT" "$(run_sourced "$V" tor_egress_choice_marker)/donation"
+assert_contains "boot still checks the XvB choice marker for the proxy address" "$CN_DON_BOOT" "$(run_sourced "$V" tor_egress_choice_marker)/xvb"
+CN_DON_CMD="$(sed -n "s/^ExecStart=\/bin\/bash -c '\(.*\)'$/\1/p" <<<"$CN_DON_BOOT")"
+CN_DON_MARK="$(run_sourced "$V" tor_egress_choice_marker)"
+rm -rf "$CN_DON_MARK"
+: >"$CN_BOOT_CALLS"
+bash -c "$CN_DON_CMD"
+assert_eq "boot restores no proxy exception when no choice marker exists" "$(cat "$CN_BOOT_CALLS")" ""
+mkdir -p "$CN_DON_MARK/donation"
+bash -c "$CN_DON_CMD"
+assert_contains "donation marker alone restores the proxy exception at boot" "$(cat "$CN_BOOT_CALLS")" "-s 172.28.0.29 -j ACCEPT"
+rm -rf "$CN_DON_MARK"

@@ -9,10 +9,10 @@
 # Sourced by tests/stack/run.sh.
 : "${V:?}" "${WALLET:?}" "${VALID_TARI:?}" "${DOCKER_LOG:?}"
 
-cnfw_apply() { # <monero-flag> <tari-flag> [network-json] [p2pool-clearnet] [xvb-enabled] [xvb-tor]
+cnfw_apply() {
     seed_env
-    printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","clearnet_initial_sync":%s}, "tari":{"wallet_address":"%s","clearnet_initial_sync":%s}, %s"p2pool":{"pool":"mini","clearnet":%s}, "xvb":{"enabled":%s,"tor":%s}, "dashboard":{"secure":false,"host":"box.lan"} }\n' \
-        "$WALLET" "$1" "$VALID_TARI" "$2" "${3:+\"network\":$3, }" "${4:-false}" "${5:-false}" "${6:-true}" >"$V/config.json"
+    printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","clearnet_initial_sync":%s}, "tari":{"wallet_address":"%s","clearnet_initial_sync":%s}, %s"p2pool":{"pool":"mini","clearnet":%s}, "xvb":{"enabled":%s,"tor":%s}, "donation":{"enabled":%s,"percent":1,"tor":%s}, "dashboard":{"secure":false,"host":"box.lan"} }\n' \
+        "$WALLET" "$1" "$VALID_TARI" "$2" "${3:+\"network\":$3, }" "${4:-false}" "${5:-false}" "${6:-true}" "${7:-false}" "${8:-true}" >"$V/config.json"
     (cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 }
 cnfw_env() { run_sourced "$V" env_get_file "$V/.env" "$1"; }
@@ -211,7 +211,6 @@ CN_SYMLINK_PROBE=$(
     printf 'root-readable-secret\n' >"$td/secret"
     ln -s "$td/secret" "$td/monero.synced"
     clearnet_state_dir() { printf '%s' "$td"; }
-    egress_sync_started_after_marker() { echo restarted; }
     egress_sync_runtime_on_tor() { return 0; }
     egress_sync_record_tor monero >/dev/null 2>&1 && echo accepted || echo rejected
     rm -rf "$td"

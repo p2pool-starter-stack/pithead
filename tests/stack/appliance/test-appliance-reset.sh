@@ -75,6 +75,12 @@ assert_eq "config-reset KEEPS the monero chain" "$([ -f "$CR/data/monero/blockch
 assert_eq "config-reset KEEPS the Tor onion key" "$([ -f "$CR/data/tor/hostname" ] && echo kept)" "kept"
 assert_eq "config-reset off the appliance does not reboot" "$([ -f "$rebooted" ] || echo no)" "no"
 assert_contains "config-reset hints how to reconfigure" "$out" "firstboot-wizard"
+seed_cr
+printf '#!/usr/bin/env bash\necho "$*" >>"$CR_DOCKER_LOG"\ncase "$1 $2" in "volume ls") echo pithead_tari_wallet_db ;; "volume inspect") echo pithead/tari_wallet_db ;; esac\nexit 0\n' >"$CR/bin/docker"
+: >"$CR/docker.log"
+(cd "$CR" && CR_DOCKER_LOG="$CR/docker.log" PITHEAD_APPLIANCE=0 PITHEAD_REBOOT_CMD=true PATH="$CR/bin:$PATH" ./pithead config-reset -y >/dev/null 2>&1)
+assert_contains "config-reset removes the Tari wallet db volume with .env" "$(cat "$CR/docker.log")" "volume rm pithead_tari_wallet_db"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$CR/bin/docker"
 # On the appliance: same wipe, but it reboots into first-boot setup.
 seed_cr
 rm -f "$rebooted"
@@ -129,6 +135,17 @@ out=$(cd "$FR" && PITHEAD_APPLIANCE=1 PITHEAD_PRESEED_DIR="$FR/esp" PITHEAD_REBO
 assert_rc "factory-reset succeeds" "$?" "0"
 assert_eq "factory-reset arms the ESP marker AND reboots" \
     "$([ -f "$marker" ] && [ -f "$rebooted" ] && echo armed-and-rebooting)" "armed-and-rebooting"
+rm -f "$marker"
+out=$(cd "$FR" && PITHEAD_APPLIANCE=1 PITHEAD_PRESEED_DIR="$FR/esp" PITHEAD_REBOOT_CMD=false PATH="$FR/bin:$PATH" ./pithead factory-reset -y 2>&1)
+assert_contains "failed reboot after factory-reset says the reset was not done" "$out" "factory reset was NOT done"
+assert_eq "failed reboot after factory-reset disarms the marker" "$([ -f "$marker" ] || echo none)" "none"
+printf '#!/bin/sh\ncase "$*" in *pithead-reset*) exit 1 ;; esac\nexec /bin/rm "$@"\n' >"$FR/bin/rm"
+chmod +x "$FR/bin/rm"
+out=$(cd "$FR" && PITHEAD_APPLIANCE=1 PITHEAD_PRESEED_DIR="$FR/esp" PITHEAD_REBOOT_CMD=false PATH="$FR/bin:$PATH" ./pithead factory-reset -y 2>&1)
+rm -f "$FR/bin/rm"
+assert_contains "a marker that cannot be removed after a failed reboot is reported as still armed" "$out" "next boot WILL erase /data"
+assert_eq "that marker is still on the ESP" "$([ -f "$marker" ] && echo armed)" "armed"
+rm -f "$marker"
 # ESP not writable: refuse loudly, reboot nothing (a box that quietly did nothing is the trap).
 rm -f "$rebooted"
 out=$(cd "$FR" && PITHEAD_APPLIANCE=1 PITHEAD_PRESEED_DIR="$FR/no-such-esp" PITHEAD_REBOOT_CMD="touch $rebooted" PATH="$FR/bin:$PATH" ./pithead factory-reset -y 2>&1) || true

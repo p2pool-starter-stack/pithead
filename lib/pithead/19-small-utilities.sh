@@ -117,17 +117,12 @@ env_changed_keys() {
 # without pithead just gets the empty fallbacks (badge shows a generic dev marker). The release
 # pipeline additionally sets PITHEAD_RELEASE=1 so the badge shows the clean vX.Y.Z.
 export_build_provenance() {
-    local commit=""
     export PITHEAD_VERSION="" PITHEAD_GIT_COMMIT="" PITHEAD_GIT_BRANCH=""
     [ -f VERSION ] && PITHEAD_VERSION="$(tr -d ' \t\r\n' <VERSION 2>/dev/null || true)"
-    if git rev-parse --git-dir >/dev/null 2>&1; then
-        commit="$(git rev-parse --short HEAD 2>/dev/null || true)"
-        PITHEAD_GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-        if [ -n "$commit" ] && ! git diff --quiet HEAD 2>/dev/null; then
-            commit="${commit}-dirty"
-        fi
-        PITHEAD_GIT_COMMIT="$commit"
-    fi
+    case "${1:-}" in
+    version | -V | --version | egress-status | lan-guard-check) ;;
+    *) export_git_provenance ;;
+    esac
 
     # Image coordinates for docker-compose's `image:` refs (#44). A source checkout (build/ present)
     # builds the first-party images locally and tags them `:dev`; a release install (no build/, just
@@ -140,6 +135,19 @@ export_build_provenance() {
         STACK_VERSION="v$PITHEAD_VERSION"
     else
         STACK_VERSION="dev"
+    fi
+}
+
+export_git_provenance() {
+    local commit=""
+    export PITHEAD_GIT_COMMIT="" PITHEAD_GIT_BRANCH=""
+    if git rev-parse --git-dir >/dev/null 2>&1; then
+        commit="$(git rev-parse --short HEAD 2>/dev/null || true)"
+        PITHEAD_GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+        if [ -n "$commit" ] && ! git diff --quiet HEAD 2>/dev/null; then
+            commit="${commit}-dirty"
+        fi
+        PITHEAD_GIT_COMMIT="$commit"
     fi
 }
 
@@ -158,7 +166,7 @@ require_deployed() {
 # True for a system, home, or bare mount root that must never become a recursive data-operation
 # target. Kept separate so the dashboard's narrower destination allowlist uses the exact same floor.
 _data_dir_is_broad_root() {
-    local d="$1" rest
+    local d="${1%/}" rest
     case "$d" in
     "" | / | // | /. | /root | /home | /etc | /usr | /var | /var/lib | /opt | /srv | /mnt | /media | /tmp | /bin | /sbin | /lib | /lib64 | /boot | /dev | /proc | /sys | /Users | /Applications | "${HOME:-/root}" | "/home/$REAL_USER" | "/Users/$REAL_USER")
         return 0
