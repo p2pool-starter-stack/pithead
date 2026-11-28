@@ -1,4 +1,9 @@
-from mining_dashboard.service.health.tor_heal import BROKEN_AFTER_SEC, COOLDOWN_SEC, MAX_ATTEMPTS
+from mining_dashboard.service.health.tor_heal import (
+    BROKEN_AFTER_SEC,
+    COOLDOWN_SEC,
+    EXHAUSTED_PROBE_SEC,
+    MAX_ATTEMPTS,
+)
 
 TITLE = "Monero node offline"
 DOCTOR_ADVICE = "Run './pithead doctor' for current evidence."
@@ -38,8 +43,9 @@ def _heal_lines(heal):
     ]
     if attempts >= MAX_ATTEMPTS:
         lines.append(
-            f"Tor auto-heal stopped after {MAX_ATTEMPTS} attempts; no more automatic action "
-            f"this outage. {DOCTOR_ADVICE}"
+            f"Tor auto-heal is past its cap after {MAX_ATTEMPTS} attempts: no more disruptive "
+            f"action this outage; it probes every {_minutes(EXHAUSTED_PROBE_SEC)} minutes and "
+            f"re-alerts hourly until Tor recovers. {DOCTOR_ADVICE}"
         )
     elif age is not None and age < COOLDOWN_SEC:
         lines.append(f"Next action after a {_minutes(COOLDOWN_SEC - age)} min cooldown.")

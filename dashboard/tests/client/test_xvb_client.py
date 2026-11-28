@@ -385,3 +385,18 @@ class TestParseHtml:
         stats = client._parse_html("1hr avg: 2 MH/s\n24hr avg: 1 GH/s")
         assert stats["avg_1h"] == 2_000_000.0
         assert stats["avg_24h"] == 1_000_000_000.0
+
+
+@pytest.mark.parametrize(
+    "method", ["get_stats", "get_reward_estimates", "get_recent_wins", "register"]
+)
+def test_request_errors_never_log_the_wallet(method, caplog):
+    wallet = "4" + "Z" * 94
+    client = XvbClient(wallet, submit_url=_SUBMIT)
+    error = requests.ConnectionError(f"HTTPSConnectionPool: /?address={wallet}")
+    with patch.object(xvb_mod, "bounded_get", side_effect=error):
+        with patch.object(xvb_mod.requests, "post", side_effect=error):
+            with caplog.at_level("DEBUG"):
+                getattr(client, method)()
+    assert "connection error" in caplog.text
+    assert wallet not in caplog.text

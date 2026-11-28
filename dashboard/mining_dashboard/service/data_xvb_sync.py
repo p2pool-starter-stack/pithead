@@ -50,7 +50,13 @@ class DataXvbSyncMixin:
         real_xvb_stats = await asyncio.to_thread(self.xvb_client.get_stats)
         if not real_xvb_stats:
             return  # fetch failed — keep the last reading + last_update frozen so #311 can detect it
+        if "avg_1h" not in real_xvb_stats:
+            stored = await asyncio.to_thread(self.state_manager.get_xvb_stats)
+            if real_xvb_stats["fail_count"] <= stored.get("fail_count", 0):
+                return
         await asyncio.to_thread(self.state_manager.update_xvb_stats, **real_xvb_stats)
+        if "avg_1h" not in real_xvb_stats:
+            return
         logger.info(f"External Sync: XvB Stats Updated (1h={real_xvb_stats['avg_1h']:.0f} H/s)")
 
         # v1.7 telemetry backbone (#196 Wave-0): persist the XvB scalars as a time series, wall-

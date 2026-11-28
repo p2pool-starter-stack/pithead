@@ -2,6 +2,11 @@
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 : "${SB:?is unset: this fragment runs after test-control-support-bundle.sh}"
 
+echo "== window times come from one fixed instant (#4187) =="
+sb_iso_first=$(sb_iso -3600)
+sleep 1
+assert_eq "sb_iso returns the same time across a second boundary" "$(sb_iso -3600)" "$sb_iso_first"
+
 echo "== control channel: the applied result carries the manifest's effective window (#4129) =="
 eid1="c412c412-0000-4000-8000-000000000001"
 sb_run "$(sb_req "$eid1" support-bundle ",\"since\":\"$(sb_iso -7200)\",\"until\":\"$(sb_iso -60)\"")"

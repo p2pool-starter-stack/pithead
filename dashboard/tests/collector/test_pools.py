@@ -1,6 +1,8 @@
 import json
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 import mining_dashboard.collector.pools as pools
 from mining_dashboard.collector.pools import (
     detect_pool_type,
@@ -10,12 +12,14 @@ from mining_dashboard.collector.pools import (
     get_tari_stats,
 )
 from mining_dashboard.config.config import (
+    NODE_DOWN_AFTER_SEC,
     P2P_STATS_PATH,
     POOL_STATS_PATH,
     SECOND_PER_BLOCK_MAIN,
     STRATUM_STATS_PATH,
 )
 from mining_dashboard.service.data_helpers import _shares_to_record
+from mining_dashboard.service.health.mining_guard import MiningGuard, log_triggers
 
 
 class TestDetectPoolType:
@@ -243,8 +247,9 @@ class TestP2PoolLogSignals:
         ]
         signals, fetch = await self._signals(lines)
         assert signals["lag"] == 300
-        assert fetch.await_args.args == ("p2pool",)
-        assert fetch.await_args.kwargs["since"] > 0
+        wide, recent = fetch.await_args_list
+        assert wide.args == recent.args == ("p2pool",)
+        assert 0 < wide.kwargs["since"] < recent.kwargs["since"]
 
     async def test_one_peer_alone_is_not_enough(self):
         lines = [self.AHEAD.format("1.2.3.4:37889", 9999999999, 3500000)] * 5
@@ -263,3 +268,38 @@ class TestP2PoolLogSignals:
 
     async def test_unreadable_logs_are_no_verdict(self):
         assert (await self._signals(["Error: Could not retrieve logs (Status 404)"]))[0] is None
+
+    async def test_an_unreadable_recent_window_is_no_verdict(self):
+        error = ["Error: Connection to Docker Proxy failed."]
+        with patch.object(pools, "fetch_docker_logs", AsyncMock(side_effect=[["other"], error])):
+            assert await pools.get_p2pool_log_signals(120) is None
+
+    UNSYNCED = "INFO monerod is not synchronized, trying again in 1 second"
+
+    async def _first_stop(self, warning_times, poll_times):
+        clock = {"now": 0.0}
+
+        async def fetch(name, tail=None, since=None):
+            return [self.UNSYNCED for ts in warning_times if since <= ts <= clock["now"]]
+
+        guard = MiningGuard(clock=lambda: clock["now"], wall=lambda: clock["now"])
+        with (
+            patch.object(pools, "fetch_docker_logs", fetch),
+            patch.object(pools.time, "time", lambda: clock["now"]),
+        ):
+            for now in poll_times:
+                clock["now"] = float(now)
+                guard.update(log_triggers(await pools.get_p2pool_log_signals(), None))
+                if guard.active:
+                    return now
+        return None
+
+    @pytest.mark.parametrize("poll_every", [10, 30])
+    async def test_an_ended_restart_burst_does_not_stop_the_proxy(self, poll_every):
+        burst = [1000.0 + i for i in range(12)]
+        assert await self._first_stop(burst, range(1018, 1400, poll_every)) is None
+
+    async def test_a_monerod_that_stays_unsynced_still_stops_the_proxy(self):
+        stream = [1000.0 + i for i in range(600)]
+        stop = await self._first_stop(stream, range(1005, 1400, 10))
+        assert stop is not None and stop - 1005 >= NODE_DOWN_AFTER_SEC

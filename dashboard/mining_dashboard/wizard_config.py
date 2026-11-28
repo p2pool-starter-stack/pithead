@@ -7,7 +7,7 @@ _XVB_ALIASES = ("enabled", "url", "donor_id")
 # Every 1.x reference default for the alias block. A v1.x editor save carries the whole block at
 # these values beside the operator's xvb.*, so they are schema defaults, never a conflict (#2690).
 _XVB_ALIAS_V1_DEFAULTS = {"enabled": True, "url": "na.xmrvsbeast.com:4247", "donor_id": "auto"}
-_WORKER_FIELDS = {"name", "host", "port", "control_port", "token", "watts"}
+_WORKER_FIELDS = {"name", "host", "port", "control_port", "token", "api_token", "watts"}
 # Wizard-only defaults. The reference and absent-key behavior remain unchanged for upgrades.
 NEW_MACHINE_ANSWERS = {
     "local_miner": {"enabled": True},

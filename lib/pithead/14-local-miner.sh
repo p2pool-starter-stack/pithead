@@ -209,11 +209,11 @@ render_local_miner_config() {
     port=$(stratum_port_effective)
     secret=$(env_get PROXY_STRATUM_PASSWORD 2>/dev/null || true)
     ceiling=$(local_miner_pool_ceiling_mb "$dir")
-    jq -n --arg url "127.0.0.1:$port" --arg pass "$secret" --argjson reserve "$(($(hugepages_decision_pages) * 2))" \
+    (tmp=$(mktemp "$dir/config.json.XXXXXX") && jq -n --arg url "127.0.0.1:$port" --arg pass "$secret" --argjson reserve "$(($(hugepages_decision_pages) * 2))" \
         --argjson ceiling "$ceiling" \
         '{pools: [({url: $url} + (if $pass != "" then {pass: $pass} else {} end))], hugepages_reserve_extra_mb: $reserve}
          + (if $ceiling > 0 then {hugepages_pool_ceiling_mb: $ceiling} else {} end)' \
-        >"$dir/config.json"
+        >"$tmp" && mv -f "$tmp" "$dir/config.json")
     log "Local miner config rendered to $dir/config.json (pool 127.0.0.1:$port)."
 }
 

@@ -189,7 +189,7 @@ _run_lifecycle() {
         local carry_old carry_new carry_epoch rows_before rows_after
         carry_old="$(env_on_box DASHBOARD_DATA_DIR)"
         if [ -n "$carry_old" ]; then
-            carry_epoch="$(rx 'date +%s')"
+            carry_epoch="$(rx 'echo $(($(date +%s) - 120))')"
             carry_new="${carry_old}-carried-$carry_epoch"
             rows_before="$(dashboard_durable_rows "$carry_epoch")"
             if [ -z "$rows_before" ]; then
