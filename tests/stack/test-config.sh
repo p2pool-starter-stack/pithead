@@ -292,7 +292,7 @@ wl_case '[{"name":"rig1","watts":0}]' "non-positive workers.list watts (#260)" "
 wl_case '[{"name":"rig1","watts":"142"}]' "string workers.list watts (#260)" "workers.list[rig1].watts"
 wl_case '[{"name":"rig1","rig_id":"not-hex"}]' "non-hex workers.list rig_id" "workers.list[rig1].rig_id"
 wl_case '[{"name":"rig1","rig_id":123}]' "non-string workers.list rig_id" "workers.list[rig1].rig_id"
-wl_case '[{"name":"rig1","rig_id":"0a1b2c3d4e5f60718293a4b5c6d7e8f9\n"}]' "trailing-newline workers.list rig_id" "workers.list[rig1].rig_id"
+wl_case '[{"name":"rig1","rig_id":"0a1b2c3d4e5f60718293a4b5c6d7e8f9\n"}]' "trailing-newline workers.list rig_id" "control character"
 
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"}, "workers":{"list":[{"name":"rig1","host":"worker-lan.local","token":"tok_first","api_token":"probe_first","rig_id":"0a1b2c3d4e5f60718293a4b5c6d7e8f9"},{"name":"rig1","host":"other.lan","token":"tok_second","api_token":"probe_second"}]} }\n' "$WALLET" >"$V/config.json"
