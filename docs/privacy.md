@@ -89,13 +89,37 @@ to `data/control/results/egress-status.json`. The dashboard reads that file:
 The same file carries the log-only host egress audit counters. The dashboard serves them at
 `GET /api/system/egress-audit` and in `/api/state` as `egress_audit`:
 `{loaded, would_drop, counters, host_violations, unmonitored}`. `loaded` is true only when the audit
-table is present and the check is fresh. `host_violations` equals `would_drop`, the packets that hit the
-audit gate outside the allowlist in `data/egress-map.tsv`. When the table is not loaded (a DIY host
+table is present and the check is fresh. `would_drop` counts every packet that left the host beyond loopback, replies and the LAN. The
+host table also counts, apart and log-only, the flows that `data/egress-map.tsv` lists for the host
+(`allowlisted`) and the clearnet paths the operator chose (`choice`). `host_violations` is `outside`,
+`would_drop` minus those two, the packets that hit the audit gate outside the map. When the table is not loaded (a DIY host
 without it, a missing file, or a check older than six minutes) `unmonitored` is true and the panel says
 host traffic is not observed. The **Stack Topology & Egress** panel draws three host-OS nodes (time
 sync, OS and release fetches, image pulls) outside the stack. Their edges show as allowlisted clearnet
 when the audit is loaded and as Unverified otherwise, never as Tor. A violation count above zero shows a
 warning and does not change the summary line.
+
+Each check also compares `outside`, `allowlisted` and `choice` with the values the previous check saw,
+kept in `data/control/results/.egress-audit-prev`, and writes the watchdog verdict into `host_audit`:
+
+| `watchdog` | Meaning |
+| --- | --- |
+| `leaking` | `outside` rose since the last check: traffic left the box outside the map and outside Tor. |
+| `operator-choice` | Only a path the operator chose rose (`monero`/`tari.clearnet_initial_sync`, `p2pool.clearnet`, `xvb.tor`/`donation.tor: false`). |
+| `allowlisted` | Only flows listed for the host in `data/egress-map.tsv` rose (time sync, release fetches, image pulls). |
+| `clean` | No counter rose. |
+| `not-observed` | No audit table, an unreadable table, or a counter that is not a number. |
+
+The map's `audit` column names the destination port of each host-route row (`allowlisted tcp 443`,
+`choice:monero tcp 18080`); a choice is counted as chosen only while its own config switch is on (Monero and Tari have one each), so with
+the switch off the same traffic reads `leaking`. The match is by port, so a leak over port 443 or 80
+reads `allowlisted`; #4154 narrows it with resolved addresses. A `leaking` verdict also carries `watchdog_delta`,
+the rise in `outside`, and `first_seen`, the check time at which the rise began. The first check after install
+records the baseline and reads `clean`; a counter that falls, because the table was reloaded, starts a new
+baseline. `./pithead egress-status` and `doctor` print the verdict. The dashboard sends one `clearnet_exposed`
+alert when the verdict turns `leaking` and one when a later check reads anything else but `not-observed`,
+which is a check interval without a rise in `outside`. `not-observed` and a check older than six minutes keep
+the last verdict and send nothing. Opting out of the firewall turns the watchdog alert off too.
 
 Opting out with `network.tor_egress_firewall: false` removes the timer. If a removal step fails
 (stopping the timer, deleting its unit files, or reloading systemd), `apply` names the step and

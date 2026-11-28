@@ -1,32 +1,11 @@
-"""The Tor-only egress firewall's live state on the host (#2599).
-
-The dashboard cannot read host netfilter, so ``network.tor_egress_firewall`` only says the firewall
-is *configured*. ``pithead-egress.timer`` runs ``pithead egress-status`` every two minutes, which
-writes the doctor's ``tor_egress_enforced`` verdict to ``egress-status.json`` in the read-only
-control results mount. This module reads it and applies it to the egress posture.
-
-* rc 0 → ``enforced``: the configured backstop is live.
-* rc 1, 2, 4, 5 → ``missing``: absent, no tool, orphaned chain, or shadowed. Not fail-closed.
-* rc 3, no file, a malformed file, or a check older than three intervals → ``unverified``. An
-  install whose ``up`` has not yet installed the timer must neither alarm nor show green.
-
-The file is typed on read, never coerced: ``rc`` must be a JSON integer and ``checked_at`` a finite
-JSON number. ``json`` accepts ``NaN`` and ``Infinity``, and Python treats ``False`` as ``0``, so a
-bare ``int()``/``float()`` would read ``{"rc": false}`` as enforced. A JSON integer is also
-unbounded, and turning 400 digits into a float raises ``OverflowError``, so ``checked_at`` is range
-checked before any arithmetic: comparing an int with a float is exact in Python and never
-overflows, and NaN and the infinities fail the same range. Deep nesting makes ``json`` raise
-``RecursionError``, which reads unverified like any other unparseable file.
-"""
-
 import json
 import time
 
 from mining_dashboard.config import config
 
-STATUS_PATH = "/control/results/egress-status.json"  # the read-only control results mount
-CHECK_INTERVAL_S = 120  # pithead-egress.timer's OnUnitActiveSec
-_MAX_EPOCH_S = 2**53  # past any real clock, and every integer below it is an exact float
+STATUS_PATH = "/control/results/egress-status.json"
+CHECK_INTERVAL_S = 120
+_MAX_EPOCH_S = 2**53
 ENFORCED, MISSING, UNVERIFIED = "enforced", "missing", "unverified"
 _MISSING_RCS = {1, 2, 4, 5}
 _MAX_COUNTERS = 64
@@ -35,6 +14,10 @@ _LABELS = {
     "run 'pithead up')",
     UNVERIFIED: "Egress firewall state unverified",
 }
+
+WATCHDOG_CLEAN, WATCHDOG_LEAKING, WATCHDOG_NOT_OBSERVED = "clean", "leaking", "not-observed"
+WATCHDOG_ALLOWLISTED, WATCHDOG_CHOICE = "allowlisted", "operator-choice"
+WATCHDOG_BENIGN = (WATCHDOG_CLEAN, WATCHDOG_ALLOWLISTED, WATCHDOG_CHOICE)
 
 
 def _fresh_status(path, now) -> dict | None:
@@ -79,6 +62,9 @@ def host_audit_state(path=None, now=None):
         return {**_UNMONITORED, "counters": []}
     if not isinstance(counters, list):
         return {**_UNMONITORED, "counters": []}
+    outside = audit.get("outside")
+    if type(outside) is not int or not 0 <= outside <= would_drop:
+        outside = would_drop
     return {
         "loaded": True,
         "would_drop": would_drop,
@@ -87,21 +73,27 @@ def host_audit_state(path=None, now=None):
             for c in counters[:_MAX_COUNTERS]
             if isinstance(c, dict) and type(c.get("packets")) is int and type(c.get("bytes")) is int
         ],
-        "host_violations": would_drop,
+        "host_violations": outside,
         "unmonitored": False,
     }
 
 
 def live_firewall_state():
-    """The state to act on, or None when the operator opted out of the firewall."""
     return egress_firewall_state() if config.TOR_EGRESS_FIREWALL else None
 
 
-def with_firewall_state(build, *, firewall, state=None, **knobs):
-    """Run a posture/topology builder against the firewall as it IS, not as configured.
+def watchdog_verdict(path=None, now=None):
+    status = _fresh_status(path, now)
+    audit = status.get("host_audit") if status else None
+    verdict = audit.get("watchdog") if isinstance(audit, dict) else None
+    return verdict if verdict in (*WATCHDOG_BENIGN, WATCHDOG_LEAKING) else WATCHDOG_NOT_OBSERVED
 
-    Only a verified firewall marks clearnet routes "blocked"; otherwise the summary warns and
-    leads with the firewall's state. ``state`` is injectable for tests."""
+
+def live_watchdog_verdict():
+    return watchdog_verdict() if config.TOR_EGRESS_FIREWALL else None
+
+
+def with_firewall_state(build, *, firewall, state=None, **knobs):
     if not firewall:
         return build(firewall=False, **knobs)
     state = state or egress_firewall_state()

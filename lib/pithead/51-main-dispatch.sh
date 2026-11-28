@@ -160,7 +160,6 @@ main() {
         ;;
     egress-status)
         _reject_options egress-status "$@"
-        require_env
         egress_status
         ;;
     lan-guard-check)

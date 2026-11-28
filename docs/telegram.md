@@ -173,7 +173,7 @@ block and set it to `false` — any event you don't list stays on:
 | `db_unhealthy` | `true` | Dashboard database writes failing / recovered |
 | `db_reset` | `true` | Corrupt dashboard database auto-healed (quarantined + reset); history cleared |
 | `xvb_no_share` | `true` | XvB on but no PPLNS share (wins skipped) / restored |
-| `clearnet_exposed` | `true` | Chosen clearnet sync or Tor transition pending until host verification / verified Tor daemon and closed exception; the host's Tor-only egress firewall is missing / restored |
+| `clearnet_exposed` | `true` | Chosen clearnet sync or Tor transition pending until host verification / verified Tor daemon and closed exception; the host's Tor-only egress firewall is missing / restored; the host egress audit counter rose (non-Tor egress seen) / stopped rising |
 | `xvb_registration` | `true` | XvB auto-registration rejected / failing / recovered |
 | `new_release` | `true` | A newer Pithead release is available |
 | `stack_online` | `true` | One-shot "dashboard is up" heartbeat on start |

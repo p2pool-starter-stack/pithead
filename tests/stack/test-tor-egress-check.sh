@@ -194,6 +194,7 @@ printf 'rig\tpool lan\tallow\tallow\tlan\tnone\tnone\n' >>"$EAU/map-lan.tsv"
 printf 'role\tdestination\ttoday\ttarget\troute\tenforcer\ttest\n' >"$EAU/map-nolan.tsv"
 printf 'appliance\tupdate fetch\tallow\tallow\thost\tnone\tnone\nrig\tpool\tallow\tallow\thost\tnone\tnone\n' >>"$EAU/map-nolan.tsv"
 printf '{"nftables":[{"metainfo":{"json_version":1}},{"table":{"family":"inet","name":"pithead_egress_audit"}},{"rule":{"family":"inet","table":"pithead_egress_audit","chain":"output","handle":2,"comment":"loopback","expr":[{"counter":{"packets":7,"bytes":700}}]}},{"rule":{"family":"inet","table":"pithead_egress_audit","chain":"output","handle":5,"comment":"would_drop","expr":[{"counter":{"packets":42,"bytes":3780}},{"log":{"prefix":"pithead-egress-audit: "}}]}},{"rule":{"family":"inet","table":"pithead_egress_audit","chain":"output","handle":6,"comment":"would_drop","expr":[{"counter":{"packets":13,"bytes":1170}}]}}]}\n' >"$EAU/json"
+printf '{"nftables":[{"metainfo":{"json_version":1}},{"table":{"family":"inet","name":"pithead_egress_audit"}},{"rule":{"family":"inet","table":"pithead_egress_audit","chain":"output","handle":2,"comment":"loopback","expr":[{"counter":{"packets":7,"bytes":700}}]}},{"rule":{"family":"inet","table":"pithead_egress_audit","chain":"output","handle":5,"comment":"would_drop","expr":[{"counter":{"packets":57,"bytes":5130}},{"log":{"prefix":"pithead-egress-audit: "}}]}},{"rule":{"family":"inet","table":"pithead_egress_audit","chain":"output","handle":6,"comment":"would_drop","expr":[{"counter":{"packets":23,"bytes":2070}}]}}]}\n' >"$EAU/counter-rising.json"
 printf '#!/usr/bin/env bash\n[ -n "${SUDO_DENY:-}" ] && exit 1\n[ "${1:-}" = -n ] && shift\nexec "$@"\n' >"$EAU/bin/sudo"
 printf '#!/usr/bin/env bash\necho Linux\n' >"$EAU/bin/uname"
 cat >"$EAU/bin/nft" <<EOF
@@ -244,6 +245,15 @@ assert_contains "with no lan class the gate is the loopback and reply complement
     'oifname != "lo" ct state != { established, related } counter comment "would_drop"'
 assert_not_contains "the gate never names a lan class the role did not render" "$EAU_NOLAN" 'ip daddr !='
 assert_not_contains "with no lan class the ungated rule already counts IPv6, so no IPv6 rule is added" "$EAU_NOLAN" "meta nfproto ipv6"
+printf 'appliance\tupdate fetch\tallow\tallow\thost\tnone\tnone\tallowlisted tcp 443\nappliance\ttime sync\tallow\tallow\thost\tnone\tnone\tallowlisted tcp 80\nappliance\tmonero\tallow\tallow\thost\tnone\tnone\tchoice:monero tcp 18080\nappliance\ttari\tallow\tallow\thost\tnone\tnone\tchoice:tari tcp 18189\nappliance\tpull\tbuild\tbuild\thost\tnone\tnone\tallowlisted tcp 443\nappliance\txvb\tallow\tallow\thost\tnone\tnone\tchoice:xvb tcp 4247\n' >>"$EAU/map-nolan.tsv"
+EAU_CLS=$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-nolan.tsv" "" "monero")
+assert_contains "host-route rows with an audit match render an allowlisted class, ports merged" "$EAU_CLS" 'oifname != "lo" ct state != { established, related } tcp dport { 443, 80 } counter comment "allowlisted"'
+assert_contains "an enabled operator choice renders its own choice class" "$EAU_CLS" 'tcp dport { 18080 } counter comment "choice"'
+assert_not_contains "a choice's switch is its own: Tari's port is not labelled while only Monero's is on" "$EAU_CLS" "18189"
+assert_not_contains "a choice the operator did not make is not labelled, so its traffic stays outside" "$EAU_CLS" "4247"
+assert_not_contains "no choice enabled renders no choice class" "$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-nolan.tsv" "" "")" 'comment "choice"'
+assert_eq "classes add counters only: still no terminal verdict anywhere" \
+    "$(printf '%s\n' "$EAU_CLS" | grep -Ec '(^|[[:space:]])(accept|drop|reject)([[:space:]]|$)')" "0"
 EAU_RIG=$(run_sourced "$EAU" render_host_egress_audit_nft rig "$EAU/map-lan.tsv")
 assert_contains "the rig role renders from its own rows" "$EAU_RIG" 'counter comment "lan"'
 EAU_RIGN=$(run_sourced "$EAU" render_host_egress_audit_nft rig "$EAU/map-nolan.tsv")
@@ -299,7 +309,7 @@ assert_not_contains "the unloadable state path never leaks a shell redirection e
 echo "== counters: the view reports per-rule counters and the would_drop total (#4195) =="
 EAU_C=$(eau_run host_egress_audit_counters)
 assert_eq "the counters JSON names every counter and would_drop sums the v4 and IPv6 rules" "$EAU_C" \
-    '{"counters":[{"packets":7,"bytes":700},{"packets":42,"bytes":3780},{"packets":13,"bytes":1170}],"would_drop":55}'
+    '{"counters":[{"packets":7,"bytes":700},{"packets":42,"bytes":3780},{"packets":13,"bytes":1170}],"would_drop":55,"allowlisted":0,"choice":0,"outside":55}'
 EAU_A=$(
     EAU_NFT_TABLE_RC=1 eau_run host_egress_audit_counters 2>/dev/null
     printf 'rc=%s' "$?"
@@ -326,7 +336,7 @@ eau_status() {
 }
 out=$(eau_status egress_status)
 assert_eq "the verdict stays the first stdout line" "$(printf '%s\n' "$out" | head -n1)" "absent"
-assert_contains "and the audit line follows it" "$out" "host-audit: present (would_drop 55 packets)"
+assert_contains "and the audit line follows it" "$out" "host-audit: present (outside the allowlist 55 packets)"
 assert_eq "the dashboard file keeps rc/verdict and gains host_audit counters" \
     "$(jq -c '[.rc, .verdict, .host_audit.verdict, (.host_audit.counters | length), .host_audit.counters[1].packets]' "$EAU/ctl/results/egress-status.json")" \
     '[1,"absent","present",3,42]'
@@ -385,3 +395,5 @@ vfixture "loopback counted into would_drop" active "$EAU_OK_TABLE" 10 42 0 3 210
 vfixture "a loopback probe that never reached lo" active "$EAU_OK_TABLE" 10 42 0 2 2 4
 vfixture "an unreadable loopback leg" active "$EAU_OK_TABLE" 10 42 0 "" "" ""
 vfixture "a failed test flow" active "$EAU_OK_TABLE" 10 42 1 3 5 210
+# shellcheck source=tests/stack/firewall/egress-watchdog.sh
+source "$ROOT/tests/stack/firewall/egress-watchdog.sh"

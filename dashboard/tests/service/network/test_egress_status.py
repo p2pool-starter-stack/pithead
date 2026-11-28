@@ -10,7 +10,14 @@ from mining_dashboard.service.network.egress_status import (
     ENFORCED,
     MISSING,
     UNVERIFIED,
+    WATCHDOG_ALLOWLISTED,
+    WATCHDOG_CHOICE,
+    WATCHDOG_CLEAN,
+    WATCHDOG_LEAKING,
+    WATCHDOG_NOT_OBSERVED,
     egress_firewall_state,
+    live_watchdog_verdict,
+    watchdog_verdict,
     with_firewall_state,
 )
 from mining_dashboard.service.network.topology import compute_topology
@@ -38,13 +45,13 @@ def test_each_host_verdict_maps_to_a_state(tmp_path, rc, state):
 @pytest.mark.parametrize(
     "body",
     [
-        None,  # no file: an install whose `up` has not installed the timer yet
+        None,
         "{not json",
         [],
         {"verdict": "enforced", "checked_at": NOW},
-        {"rc": 0, "checked_at": NOW - 3 * 120 - 1},  # the timer stopped: three missed checks
-        {"rc": 0, "checked_at": NOW + 3 * 120 + 1},  # a clock that cannot be trusted either way
-        {"rc": 1, "checked_at": NOW - 3 * 120 - 1},  # a stale alarm is not repeated as current
+        {"rc": 0, "checked_at": NOW - 3 * 120 - 1},
+        {"rc": 0, "checked_at": NOW + 3 * 120 + 1},
+        {"rc": 1, "checked_at": NOW - 3 * 120 - 1},
     ],
 )
 def test_anything_but_a_fresh_verdict_is_unverified(tmp_path, body):
@@ -55,17 +62,15 @@ def test_anything_but_a_fresh_verdict_is_unverified(tmp_path, body):
 @pytest.mark.parametrize(
     "body",
     [
-        # json.loads accepts these, and each once slipped through as a fresh verdict.
-        '{"rc": 0, "checked_at": NaN}',  # NaN compares False against the staleness bound
+        '{"rc": 0, "checked_at": NaN}',
         '{"rc": 0, "checked_at": Infinity}',
         '{"rc": 0, "checked_at": -Infinity}',
-        {"rc": False, "checked_at": NOW},  # a bool is an int to Python: False read as enforced
+        {"rc": False, "checked_at": NOW},
         {"rc": True, "checked_at": NOW},
-        {"rc": "0", "checked_at": NOW},  # the host writes numbers; a string is not its file
+        {"rc": "0", "checked_at": NOW},
         {"rc": 0.0, "checked_at": NOW},
         {"rc": 0, "checked_at": True},
         {"rc": 0, "checked_at": str(NOW)},
-        # A JSON integer has no size limit: float() of 400 digits raises OverflowError.
         '{"rc": 0, "checked_at": 1' + "0" * 399 + "}",
         '{"rc": 0, "checked_at": -1' + "0" * 399 + "}",
     ],
@@ -76,7 +81,6 @@ def test_a_malformed_field_is_unverified_never_enforced(tmp_path, body):
 
 @pytest.mark.parametrize("opener", ["[", '{"rc": '])
 def test_deeply_nested_json_cannot_escape_the_reader(tmp_path, opener):
-    # json.load recurses per nesting level: 100k levels raise RecursionError, not ValueError.
     assert egress_firewall_state(_write(tmp_path, opener * 100_000), now=NOW) == UNVERIFIED
 
 
@@ -107,9 +111,7 @@ def test_a_missing_firewall_warns_and_claims_nothing_is_blocked():
     assert s["label"].startswith("Tor-only egress firewall MISSING")
     assert "blocked by the egress firewall" not in s["label"]
     assert s["blocked_by_firewall"] == 0
-    assert (
-        s["leaks"] == 0
-    )  # selected P2Pool clearnet remains a choice; missing firewall still warns
+    assert s["leaks"] == 0
     assert not any(c.get("blocked_by_firewall") for comp in p["components"] for c in comp["conns"])
     badge = _egress_badge(s)
     assert badge["variant"] == "warn"
@@ -145,7 +147,6 @@ def test_the_topology_summary_follows_the_same_state():
 
 
 def test_the_status_path_is_the_fixed_read_only_mount():
-    # No env override: the dashboard reads only what the host wrote into its read-only mount.
     assert egress_status.STATUS_PATH == "/control/results/egress-status.json"
     assert not hasattr(egress_status, "EGRESS_STATUS_PATH")
 
@@ -159,3 +160,60 @@ def test_the_live_builders_read_the_host_file(tmp_path, monkeypatch):
     assert egress_status.live_firewall_state() == MISSING
     monkeypatch.setattr(egress.config, "TOR_EGRESS_FIREWALL", False)
     assert egress_status.live_firewall_state() is None
+
+
+def _audit(watchdog, checked_at=NOW - 60):
+    return {
+        "rc": 0,
+        "verdict": "enforced",
+        "checked_at": checked_at,
+        "host_audit": {
+            "verdict": "present",
+            "counters": [],
+            "would_drop": 42,
+            "watchdog": watchdog,
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    ("wd", "expected"),
+    [
+        ("clean", WATCHDOG_CLEAN),
+        ("leaking", WATCHDOG_LEAKING),
+        ("allowlisted", WATCHDOG_ALLOWLISTED),
+        ("operator-choice", WATCHDOG_CHOICE),
+        ("not-observed", WATCHDOG_NOT_OBSERVED),
+        ("bogus", WATCHDOG_NOT_OBSERVED),
+        (None, WATCHDOG_NOT_OBSERVED),
+    ],
+)
+def test_watchdog_verdict_reads_the_host_audit_watchdog_field(tmp_path, wd, expected):
+    assert watchdog_verdict(_write(tmp_path, _audit(wd)), now=NOW) == expected
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        None,
+        "{not json",
+        {"rc": 0, "verdict": "enforced", "checked_at": NOW},
+        {"rc": 0, "verdict": "enforced", "checked_at": NOW, "host_audit": "bad"},
+        _audit("leaking", checked_at=NOW - 3 * 120 - 1),
+        _audit("leaking", checked_at=True),
+    ],
+)
+def test_anything_but_a_fresh_host_audit_verdict_is_not_observed(tmp_path, body):
+    path = str(tmp_path / "absent.json") if body is None else _write(tmp_path, body)
+    assert watchdog_verdict(path, now=NOW) == WATCHDOG_NOT_OBSERVED
+
+
+def test_live_watchdog_verdict_obeys_firewall_optout(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        egress_status, "STATUS_PATH", _write(tmp_path, _audit("leaking", checked_at=NOW))
+    )
+    monkeypatch.setattr(egress_status.time, "time", lambda: NOW)
+    monkeypatch.setattr(egress.config, "TOR_EGRESS_FIREWALL", False)
+    assert live_watchdog_verdict() is None
+    monkeypatch.setattr(egress.config, "TOR_EGRESS_FIREWALL", True)
+    assert live_watchdog_verdict() == WATCHDOG_LEAKING

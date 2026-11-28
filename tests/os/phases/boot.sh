@@ -192,6 +192,22 @@ GETTY_DROPIN
         bad "$verdict"
     fi
 
+    local ew_allow ew_probe
+    _ssh 'cd /data/pithead && ./pithead egress-status >/dev/null 2>&1' >/dev/null 2>&1 || true
+    _ssh 'for i in 1 2; do timeout 3 bash -c "exec 3<>/dev/tcp/1.1.1.1/443"; done >/dev/null 2>&1' >/dev/null 2>&1 || true
+    ew_allow=$(_ssh 'cd /data/pithead && ./pithead egress-status 2>&1' 2>/dev/null) || ew_allow=""
+    ew_probe=""
+    for _ in 1 2 3; do
+        _ssh 'for i in 1 2 3; do timeout 3 bash -c "exec 3<>/dev/tcp/1.1.1.1/9999"; done >/dev/null 2>&1' >/dev/null 2>&1 || true
+        ew_probe=$(_ssh 'cd /data/pithead && ./pithead egress-status 2>&1' 2>/dev/null) || ew_probe=""
+        [ "$(host_egress_watchdog_state "$ew_probe")" != leaking ] || break
+    done
+    if verdict=$(host_egress_watchdog_boot_verdict "$ew_allow" "$ew_probe"); then
+        ok "$verdict"
+    else
+        bad "$verdict"
+    fi
+
     [ "$(_ssh "systemctl is-enabled tor.service tor@default.service 2>&1" | tr -d '\r' | grep -cx masked)" = "2" ] &&
         ok "both Debian Tor units ship masked on a fresh coordinator boot" ||
         bad "a Debian Tor unit is not masked on a fresh coordinator boot: $(_ssh 'systemctl is-enabled tor.service tor@default.service 2>&1' | tr -d '\r\n')"

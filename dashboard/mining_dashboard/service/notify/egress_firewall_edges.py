@@ -1,20 +1,17 @@
-from mining_dashboard.service.network.egress_status import MISSING, UNVERIFIED
+from mining_dashboard.service.network.egress_status import (
+    MISSING,
+    UNVERIFIED,
+    WATCHDOG_BENIGN,
+    WATCHDOG_LEAKING,
+)
 
 
 class EgressFirewallEdgesMixin:
-    """The Tor-only egress firewall going missing on the host while the stack runs (#2599).
-
-    Rides the ``clearnet_exposed`` event and its toggle: both mean the host IP can reach clearnet.
-    Edge-triggered: one message on the way into ``missing``, one on the way back to ``enforced``.
-    ``unverified`` (stale or unreadable check) sends nothing and keeps the last verdict, so a gap in
-    the checks cannot fake a recovery or repeat the alarm. The baseline is ``enforced``: a dashboard
-    that starts on a missing firewall (a reboot without the boot unit, #2460) alerts at once. The
-    dashboard runs only as part of the stack, so "while the stack runs" is its own liveness."""
-
     _prev_egress_missing = None
+    _prev_watchdog_leaking = False
 
     def _egress_firewall_edges(self, state):
-        if state is None:  # the operator opted out of the firewall; nothing to watch
+        if state is None:
             self._prev_egress_missing = None
             return []
         if state == UNVERIFIED:
@@ -32,4 +29,28 @@ class EgressFirewallEdgesMixin:
             )
         else:
             text = "\U0001f7e2 \U0001f9f1 Tor-only egress firewall restored — egress is fail-closed again."
+        return [(self.EVT_CLEARNET_EXPOSED, self._fmt(text))]
+
+    def _egress_watchdog_edges(self, verdict):
+        if verdict is None:
+            self._prev_watchdog_leaking = False
+            return []
+        if verdict not in (*WATCHDOG_BENIGN, WATCHDOG_LEAKING):
+            return []
+        leaking = verdict == WATCHDOG_LEAKING
+        if leaking == self._prev_watchdog_leaking:
+            return []
+        self._prev_watchdog_leaking = leaking
+        if leaking:
+            self._record_incident(self.EVT_CLEARNET_EXPOSED)
+            text = (
+                "\U0001f6a8 \U0001f9f1 Non-Tor egress seen — the host audit counter rose since the "
+                "last check: this machine sent traffic outside Tor and the allowlist. "
+                "Run 'pithead doctor' for the count."
+            )
+        else:
+            text = (
+                "\U0001f7e2 \U0001f9f1 Non-Tor egress stopped — the host audit counter did not rise "
+                "since the last check."
+            )
         return [(self.EVT_CLEARNET_EXPOSED, self._fmt(text))]

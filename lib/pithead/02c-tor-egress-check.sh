@@ -12,8 +12,12 @@
 EGRESS_CHECK_SERVICE="pithead-egress-check.service"
 EGRESS_CHECK_TIMER="pithead-egress.timer"
 
+EGRESS_AUDIT_STATE_FILE=".egress-audit-prev"
+
 egress_status() {
-    local rc=0 dir tmp verdict arc=0 audit_state=absent audit_json audit_cj wd
+    local rc=0 dir tmp verdict arc=0 audit_state=absent audit_json='' audit_cj wd now
+    local state_file state_tmp prev_wd='' first_seen='' prev_al='' prev_ch='' al='' ch='' al_v
+    local delta=0 d_al=0 d_ch=0 watchdog=not-observed
     tor_egress_enforced || rc=$?
     case "$rc" in
     0) verdict=enforced ;;
@@ -30,27 +34,66 @@ egress_status() {
     3) audit_state=unreadable ;;
     *) audit_state=absent ;;
     esac
-    if [ "$audit_state" = present ]; then
-        audit_json=$(printf '%s' "$audit_cj" | jq -c '. + {verdict: "present"}') || true
-        [ -n "$audit_json" ] || audit_json='{"verdict":"unreadable","counters":[],"would_drop":null}'
-    else
-        audit_json="{\"verdict\":\"$audit_state\",\"counters\":[],\"would_drop\":null}"
-    fi
     dir=$(env_get CONTROL_DIR 2>/dev/null) || true
     dir="${dir:-$PWD/data/control}/results"
     mkdir -p "$dir"
+    state_file="$dir/$EGRESS_AUDIT_STATE_FILE"
+    now=$(date +%s)
+    if [ "$audit_state" = present ]; then
+        { read -r wd al ch < <(printf '%s' "$audit_cj" | jq -r '[.outside, .allowlisted, .choice] | @tsv'); } 2>/dev/null || wd=
+        for al_v in "$wd" "$al" "$ch"; do
+            case "$al_v" in '' | *[!0-9]*) audit_state=unreadable ;; esac
+        done
+    fi
+    if [ "$audit_state" = present ]; then
+        { read -r prev_wd first_seen prev_al prev_ch <"$state_file"; } 2>/dev/null || true
+        case "$prev_wd" in '' | *[!0-9]*) prev_wd=$wd ;; esac
+        case "$prev_al" in '' | *[!0-9]*) prev_al=$al ;; esac
+        case "$prev_ch" in '' | *[!0-9]*) prev_ch=$ch ;; esac
+        case "$first_seen" in *[!0-9]*) first_seen= ;; esac
+        [ -z "$first_seen" ] || first_seen=$((10#$first_seen))
+        delta=$((10#$wd - 10#$prev_wd))
+        d_al=$((10#$al - 10#$prev_al))
+        d_ch=$((10#$ch - 10#$prev_ch))
+        if [ "$delta" -gt 0 ]; then
+            watchdog=leaking
+            first_seen=${first_seen:-$now}
+        else
+            first_seen=
+            if [ "$d_ch" -gt 0 ]; then
+                watchdog=operator-choice
+            elif [ "$d_al" -gt 0 ]; then
+                watchdog=allowlisted
+            else
+                watchdog=clean
+            fi
+        fi
+        audit_json=$(printf '%s' "$audit_cj" | jq -c --arg w "$watchdog" --argjson d "$delta" \
+            --argjson f "${first_seen:-null}" \
+            '. + {verdict: "present", watchdog: $w, watchdog_delta: $d, first_seen: $f}') || audit_json=
+        [ -n "$audit_json" ] || {
+            audit_state=unreadable
+            watchdog=not-observed
+        }
+    fi
+    [ -n "$audit_json" ] ||
+        audit_json="{\"verdict\":\"$audit_state\",\"counters\":[],\"would_drop\":null,\"watchdog\":\"not-observed\"}"
     tmp=$(mktemp "$dir/.egress-status.XXXXXX")
     printf '{"rc":%d,"verdict":"%s","checked_at":%d,"host_audit":%s}\n' \
-        "$rc" "$verdict" "$(date +%s)" "$audit_json" >"$tmp"
+        "$rc" "$verdict" "$now" "$audit_json" >"$tmp"
     chmod 0644 "$tmp"
     mv -f "$tmp" "$dir/egress-status.json"
     printf '%s\n' "$verdict"
-    if [ "$audit_state" = present ]; then
-        wd=$(printf '%s' "$audit_cj" | jq -r '.would_drop // "unknown"' 2>/dev/null)
-        printf 'host-audit: present (would_drop %s packets)\n' "${wd:-unknown}"
-    else
-        printf 'host-audit: %s\n' "$audit_state"
+    if [ "$watchdog" = not-observed ]; then
+        printf 'host-audit: %s watchdog=not-observed\n' "$audit_state"
+        return 0
     fi
+    state_tmp=$(mktemp "$dir/.egress-audit-prev.XXXXXX")
+    printf '%s %s %s %s\n' "$wd" "${first_seen:--}" "$al" "$ch" >"$state_tmp"
+    chmod 0644 "$state_tmp"
+    mv -f "$state_tmp" "$state_file"
+    printf 'host-audit: present (outside the allowlist %s packets) watchdog=%s (rise %d since the last check)\n' \
+        "$wd" "$watchdog" "$delta"
 }
 
 render_egress_check_service() { # <install dir> <engine>
