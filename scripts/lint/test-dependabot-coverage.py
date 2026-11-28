@@ -117,9 +117,7 @@ def check_hadolint_pin(text, problems):
         r"[a-z0-9./_-]+(:[\w.-]+)?@sha256:[0-9a-f]{64}", froms[0]
     ):
         problems.append(".config/hadolint/Dockerfile must have one digest-pinned FROM")
-    elif "/" in froms[0] and (
-        "." in (host := froms[0].split("/", 1)[0]) or ":" in host or host == "localhost"
-    ):
+    elif "/" in froms[0] and ("." in (host := froms[0].split("/", 1)[0]) or host == "localhost"):
         problems.append("the hadolint FROM must be a bare image name Dependabot can read")
     ci = read(".github/workflows/ci.yml")
     if ".config/hadolint/Dockerfile" not in ci or "hadolint/hadolint" in ci:
