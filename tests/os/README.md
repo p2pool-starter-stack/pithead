@@ -40,6 +40,17 @@ inside the dashboard container against zero-peer stats and the real container co
 P2Pool container to restart and be running. Peer-loss detection itself is proved by the `fault-injection` e2e leg.
 `selftest-pool-heal.sh` exercises the phase wrapper without a guest.
 
+The opt-in `monerod-redial` phase (#4157) provisions a local-node guest and strands only that guest's monerod. It runs the
+dashboard's `MonerodRedial` restart in the dashboard container against the real container control path, strands monerod and restarts the Tor
+container outside the healer (the re-dial must record the `tor-start` reason within 15 minutes of Tor being healthy), then repeats a peerless strand until the three-restart daily budget is spent. A strand
+rejects monerod's SOCKS connections to Tor from inside monerod's own network namespace, so Tor stays healthy and the block
+disappears with the restarted container. It requires: a re-dial (log line, `monerod-redial` audit row, outgoing peers
+back) after the Tor restart; one restart per strand, audited and recovered; no restart inside the 30-minute cooldown
+while the verdict is peerless; a held fourth restart announced once; and an unchanged P2Pool start, `data.mdb` inode and
+payout address. A scratch guest cannot hold a synced chain, so recovery is judged on outgoing peers, not `synchronized`.
+Exit 77 (monerod never has peers) is a counted `missing` skip. The phase takes about two and a half hours, capped at 208 minutes after provisioning: submit it with `--timeout-minutes 240`.
+`selftest-monerod-redial.sh` exercises the wrapper and the guest's peer parsing without a guest.
+
 The opt-in `tor-heal` phase provisions a local-node guest and faults only that guest's Tor.
 It retains the production timers: 90 minutes with auto-heal disabled, then up to 95 minutes
 with it enabled. It requires the first-round diagnosis within 25 minutes, a host recovery
@@ -48,6 +59,15 @@ The guest discovers its dashboard network's IPv4 gateway through Podman network 
 for a guest-local alert sink. It restores its original config and state on exit, copying
 state only after Tor stops. Failures report the current stage, bounded command logs and
 the restoration result separately from the test result; no shared Tor is poisoned.
+
+The opt-in `tor-heal-exhausted` phase provisions its own local-node guest and proves the
+ladder's rejected-NEWNYM rung: with no saturated history, a host-rejected NEWNYM must advance
+to the host state reset and Tor must recover unattended (#4075). It is a separate phase because
+the `tor-heal` ladder alone consumes about three and a half hours of the 240-minute bench
+window, and both legs must run to their own bounded end. `selftest-tor-heal-exhausted.sh`
+exercises its wrapper without a guest.
+
+The provision LAN-guard leg writes the three-switch `./pithead apply -y` output to `lan-guard-apply.log` in the guest's `/data/pithead` and, when the apply fails, prints its last 60 lines (redacted) with the exit code (#4281). `selftest-lan-guard-apply-output.sh` covers that branch without a guest.
 
 Submitting `tor-heal` to bench-ci needs `--timeout-minutes 240`: the ladder runs about three
 and a half hours after provisioning, and the tier's default run window ends the job after the
@@ -387,7 +407,7 @@ the host's `/etc`.
   Fault E (#4038) runs `recovery-bundle` on the fault guest with no container running and a
   deliberately failed pithead unit and a dummy unit installed at run time; the archive is a zip taken with
   `--since` and `--until`, mode 600 under `/data/pithead/support-bundles`, and must hold the failed unit's
-  journal line, the dummy unit's file, the whole-journal, kernel and boot-list files and a manifest with
+  journal line with its seeded `--rpc-login` redacted and no copy of the value anywhere in the archive, the dummy unit's file, the whole-journal, kernel and boot-list files and a manifest with
   the journal facts; its path must appear on the serial console, which also records how many quadlet
   container units carried journal lines.
 - **reset** — first, boot the real **Set up again** menu entry on a provisioned coordinator

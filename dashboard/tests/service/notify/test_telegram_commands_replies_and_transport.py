@@ -240,7 +240,10 @@ def test_get_updates_parses_results_over_tor(monkeypatch):
     monkeypatch.setattr(tc, "bounded_get", fake_get)
     assert bot._get_updates(tc.LONG_POLL_SECONDS) == [{"update_id": 8}]
     assert "bottok" in seen["url"] and seen["params"]["offset"] == 7  # token + offset forwarded
-    assert seen["proxies"] == {"http": "socks5h://tor:9050", "https": "socks5h://tor:9050"}
+    assert seen["proxies"] == {
+        "http": "socks5h://notify:isolate@tor:9050",
+        "https": "socks5h://notify:isolate@tor:9050",
+    }
     # (connect, read) tuple with the read timeout outlasting Telegram's long-poll hold — drop the
     # tuple (or shrink the read side) and every legitimate long poll aborts mid-hold (#698).
     connect, read = seen["timeout"]
@@ -295,7 +298,7 @@ def test_send_posts_over_tor(monkeypatch):
     assert (
         "bottok" in seen["url"] and seen["body"]["chat_id"] == "42" and seen["body"]["text"] == "hi"
     )
-    assert seen["proxies"]["https"] == "socks5h://tor:9050"
+    assert seen["proxies"]["https"] == "socks5h://notify:isolate@tor:9050"
 
 
 def test_send_swallows_network_error(monkeypatch):

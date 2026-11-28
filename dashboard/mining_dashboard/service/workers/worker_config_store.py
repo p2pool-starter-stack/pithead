@@ -26,23 +26,12 @@ import sqlite3
 import time
 from typing import Any
 
-# The credential strip the rig-read path already uses (``client/xmrig_client._rig_writable_config``),
-# reused rather than restated — a second key list is a second place for it to drift, and this table
-# feeds the SAME editor prefill that one defends (#1543).
 from mining_dashboard.client.xmrig_client import strip_credentials
 from mining_dashboard.config.config import HISTORY_RETENTION_SEC
 
-# The full terminal vocabulary the rig's control mirror can report (#1009) — applied/rejected/
-# rolled_back/failed from a control-apply, plus noop (already on target)/throttled (retry-later)
-# from a control-upgrade (rigforge#320). Mirrors xmrig_client._CONTROL_TERMINAL and pithead's own
-# control_worker_apply/control_worker_upgrade poll cases (#1001) — one vocabulary, three places.
-# It lives with `reconcile_worker_config_status`, its only reader, and is re-exported from
-# `storage_service` so that import surface is unchanged by the split (#1369).
+_REVISION_REFRESH_SEC = 3600
 _RECONCILE_TERMINAL = ("applied", "rejected", "rolled_back", "failed", "noop", "throttled")
 
-# One column list for every read of this table that returns a ROW, so a windowed read and an
-# exact-id read cannot drift into returning differently-shaped rows for the same change
-# (#1369). `worker_config_change_known` deliberately does not use it — see its docstring.
 _SELECT_CHANGE = "SELECT change_id, ts, status, changes, reason, type FROM worker_config"
 
 
@@ -321,7 +310,7 @@ class WorkerConfigStoreMixin:
                     return None
                 cursor = self._conn.cursor()
                 cursor.execute(
-                    "SELECT revision, last_change_id, drift_from, rigforge_version "
+                    "SELECT revision, last_change_id, drift_from, rigforge_version, ts "
                     "FROM worker_config_revision WHERE worker = ?",
                     (worker,),
                 )
@@ -336,18 +325,27 @@ class WorkerConfigStoreMixin:
                     rigforge_version = row["rigforge_version"]
                 drift_from = _next_drift_from(None if rebased else row, revision, last_change_id)
                 now = time.time()
-                self._conn.execute(
-                    "INSERT OR REPLACE INTO worker_config_revision "
-                    "(worker, revision, last_change_id, ts, drift_from, rigforge_version) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    (worker, revision, last_change_id, now, drift_from, rigforge_version),
+                unchanged = (
+                    row is not None
+                    and (row["revision"], row["last_change_id"], row["drift_from"])
+                    == (revision, last_change_id, drift_from)
+                    and row["rigforge_version"] == rigforge_version
+                    and isinstance(row["ts"], float)
+                    and 0 <= now - row["ts"] < _REVISION_REFRESH_SEC
                 )
-                if random.random() < 0.05:  # noqa: S311 — pruning sampler, not a security context
+                if not unchanged:
                     self._conn.execute(
-                        "DELETE FROM worker_config_revision WHERE ts < ?",
-                        (now - HISTORY_RETENTION_SEC,),
+                        "INSERT OR REPLACE INTO worker_config_revision "
+                        "(worker, revision, last_change_id, ts, drift_from, rigforge_version) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        (worker, revision, last_change_id, now, drift_from, rigforge_version),
                     )
-                self._conn.commit()
+                    if random.random() < 0.05:  # noqa: S311
+                        self._conn.execute(
+                            "DELETE FROM worker_config_revision WHERE ts < ?",
+                            (now - HISTORY_RETENTION_SEC,),
+                        )
+                    self._conn.commit()
         except sqlite3.Error as e:
             self._db_error("Worker Revision Write Error", e)
             return None

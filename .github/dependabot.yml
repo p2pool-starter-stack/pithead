@@ -38,6 +38,7 @@ updates:
   - package-ecosystem: "docker"
     directories:
       - "/dashboard"
+      - "/build/cosign"
       - "/build/monero"
       - "/build/p2pool"
       - "/build/tor"
@@ -73,6 +74,16 @@ updates:
       # semver change and so pass both entries untouched (see PRs #729 and #1116).
       - dependency-name: "*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  - package-ecosystem: "gomod"
+    directories:
+      - "/os/rootfs/tools/compose"
+      - "/os/rootfs/tools/cosign"
+    schedule:
+      interval: "weekly"
+    groups:
+      rootfs-tools:
+        patterns: ["*"]
 
   # Third-party image digests pinned directly in docker-compose.yml (Tari node + wallet,
   # docker-socket-proxy, caddy) — outside build/*, so the `docker` entry above never sees them,

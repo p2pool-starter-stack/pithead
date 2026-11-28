@@ -7,6 +7,8 @@ WORK=$(cd "$WORK" && pwd -P)
 trap 'chmod 700 "$WORK/tor" 2>/dev/null || true; chmod 700 "$WORK/tor/p2pool" 2>/dev/null || true; rm -rf "$WORK"' EXIT
 # shellcheck source=lib/pithead/02e-tor-recovery.sh
 source "$ROOT/lib/pithead/02e-tor-recovery.sh"
+# shellcheck source=lib/pithead/02f-tor-recovery-reasons.sh
+source "$ROOT/lib/pithead/02f-tor-recovery-reasons.sh"
 echo "== tor recovery CLI distinguishes refusals from unexpected failures =="
 cat >"$WORK/cli-fixture.sh" <<'SH'
 #!/usr/bin/env bash
@@ -26,6 +28,11 @@ tor_recovery_identities() { [ "$CASE" != identity ] || return 1; printf 'identit
 docker() { printf 'mutation\n' >>"$WORK/cli-actions"; return 99; }
 case "$CASE" in
 mount) tor_recovery_mount() { return 1; } ;;
+unsaturated)
+    tor_recovery_heal_outage() { return 1; }
+    tor_recovery_circuit_status() { return 1; }
+    tor_recovery_bootstrap_persistent() { return 1; }
+    ;;
 lock) mutation_lock_acquire() { _PITHEAD_LOCK_OWNED=0; } ;;
 evidence)
     tor_recovery_heal_outage() { return 1; }
@@ -135,6 +142,10 @@ tor_recovery_info() {
     if [ -e "$WORK/started" ]; then printf '%s\n' "$good"; else printf '%s\n' "$bad"; fi
 }
 sleep() { :; }
+timeout() {
+    shift
+    "$@"
+}
 log() { :; }
 warn() { :; }
 control_audit() { printf '%s\n' "$5" >>"$WORK/audit"; }
@@ -157,6 +168,10 @@ sudo() {
 docker() {
     case "$*" in
     'exec tor /usr/local/bin/tor-control-signal.sh NEWNYM') printf 'newnym\n' >>"$WORK/actions" ;;
+    'exec tor /usr/local/bin/tor-control-signal.sh GUARDS')
+        [ "${GUARD_STALL:-0}" = 1 ] || return 3
+        printf 'dropguards\n' >>"$WORK/actions"
+        ;;
     'compose stop tor')
         printf 'stop\n' >>"$WORK/actions"
         if [ "${STOP_FAIL:-0}" = 1 ]; then return 1; fi
@@ -264,6 +279,23 @@ TOR_CAPTURE="$WORK/signal" TOR_COOKIE_FILE="$WORK/cookie" PATH="$WORK/bin:$PATH"
 grep -q '^SIGNAL NEWNYM' "$WORK/signal"
 ! grep -q 'DROPGUARDS' "$WORK/signal"
 [ "$(cat "$WORK/signal-result")" = 'NEWNYM accepted' ]
+cat >"$WORK/bin/nc" <<'SH'
+#!/bin/sh
+cat >"$TOR_CAPTURE"
+cat "$TOR_REPLY"
+SH
+printf '250 OK\r\n250-status/circuit-established=0\r\n250+circuit-status=\r\n1 BUILT $A~a\r\n2 LAUNCHED\r\n3 EXTENDED $B~b\r\n4 CLOSED\r\n.\r\n250 OK\r\n250 closing connection\r\n' >"$WORK/reply"
+status_signal() { TOR_REPLY="$WORK/reply" TOR_CAPTURE="$WORK/signal" TOR_COOKIE_FILE="$WORK/cookie" PATH="$WORK/bin:$PATH" sh "$ROOT/build/tor/control-signal.sh" "$@"; }
+[ "$(status_signal STATUS)" = 'circuit-established=0 pending=2' ]
+grep -q '^GETINFO status/circuit-established circuit-status' "$WORK/signal"
+! grep -q 'SIGNAL' "$WORK/signal"
+printf '515 Authentication failed\r\n' >"$WORK/reply"
+if status_signal STATUS >"$WORK/signal-result"; then exit 1; fi
+[ ! -s "$WORK/signal-result" ]
+printf '250 OK\r\n250 OK\r\n' >"$WORK/reply"
+if status_signal STATUS >"$WORK/signal-result"; then exit 1; fi
+if status_signal DROPGUARDS; then exit 1; fi
+if status_signal STATUS NEWNYM; then exit 1; fi
 
 # The dashboard can request only the fixed circuit signal; the host validates the shape.
 # shellcheck source=lib/pithead/22a-config-document.sh
@@ -300,4 +332,55 @@ jq '.extra="DROPGUARDS"' "$WORK/request.json" >"$WORK/rejected.json"
 control_process_request "$WORK/rejected.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = rejected ]
 [ "$(grep -c '^newnym$' "$WORK/actions")" = 2 ]
+
+guard_reply() {
+    printf '250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=%s TAG=%s SUMMARY="x"\r\n' "$1" "$2"
+    printf '250-status/circuit-established=%s\r\n250-uptime=%s\r\n250+entry-guards=\r\n%s\r\n.\r\n250 OK\r\n' "$3" "$4" "$5"
+}
+cat >"$WORK/bin/nc" <<'SH'
+#!/bin/sh
+input=$(cat)
+printf '%s\n' "$input" >>"$TOR_CAPTURE"
+case "$input" in
+*GETINFO*) cat "$TOR_STATE_REPLY" ;;
+*) printf '250 OK\r\n250 OK\r\n' ;;
+esac
+SH
+guard_signal() {
+    rm -f "$WORK/signal"
+    TOR_CAPTURE="$WORK/signal" TOR_STATE_REPLY="$1" TOR_COOKIE_FILE="$WORK/cookie" PATH="$WORK/bin:$PATH" \
+        sh "$ROOT/build/tor/control-signal.sh" GUARDS >"$WORK/signal-result"
+}
+up_guard='$0123456789ABCDEF0123456789ABCDEF01234567~guard up 2026-11-15 10:00:00'
+guard_reply 95 circuit_create 0 600 "$up_guard" >"$WORK/state-stall"
+guard_signal "$WORK/state-stall"
+grep -q '^DROPGUARDS' "$WORK/signal"
+[ "$(cat "$WORK/signal-result")" = 'DROPGUARDS accepted' ]
+guard_reply 95 circuit_create 0 120 "$up_guard" >"$WORK/state-young"
+guard_reply 100 "done" 1 600 "$up_guard" >"$WORK/state-healthy"
+guard_reply 95 circuit_create 1 600 "$up_guard" >"$WORK/state-established"
+guard_reply 95 circuit_create 0 600 '$0123456789ABCDEF0123456789ABCDEF01234567~guard down' >"$WORK/state-guard-down"
+for scenario in young healthy established guard-down; do
+    rc=0
+    guard_signal "$WORK/state-$scenario" || rc=$?
+    [ "$rc" = 3 ]
+    ! grep -q "^DROPGUARDS" "$WORK/signal" || exit 1
+done
+
+rm -f "$WORK/control/tor-newnym-budget" "$WORK/actions"
+GUARD_STALL=1
+control_process_request "$WORK/request.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = applied ]
+[ "$(jq -r .action "$WORK/result")" = tor-dropguards ]
+[ "$(cat "$WORK/actions")" = dropguards ]
+control_process_request "$WORK/request.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = rejected ]
+read -r first count <"$WORK/control/tor-newnym-budget"
+[ "$count" = 1 ]
+printf '%s 1\n' "$((first - 1801))" >"$WORK/control/tor-newnym-budget"
+control_process_request "$WORK/request.json" "$WORK/control"
+control_process_request "$WORK/request.json" "$WORK/control"
+[ "$(grep -c '^dropguards$' "$WORK/actions")" = 2 ]
+[ "$(jq -r .status "$WORK/result")" = rejected ]
+[ "$(grep -c '^stop$' "$WORK/actions" || true)" = 0 ]
 echo 'tor recovery unit PASS'

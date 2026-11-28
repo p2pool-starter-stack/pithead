@@ -197,7 +197,7 @@ Per #3099 and #3092:
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
-### 13.7a RigForge is pinned to the 1.18.1 release (#3116, #3817)
+### 13.7a RigForge is pinned to the 1.19.0 release (#3116, #4230)
 
 **What you do:**
 
@@ -210,13 +210,13 @@ Per #3099 and #3092:
 2. On any machine with network access, run:
 
    ```bash
-   git ls-remote https://github.com/p2pool-starter-stack/rigforge 'refs/tags/v1.18.1^{}'
+   git ls-remote https://github.com/p2pool-starter-stack/rigforge 'refs/tags/v1.19.0^{}'
    ```
 
 **What you should see:**
 
-- Item 1 prints `ref=8f06cb8df791f3cb16d47bbee85fde92103cbe0b version=1.18.1`.
-- Item 2 prints the same commit. The `^{}` suffix matters: v1.18.1 is an annotated tag, and
+- Item 1 prints `ref=04f8799955989120cf0a36121d3391cc5b5f5661 version=1.19.0`.
+- Item 2 prints the same commit. The `^{}` suffix matters: v1.19.0 is an annotated tag, and
   without it `git ls-remote` prints the tag object instead of the commit.
 
 **Record:** PASS, FAIL or N/A in the results sheet, plus the `<sha>` that item 1 printed.
@@ -263,7 +263,7 @@ Per #3092:
 For items 3 to 7:
 
 - The same results as on the DIY route.
-- The built-in miner appears as a worker, and it reports RigForge 1.18.1 (#3817).
+- The built-in miner appears as a worker, and it reports RigForge 1.19.0 (#4230).
 
 **Record:** PASS, FAIL or N/A in the results sheet, including Chrome version, whether the
 certificate warning appeared, guidance during sync or the full dashboard, fingerprint match,

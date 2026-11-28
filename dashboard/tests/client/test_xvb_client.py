@@ -16,6 +16,7 @@ from mining_dashboard.client.xvb_client import (
     parse_round_stats,
     parse_winners,
 )
+from mining_dashboard.helper.http import PROXY_PURPOSE_DASHBOARD, purpose_proxy
 
 SAMPLE_HTML = "Fail Count: 2\n1hr avg: 1.5 kH/s\n24hr avg: 3.0 kH/s\n"
 
@@ -61,7 +62,7 @@ def test_get_stats_routes_through_tor_proxy():
     with patch.object(xvb_mod, "bounded_get", return_value=resp) as mock_get:
         client.get_stats()
     proxies = mock_get.call_args.kwargs["proxies"]
-    assert proxies["https"].startswith("socks5h://")  # socks5h resolves the host via Tor too
+    assert proxies["https"].startswith("socks5h://dashboard:isolate@")
     assert proxies["http"] == proxies["https"]
 
 
@@ -70,7 +71,19 @@ def test_get_stats_honours_explicit_proxy():
     resp = MagicMock(status_code=200, text=SAMPLE_HTML)
     with patch.object(xvb_mod, "bounded_get", return_value=resp) as mock_get:
         client.get_stats()
-    assert mock_get.call_args.kwargs["proxies"]["https"] == "socks5h://127.0.0.1:9999"
+    assert (
+        mock_get.call_args.kwargs["proxies"]["https"]
+        == "socks5h://dashboard:isolate@127.0.0.1:9999"
+    )
+
+
+def test_get_stats_failure_log_carries_no_credential(caplog):
+    client = XvbClient("49abc", tor_proxy="socks5h://127.0.0.1:9999")
+    err = requests.RequestException("socks5h://dashboard:isolate@127.0.0.1:9999 refused")
+    with patch.object(xvb_mod, "bounded_get", side_effect=err):
+        with caplog.at_level("DEBUG"):
+            assert client.get_stats() is None
+    assert "isolate@" not in caplog.text
 
 
 def test_get_stats_non_200_returns_none():
@@ -342,8 +355,8 @@ class TestRegister:
         with patch.object(xvb_mod, "bounded_get", return_value=_resp(200, "OK")) as mock_get:
             client.register()
         proxies = mock_get.call_args.kwargs["proxies"]
-        assert proxies["https"] == xvb_mod.TOR_SOCKS_PROXY
-        assert proxies["https"].startswith("socks5h://")  # resolves the host over Tor too
+        assert proxies["https"] == purpose_proxy(xvb_mod.TOR_SOCKS_PROXY, PROXY_PURPOSE_DASHBOARD)
+        assert "dashboard:isolate@" in proxies["https"]
         assert proxies["http"] == proxies["https"]
 
     def test_network_error_is_transient_error(self):
@@ -372,3 +385,18 @@ class TestParseHtml:
         stats = client._parse_html("1hr avg: 2 MH/s\n24hr avg: 1 GH/s")
         assert stats["avg_1h"] == 2_000_000.0
         assert stats["avg_24h"] == 1_000_000_000.0
+
+
+@pytest.mark.parametrize(
+    "method", ["get_stats", "get_reward_estimates", "get_recent_wins", "register"]
+)
+def test_request_errors_never_log_the_wallet(method, caplog):
+    wallet = "4" + "Z" * 94
+    client = XvbClient(wallet, submit_url=_SUBMIT)
+    error = requests.ConnectionError(f"HTTPSConnectionPool: /?address={wallet}")
+    with patch.object(xvb_mod, "bounded_get", side_effect=error):
+        with patch.object(xvb_mod.requests, "post", side_effect=error):
+            with caplog.at_level("DEBUG"):
+                getattr(client, method)()
+    assert "connection error" in caplog.text
+    assert wallet not in caplog.text

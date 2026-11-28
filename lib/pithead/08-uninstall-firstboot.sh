@@ -91,7 +91,7 @@ stack_uninstall() {
     # clear — is fixed under ./data (33-render-env.sh), not a *_DIR key in .env.
     local secret_file="$checkout_dir/data/tari-wallet-secret.env"
 
-    local kept_list derived_list unit
+    local kept_list derived_list unit down_out
     kept_list=$(printf '%s\n' "${kept_dirs[@]}" | sort -u | tr '\n' ' ')
     derived_list=$(printf '%s\n' "${derived_dirs[@]}" "$secret_file" | sort -u | tr '\n' ' ')
 
@@ -108,24 +108,19 @@ stack_uninstall() {
         }
     fi
     mutation_lock_acquire uninstall
-    remove_tor_egress_firewall 2>/dev/null || true
     remove_tor_egress_boot_unit
+    remove_host_egress_audit
     for unit in remove_egress_check_units remove_lan_guard_check_units; do "$unit" || units_left=1; done
-    docker compose down --remove-orphans -v 2>/dev/null ||
-        warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_db"
+    if down_out=$(docker compose down --remove-orphans -v 2>&1); then
+        remove_deactivated_profile_containers
+    else
+        printf '%s\n' "$down_out" >&2
+        warn "compose down failed with the error above — continuing with cleanup. Once the stack is stopped, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_db"
+    fi
+    remove_tor_egress_when_idle ||
+        warn "A stack container is still active or could not be checked, so the Tor-only egress rules stay for now, but their boot unit is already removed and nothing re-applies them after a reboot. Run '$0 down' before rebooting."
     lan_guard_teardown uninstall && { remove_lan_guard_boot_unit || error "uninstall stopped: $LAN_GUARD_BOOT_UNIT or $LAN_GUARD_HOLD_UNIT could not be removed; retry."; } # (#2749)
-    # down -v skips an inactive profile's volume, and no longer declares tari_wallet_data (#2731).
-    local volumes labels vol
-    volumes=$(docker volume ls -q) || error "Could not list Docker volumes; uninstall stopped before removing .env. Retry when the engine is available."
-    for vol in tari_wallet_db tari_wallet_data; do
-        printf '%s\n' "$volumes" | grep -Fx "pithead_$vol" >/dev/null || continue
-        labels=$(docker volume inspect "pithead_$vol" --format '{{index .Labels "com.docker.compose.project"}}/{{index .Labels "com.docker.compose.volume"}}') ||
-            error "Could not inspect pithead_$vol; uninstall stopped before removing .env. Retry when the engine is available."
-        if [ "$labels" = "pithead/$vol" ]; then
-            docker volume rm "pithead_$vol" >/dev/null ||
-                error "Could not remove pithead_$vol; uninstall stopped before removing .env. Retry when the volume is available."
-        fi
-    done
+    remove_tari_wallet_volumes
     # Exact image refs from the compose config; failures (image shared/in use) are non-fatal.
     docker compose config --images 2>/dev/null | sort -u | while read -r img; do
         [ -n "$img" ] && docker rmi "$img" >/dev/null 2>&1 || true

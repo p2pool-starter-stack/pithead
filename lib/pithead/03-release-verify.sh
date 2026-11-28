@@ -6,22 +6,7 @@ compose_pinned_digest() {
         grep -oE 'sha256:[0-9a-f]+' | head -1
 }
 
-# The verifier runs as a container, not a host binary (#1072). cosign has no Ubuntu apt package, so
-# requiring it on the host made signing a hidden prerequisite that no doc listed and no dependency
-# check installed: a fresh bundle install dead-ended at first `up`, and every fielded install cut
-# before signing engaged hit the same wall on its first signed upgrade — after the download, the
-# extract, and the control-unit re-provision (#1070). Docker is already a hard prerequisite and the
-# very next step of both callers pulls images with it, so running cosign this way costs the operator
-# nothing to install and nothing to know about.
-#
-# The @sha256 pin is LOAD-BEARING, not cosmetic housekeeping: verifying release images by first
-# pulling a verifier image is itself an unverified pull, and the digest is the only thing that
-# closes it. Pinned, a hostile registry can serve nothing but the exact bytes named here or fail the
-# pull outright; on a tag it could serve a "cosign" that exits 0 on everything and silently turn the
-# whole gate off. Bootstrapping is therefore trust-on-first-use exactly as downloading the binary
-# from GitHub was — no weaker, and pinned to bytes rather than to a mutable tag. Never relax this to
-# a tag, and treat bumping it as a supply-chain change.
-readonly COSIGN_IMAGE="ghcr.io/sigstore/cosign/cosign@sha256:4bedb8de1c5c1abd8dea60de704ba449402d238623fa8bb33d2ccaa9beffcbf5" # v2.6.3
+readonly COSIGN_IMAGE="@COSIGN_IMAGE@"
 
 # Verification is possible at all — i.e. we can run the verifier. Kept as its own predicate so the
 # callers' fail-closed refusals read the same as they did when this was `command -v cosign`.

@@ -48,6 +48,9 @@ TOPOLOGY_NODES = [
     {"id": "monerod", "label": "monerod", "zone": ZONE_HOST},
     {"id": "tari", "label": "tari", "zone": ZONE_HOST},
     {"id": "docker", "label": "docker-proxy", "zone": ZONE_HOST, "internal": True},
+    {"id": "host-time-sync", "label": "time sync", "zone": ZONE_HOST, "scope": "host"},
+    {"id": "host-updates", "label": "OS + release fetches", "zone": ZONE_HOST, "scope": "host"},
+    {"id": "host-containers", "label": "image pulls", "zone": ZONE_HOST, "scope": "host"},
     {"id": "tor", "label": "tor", "zone": ZONE_TOR},
     {"id": "internet", "label": "Tor network", "zone": ZONE_NET},
 ]

@@ -106,6 +106,35 @@ mx_out="$(run_sourced "$MX" migrate_legacy_workers 2>&1)"
 assert_rc "a non-default xmrig_proxy.url that differs from xvb.url is refused" "$?" "1"
 assert_contains "the refusal names the xvb pair" "$mx_out" "(xvb.url and xmrig_proxy.url)"
 
+echo "== unit: migrate_xvb_na_endpoint moves a saved NA host to EU and keeps the port (#4308) =="
+XN="$SANDBOX/xn"
+mkdir -p "$XN"
+printf '{"xvb":{"enabled":false,"url":"na.xmrvsbeast.com:5555","donor_id":"mine"},"p2pool":{"pool":"nano"}}' >"$XN/config.json"
+run_sourced "$XN" migrate_xvb_na_endpoint >/dev/null 2>&1
+assert_rc "an NA xvb.url migrates" "$?" "0"
+assert_eq "the host moves to EU, the port and every other key are kept" "$(jq -c . "$XN/config.json")" '{"xvb":{"enabled":false,"url":"eu.xmrvsbeast.com:5555","donor_id":"mine"},"p2pool":{"pool":"nano"}}'
+assert_eq "the pre-migration file is kept" "$(jq -r '.xvb.url' "$XN/config.json.bak-xvb-na")" "na.xmrvsbeast.com:5555"
+cp "$XN/config.json" "$XN/before.json"
+run_sourced "$XN" migrate_xvb_na_endpoint >/dev/null 2>&1
+assert_eq "a second run changes nothing" "$(cmp -s "$XN/before.json" "$XN/config.json" && echo same)" "same"
+printf '{"xvb":{"url":"na.xmrvsbeast.com:5555"}}' >"$XN/config.json"
+xn_out="$(run_sourced "$XN" eval 'PITHEAD_DRY_RUN=1; migrate_xvb_na_endpoint' 2>&1)"
+assert_contains "a dry run says the url would move" "$xn_out" "would move"
+assert_eq "a dry run leaves the file alone" "$(jq -r '.xvb.url' "$XN/config.json")" "na.xmrvsbeast.com:5555"
+printf '{"xvb":{"url":"us.xmrvsbeast.com:4247"}}' >"$XN/config.json"
+rm -f "$XN/config.json.bak-xvb-na"
+run_sourced "$XN" migrate_xvb_na_endpoint >/dev/null 2>&1
+assert_eq "a custom non-NA url is untouched" "$(jq -r '.xvb.url' "$XN/config.json")" "us.xmrvsbeast.com:4247"
+assert_eq "an untouched config leaves no backup" "$(test -e "$XN/config.json.bak-xvb-na" && echo yes || echo no)" "no"
+printf '{"xvb":{"url":"na.xmrvsbeast.com.example.net:4247"}}' >"$XN/config.json"
+run_sourced "$XN" migrate_xvb_na_endpoint >/dev/null 2>&1
+assert_eq "a host that only starts with the NA name is untouched" "$(jq -r '.xvb.url' "$XN/config.json")" "na.xmrvsbeast.com.example.net:4247"
+printf '{"xmrig_proxy":{"enabled":true,"url":"na.xmrvsbeast.com:4247","donor_id":"auto"}}' >"$XN/config.json"
+run_sourced "$XN" migrate_legacy_workers >/dev/null 2>&1
+assert_eq "the 1.x alias is still moved to xvb.* with the NA value" "$(jq -r '.xvb.url' "$XN/config.json")" "na.xmrvsbeast.com:4247"
+run_sourced "$XN" migrate_xvb_na_endpoint >/dev/null 2>&1
+assert_eq "and the moved value then lands on EU" "$(jq -r '.xvb.url' "$XN/config.json")" "eu.xmrvsbeast.com:4247"
+
 # The XvB tier thresholds are hard-coded in config.py (TIER_DEFAULTS) and stated explicitly in
 # docs/architecture.md. Drift guard: each config value must match the doc's human form, so the
 # user-facing table can't silently fall out of sync if TIER_DEFAULTS ever changes.
@@ -217,3 +246,60 @@ term_out="$(bundle_case term)"
 assert_contains "an interrupted run leaves no archive" "$term_out" "FILES:0"
 assert_not_contains "an interrupted run never reaches the end of the verb" "$term_out" "RC:"
 bundle_tmp_gone "$term_out" && ok "an interrupted run removes the scratch directory" || bad "an interrupted run removes the scratch directory" "$term_out"
+
+echo "== build provenance: git is only called for verbs that need it (#4456) =="
+
+PG="$SANDBOX/provenance-git"
+mkdir -p "$PG/bin" "$PG/dev/dashboard" "$PG/rel"
+cp "$STACK" "$PG/dev/pithead"
+cp "$STACK" "$PG/rel/pithead"
+printf '9.9.9\n' >"$PG/dev/VERSION"
+printf '9.9.9\n' >"$PG/rel/VERSION"
+: >"$PG/dev/dashboard/Dockerfile"
+cat >"$PG/bin/git" <<'GITEOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$PG_GIT_LOG"
+case "$*" in
+"rev-parse --short HEAD") echo abc1234 ;;
+"rev-parse --abbrev-ref HEAD") echo topic ;;
+"diff --quiet HEAD") [ -z "${PG_DIRTY:-}" ] || exit 1 ;;
+esac
+exit 0
+GITEOF
+chmod +x "$PG/bin/git"
+
+pg_calls() {
+    local dir="$1"
+    shift
+    : >"$PG/git.log"
+    (cd "$dir" && PG_GIT_LOG="$PG/git.log" PATH="$PG/bin:$PATH" ./pithead "$@" >/dev/null 2>&1 || true)
+    wc -l <"$PG/git.log" | tr -d ' '
+}
+
+assert_eq "provenance: egress-status makes no git call" "$(pg_calls "$PG/dev" egress-status)" "0"
+assert_eq "provenance: lan-guard-check makes no git call" "$(pg_calls "$PG/dev" lan-guard-check)" "0"
+assert_eq "provenance: version on a release bundle makes no git call" "$(pg_calls "$PG/rel" version)" "0"
+assert_eq "provenance: version on a source checkout still calls git" "$(pg_calls "$PG/dev" version)" "4"
+assert_eq "provenance: -V and --version on a release bundle make no git call" \
+    "$(pg_calls "$PG/rel" -V)$(pg_calls "$PG/rel" --version)" "00"
+assert_eq "provenance: version output is unchanged" \
+    "$(cd "$PG/dev" && PG_GIT_LOG="$PG/git.log" PATH="$PG/bin:$PATH" ./pithead version)" \
+    "pithead dev (topic @ abc1234, VERSION 9.9.9)"
+assert_contains "provenance: release version output is unchanged" \
+    "$(cd "$PG/rel" && PG_GIT_LOG="$PG/git.log" PATH="$PG/bin:$PATH" ./pithead version)" \
+    "pithead v9.9.9 (release images v9.9.9)"
+assert_eq "provenance: a dirty source checkout is still marked" \
+    "$(cd "$PG/dev" && PG_DIRTY=1 PG_GIT_LOG="$PG/git.log" PATH="$PG/bin:$PATH" ./pithead version)" \
+    "pithead dev (topic @ abc1234-dirty, VERSION 9.9.9)"
+assert_eq "provenance: doctor computes it once, not twice" "$(pg_calls "$PG/dev" doctor)" "4"
+pg_exports() {
+    # shellcheck disable=SC1090
+    (cd "$PG/dev" && export PG_GIT_LOG="$PG/git.log" PATH="$PG/bin:$PATH" && source "$STACK" && set +e && export_build_provenance "$1" && printf '%s@%s' "$PITHEAD_GIT_BRANCH" "$PITHEAD_GIT_COMMIT")
+}
+assert_eq "provenance: up exports the branch and the commit" "$(pg_exports up)" "topic@abc1234"
+assert_eq "provenance: a timer verb exports them empty" "$(pg_exports egress-status)" "@"
+pg_missing=""
+for verb in up apply upgrade restart setup render; do
+    [ "$(pg_calls "$PG/dev" "$verb" --bogus)" -gt 0 ] || pg_missing="$pg_missing $verb"
+done
+assert_eq "provenance: up apply upgrade restart setup render still compute git provenance" "$pg_missing" ""

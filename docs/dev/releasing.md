@@ -59,8 +59,42 @@ reports and never bumps: a Tari or
 request to merge. Dependabot covers the base images it can see and is set to ignore minor and major
 bumps on the component pins for the same reason.
 
+Four pins that no Dependabot ecosystem can read are bumped by `.github/workflows/pin-bump.yml`, which runs
+daily and on `workflow_dispatch` (a dispatch defaults to a dry run that only reports). For each of the
+`monero`, `p2pool` and `xmrig-proxy` ARG pairs and the appliance's `RIGFORGE_REF`,
+`scripts/watch/pin-bump.sh` reads the latest stable upstream release, downloads the asset and
+refuses to go on unless its sha256 equals the digest GitHub publishes for it (Monero: the entry in
+`hashes.txt`, whose signature is not verified), then opens one `dependencies`-labelled PR per upstream
+version that moves the version and hash together, so a stale hash never lands. `RIGFORGE_REF` is
+resolved from the release tag to its commit. Monero only moves within its pinned minor: a release in
+a new minor is reported and never proposed, because that move stays a human decision (#1129). The Actions token
+opens these PRs, so they trigger no checks of their own: a maintainer pushes to the branch to start
+tiers 1 to 3, and the PR body names the `tier4-e2e` or `tier4-kvm` proof it needs before merge. A newer
+release supersedes the open PR for an older one of the same component, and a closed PR is taken as declined.
+
+Advisories are the one thing the watch cannot see: `monerod`, `p2pool` and `xmrig-proxy` install
+sha256-verified static binaries with no package metadata, so the Trivy sweep reports no CVEs for
+them and the watch reports newer versions, not advisories (#4277). Bumping any of the three, by hand or from a pin-bump PR (whose body asks for it), checks
+the upstream release notes and security advisories for the new version, and records that check in
+the bump PR. The weekly report states the gap, so the duty travels with the stale row that triggers
+the bump.
+
+Dependabot has no apt or apk ecosystem either, so the installed OS packages have their own watch. Each release attaches
+`os-packages-<tag>.txt`, one `<image> <OSV ecosystem> <source package> <version>` line per package
+in every published image (#4254). Every Monday `.github/workflows/os-package-watch.yml` runs
+`scripts/watch/os-package-watch.py` on the latest release's list: it asks [OSV](https://osv.dev)
+which recorded packages have an advisory that the distribution has fixed in a newer package, and
+opens or edits one issue labelled `dependencies` that lists them. Base images are pinned by digest,
+so shipping a fix means moving the listed image to a current base digest and package index and
+rebuilding it; the issue closes on the first weekly run whose release has no such package. A failed
+lookup is listed as unchecked, leaves the issue as it was and fails the run. A release cut
+before #4254 has no list, and the watch reports that instead.
+
 The release ingredients manifest records the appliance's baked RigForge commit from
 `RIGFORGE_REF` in `os/rootfs/Dockerfile` alongside the stack component pins.
+The built-in miner's RigForge tree is baked at image build because nothing can be installed later: apt cannot
+run on the read-only root, and a read-write-remount install leaves its `/etc` state on the volatile overlay,
+where the first reboot breaks the compiler.
 One pin is not spelled as a version. The appliance pins RigForge by commit, so that a moved tag
 cannot change what is baked; the pin watcher resolves the latest release tag to the commit it names and
 compares the two commits. Comparing the commit against the tag directly would read stale for ever,
@@ -164,6 +198,22 @@ is no back-merge and no post-release repair step ([#1076]; releases through v1.1
 `develop` after the final cut commit sit ahead of `main`, the normal state between releases.
 `release.sh` warns (it does not abort) when the working tree is on any branch other than `develop`.
 
+The release is pinned to the commit preflight read. Preflight refuses a tag that already exists
+locally or on `origin`, and refuses (outside `--dry-run` and `PITHEAD_REHEARSAL=1`, where it only
+warns) a version whose `:vX.Y.Z` image tag is already in the registry. Before building the bundle,
+publish refuses if `HEAD` is no longer the gated commit or the tree is dirty, and the tag is created
+with `git tag -a "$TAG" "$GIT_COMMIT"`, so a `git pull` during the multi-hour gate cannot make the
+tag, images and bundle disagree.
+
+That publish check runs after the images are promoted. If it stops a cut, rerunning `release.sh`
+is refused, because the `:vX.Y.Z` image tag now exists. Recover by hand instead. Check out the
+gated commit that the refusal names, and review `git status --porcelain` until it is empty (remove
+any files the release tests left behind). Nothing was tagged, and no manifest or bundle was built.
+Then run the remaining steps of `publish()` in `scripts/release/bundle.sh` from that commit:
+`write_manifest`, `make_bundle`, `append_bundle_sha256` and, on a signed cut, `sign_bundle`; then
+tag the commit, push the tag, fast-forward `main`, and create the GitHub Release with the bundle,
+its signature and the manifest.
+
 The fast-forward push cannot ride a PR: GitHub merges a PR by merge commit, squash, or rebase,
 each of which mints a new commit, and the point is that `main` gains no object the tag does not
 already name. The Main Branch ruleset requires PRs from everyone except organization admins, so
@@ -263,7 +313,9 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
    not start a stack, which would collide with the release host's live deployment. A fuller
    functional run is opt-in: set `RELEASE_SMOKE_CMD` to a command to run during this stage, or
    point the [#54](https://github.com/p2pool-starter-stack/pithead/issues/54) harness at the
-   staged tag. Abort on failure.
+   staged tag. Abort on failure. Then `scripts/release/capture-packages.sh` reads `/etc/os-release`
+   and the dpkg or apk database out of each captured digest and records its installed source
+   packages; a failed capture stops the release, and publish refuses to run without the list.
 6. Promote by digest: re-tag the exact digests just smoke-tested to `:vX.Y.Z` and `:latest`,
    then push. Promotion is by digest (no rebuild), so the released bundle is bit-for-bit what was
    validated. Same version on every image.
@@ -615,6 +667,18 @@ cosign it claims to be, and a committed `cosign.pub` that is no longer the publi
 `COSIGN_KEY` — each of which would otherwise surface as *signature verification failed* on every
 install, which reads as tampering rather than as our own pin having moved.
 
+The verifier image is declared once, as the `FROM` line of `build/cosign/Dockerfile`, by tag and
+digest, where Dependabot bumps it. `scripts/build-pithead.sh` writes the digest reference, without
+the tag, into `COSIGN_IMAGE` in the generated `pithead`; `scripts/cosign-image.sh` prints the same
+reference for the live-upgrade and fixture scripts. A second literal anywhere else fails the tier-1
+signing test.
+
+The digest is the security control, not housekeeping. Verifying release images by first pulling a
+verifier is itself an unverified pull. Pinned by digest, a hostile registry can serve only those
+exact bytes or fail the pull. On a tag it could serve a `cosign` that exits 0 on everything and turn
+the gate off. Treat a bump as a supply-chain change: review the Dependabot PR, and the preflight
+round trip above must pass on it.
+
 `pithead` verifies before it changes anything:
 
 - `pithead upgrade` on a release install with `cosign.pub` present verifies all five first-party
@@ -816,6 +880,9 @@ What exists today:
   pipeline cosign-signs the promoted digests + the bundle, `pithead upgrade` and the dashboard
   upgrade verify against the committed `cosign.pub` and fail closed. See
   [Signed releases](#signed-releases).
+- ✅ Installed OS packages recorded per release (#4254): the GitHub Release carries
+  `os-packages-<tag>.txt`, the ingredients manifest counts each image's packages, and a weekly watch
+  checks the list against OSV and keeps one `dependencies` issue of the packages with fixed advisories.
 - ✅ Pull-based install: `${STACK_VERSION}` wired through `docker-compose.yml`. Each first-party
   service now carries an `image: ${PITHEAD_REGISTRY:-…}/pithead-<svc>:${STACK_VERSION:-dev}` ref
   alongside its `build:`. pithead picks build-vs-pull automatically: a source checkout (the image

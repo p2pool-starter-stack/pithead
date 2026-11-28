@@ -92,4 +92,7 @@ tar -xzf "$TMP/pithead.tar.gz" --strip-components=1 -C "$DIR"
 [ -x "$DIR/pithead" ] || fail "Extracted bundle has no pithead executable — corrupt download?"
 note "Extracted. Handing off to './pithead setup' (interactive)."
 cd "$DIR"
+if [ ! -t 0 ]; then
+    { exec <"${PITHEAD_TTY:-/dev/tty}"; } 2>/dev/null || fail "Setup is interactive but no terminal is available (stdin is a pipe and /dev/tty cannot be opened). Run: cd $DIR && ./pithead setup"
+fi
 exec ./pithead setup "$@"
