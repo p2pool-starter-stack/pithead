@@ -291,13 +291,13 @@ main() {
     log "Pithead release pipeline (#44)$([ "$DRY_RUN" -eq 1 ] && echo '  [DRY RUN]')"
     preflight
     require_release_status_gate
-    WORKDIR="$(mktemp -d)" # holds the captured digests, the ingredients manifest and the bundle
+    WORKDIR="$(mktemp -d)"
     test_gate
     build_images
     stage_push
     smoke_test
     promote
-    sign_images # #376 — signs the digests promote re-tagged
+    sign_images
     if [ "${PITHEAD_REHEARSAL:-0}" = 1 ]; then
         ok "Rehearsal complete: nothing was tagged or published"
         return 0

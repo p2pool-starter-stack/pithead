@@ -25,11 +25,11 @@ require_release_status_gate() {
     fi
     if ! [[ "$expected" =~ ^[1-9][0-9]*$ ]]; then
         fail_release_status_gate "RELEASE_REQUIRED_STATUS_APP_ID must be the numeric id of the installed GitHub App."
-        expected="" # dry run only: the id cannot be checked, but the status lookup still previews
+        expected=""
     fi
     if ! [[ "$slug" =~ ^[a-z0-9-]+$ ]]; then
         fail_release_status_gate "RELEASE_REQUIRED_STATUS_APP_SLUG must be the slug of the installed GitHub App."
-        return 0 # without a slug there is nothing left to look up
+        return 0
     fi
     if ! app_id="$(gh api "apps/$slug" | jq -r '.id // empty')"; then
         fail_release_status_gate "Could not resolve GitHub App $slug."

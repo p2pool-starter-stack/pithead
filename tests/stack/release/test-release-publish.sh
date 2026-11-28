@@ -78,8 +78,6 @@ stage_push_out="$(
 assert_rc "stage_push, real errexit: retries-exhausted digest read still aborts (#557)" "$?" "1"
 assert_contains "stage_push, real errexit: crafted die() reaches the operator (#557)" \
     "$stage_push_out" "Could not read the pushed manifest digest"
-# A registry writer can replace a staging tag after stage. There is deliberately no resume path:
-# reject the option before a registry read can treat that mutable tag as approved release bytes.
 resume_out="$(cd "$ROOT" && bash "$REL" --resume-promote 2>&1)"
 assert_rc "--resume-promote refuses a replaced staging tag" "$?" "1"
 assert_contains "--resume-promote has no mutable-tag recovery path" "$resume_out" "Unknown option: --resume-promote"
@@ -172,7 +170,7 @@ gate_order="$SANDBOX/gate-order"
 assert_eq "the status gate runs before any build or promotion" "$(tr '\n' ' ' <"$gate_order")" "gate build promote "
 echo "== unit: release.sh limits dirty trees to dry runs (#2240) =="
 dirty_marker="$(mktemp "$ROOT/.release-allow-dirty-test.XXXXXX")"
-release_tree_gate() { # <dry-run> <allow-dirty>
+release_tree_gate() {
     local dry_run="$1" allow_dirty="$2"
     (
         cd "$ROOT" || exit

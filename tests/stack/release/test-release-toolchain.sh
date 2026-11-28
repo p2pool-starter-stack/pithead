@@ -13,7 +13,6 @@ ln -sf "$(command -v stat)" "$RTB/stat"
 ln -sf "$(command -v id)" "$RTB/id"
 
 rt_drive() {
-    # A separate bash prevents run.sh's && source stanza from disabling errexit in the driven code.
     # shellcheck disable=SC1090,SC1091
     RT_REL="$REL" RT_BIN="$RTB" RT_KEYPATH="$RT_KEYS" RT_EXTRA="$RT_TOOLS" \
         "$RT_BASH" -c '
@@ -155,9 +154,7 @@ printf 'RELEASE_REQUIRED_STATUS_CONTEXT=%s\nRELEASE_REQUIRED_STATUS_APP_ID=%s\nR
 chmod 0600 "$RT_KEYS/env"
 rt_out="$(
     rt_drive <<'SH'
-# Preflight must load the file and apply its PATH before any subsequent gate.
 RELEASE_TOOL_PATH="${RT_EXTRA}"
-# The file must supply the App setting while the environment supplies the tool directory.
 bash() { :; }
 git() { printf '%s\n' "$PWD"; }
 docker() { :; }
@@ -255,7 +252,6 @@ load_release_env
 [ "$RELEASE_TOOL_PATH" = '`literal`~$HOME' ]
 DRY_RUN=1
 SKIP_TESTS=1
-# Assert command content independently of terminal colors, using the real run() printer.
 C_RESET="" C_YELLOW=""
 test_gate
 SH
