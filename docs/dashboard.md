@@ -293,7 +293,7 @@ clear before it releases:
 | Monero node has 0 outgoing peers | the current reading shows 0 outgoing peers | `MINING_GUARD_GRACE_SEC`, default 600 s |
 | Monero node not synchronized | monerod's own `synchronized` flag is false | `MINING_GUARD_GRACE_SEC` |
 | Monero node behind P2Pool's peers | at least two different peers appear in P2Pool's log in the last 2 minutes as at least `P2POOL_LAG_BLOCKS` (default 5) blocks ahead, and monerod's height has not moved for 15 minutes | `NODE_DOWN_AFTER_SEC`, default 90 s |
-| P2Pool reports monerod is not synchronized | P2Pool logged `monerod is not synchronized` in the last 2 minutes | `NODE_DOWN_AFTER_SEC` |
+| P2Pool reports monerod is not synchronized | P2Pool logged `monerod is not synchronized` in the last 30 seconds (it repeats the line every second while it waits, so a burst that has ended stops holding) | `NODE_DOWN_AFTER_SEC` |
 | P2Pool has no sidechain peers | P2Pool reports 0 outgoing and 0 incoming connections | `MINING_GUARD_GRACE_SEC` |
 | P2Pool has no ZMQ messages | P2Pool's last ZMQ message is older than `P2POOL_ZMQ_STALE_SEC`, default 600 s | `NODE_DOWN_AFTER_SEC` |
 | `monerod`, `p2pool` or `tor` container down | the container is not running, is restarting, or its healthcheck is `starting` or `unhealthy` (Tor's check is bootstrap complete); a container the stack does not run is skipped | `NODE_DOWN_AFTER_SEC` |

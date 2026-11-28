@@ -406,7 +406,3 @@ monero_chain_tip() {
 }
 
 chain_tip_valid() { [[ "${1:-}" =~ ^[1-9][0-9]*\ [0-9a-f]{64}$ ]]; }
-
-tari_block_identity() { # <height>
-    rx "docker exec dashboard python3 -c 'import grpc,sys;from mining_dashboard.config.config import TARI_GRPC_ADDRESS;from mining_dashboard.client.tari.generated import base_node_pb2,base_node_pb2_grpc;s=base_node_pb2_grpc.BaseNodeStub(grpc.insecure_channel(TARI_GRPC_ADDRESS));h=next(s.ListHeaders(base_node_pb2.ListHeadersRequest(from_height=int(sys.argv[1]),num_headers=1,sorting=base_node_pb2.SORTING_ASC),timeout=8)).header;print(h.height,h.hash.hex())' $(quote_arg "$1")" 2>/dev/null
-}

@@ -20,7 +20,7 @@
 TOR_EGRESS_BOOT_UNIT="pithead-egress.service"
 
 render_tor_egress_boot_unit() {
-    local ipt="$1" subnet="$2" tor_ip="$3" rule i ip chain marker cmd qmarker qipt qtag qip
+    local ipt="$1" subnet="$2" tor_ip="$3" rule i ip chain marker marker2 cmd qmarker qmarker2 qipt qtag qip
     local audit_body audit_line audit_cmd
     shift 3
     local -a rules
@@ -53,21 +53,26 @@ EOF
         *.26) chain=monero ;;
         *.27) chain=tari ;;
         *.28) marker="$(tor_egress_choice_marker)/p2pool" ;;
-        *.29) marker="$(tor_egress_choice_marker)/xvb" ;;
+        *.29)
+            marker="$(tor_egress_choice_marker)/xvb"
+            marker2="$(tor_egress_choice_marker)/donation"
+            ;;
         *) return 1 ;;
         esac
         if [ -n "${chain:-}" ]; then marker="$(clearnet_state_dir)/$chain.synced"; fi
         printf -v qmarker '%q' "$marker"
+        printf -v qmarker2 '%q' "${marker2:-$marker}"
         printf -v qipt '%q' "$ipt"
         printf -v qtag '%q' "$TOR_EGRESS_TAG"
         printf -v qip '%q' "$ip"
         if [ -n "${chain:-}" ]; then
             cmd="if test ! -e $qmarker && test ! -L $qmarker; then $qipt -I DOCKER-USER 1 -m comment --comment $qtag -s $qip -j ACCEPT; fi"
         else
-            cmd="if test -d $qmarker && test ! -L $qmarker; then $qipt -I DOCKER-USER 1 -m comment --comment $qtag -s $qip -j ACCEPT; fi"
+            cmd="if { test -d $qmarker && test ! -L $qmarker; } || { test -d $qmarker2 && test ! -L $qmarker2; }; then $qipt -I DOCKER-USER 1 -m comment --comment $qtag -s $qip -j ACCEPT; fi"
         fi
         printf "ExecStart=/bin/bash -c '%s'\n" "$cmd"
         chain=
+        marker2=
     done
     if command -v nft >/dev/null 2>&1 && audit_body=$(render_host_egress_audit_nft appliance); then
         audit_cmd='printf "%%s\n"'

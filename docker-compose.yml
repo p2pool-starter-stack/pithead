@@ -749,6 +749,9 @@ services:
       # Route XvB donation mining over Tor by default (#166); xvb.tor:false opts out.
       - XVB_TOR_ENABLED=${XVB_TOR_ENABLED:-true}
       - XVB_DONATION_LEVEL=${XVB_DONATION_LEVEL:-auto}
+      - DONATION_ENABLED=${DONATION_ENABLED:-false}
+      - DONATION_PERCENT=${DONATION_PERCENT:-0}
+      - DONATION_TOR_ENABLED=${DONATION_TOR_ENABLED:-true}
       # Backup-stack warm-standby source (#249): the primary dashboard's read-only /api/xvb-standby
       # URL. Blank (default) = off; only a failover pair's backup sets it.
       - XVB_STANDBY_SOURCE=${XVB_STANDBY_SOURCE:-}
@@ -1000,7 +1003,7 @@ services:
   # Bridges the local 127.0.0.1 application binding to the LAN
   # Serves HTTPS or HTTP depending on configuration
   caddy:
-    image: caddy:2.11.9@sha256:0c2243efcf437ab7f7a978f1027fcf0d4f9be8a75df27b1b3fbc5dbe0ffa8cf0
+    image: caddy:2.11.9@sha256:4851e54a46b206517c574821bb5cc67f170d2156041e9fbc4c9193b45e84a75b
     container_name: caddy
     # Memory ceiling (#132 — see monerod). Reverse proxy + local TLS only (~13 MiB observed).
     mem_limit: 128m

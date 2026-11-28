@@ -94,6 +94,18 @@ compose_dash_keys=$(awk '/^  dashboard:/{f=1;next} f&&/^  [a-z]/{f=0} f' "$ROOT/
 quadlet_dash_keys=$(sed -n 's/^Environment=//p' "$QOUT/dashboard.container" | grep -oE '"DASHBOARD_[A-Za-z0-9_]+=' | sed -E 's/^"//; s/=$//' | sort -u)
 assert_eq "compose parse sees the dashboard service's own keys (control)" "$(printf '%s\n' "$compose_dash_keys" | grep -c '^DASHBOARD_CONTROL_ENABLED$')" "1"
 assert_eq "every DASHBOARD_* key compose gives the dashboard is on the quadlet unit (#1896)" "$(comm -23 <(printf '%s\n' "$compose_dash_keys") <(printf '%s\n' "$quadlet_dash_keys") | tr '\n' ' ')" ""
+compose_donation_keys=$(awk '/^  dashboard:/{f=1;next} f&&/^  [a-z]/{f=0} f' "$ROOT/docker-compose.yml" | sed -nE 's/^ +- ([A-Z_]+)=.*/\1/p' | grep '^DONATION_' | sort -u)
+quadlet_donation_keys=$(sed -n 's/^Environment=//p' "$QOUT/dashboard.container" | grep -oE '"DONATION_[A-Za-z0-9_]+=' | sed -E 's/^"//; s/=$//' | sort -u)
+assert_eq "compose parse sees the three DONATION_* keys (control)" "$(printf '%s\n' "$compose_donation_keys" | wc -l | tr -d ' ')" "3"
+assert_eq "every DONATION_* key compose gives the dashboard is on the quadlet unit (#3694)" "$(comm -23 <(printf '%s\n' "$compose_donation_keys") <(printf '%s\n' "$quadlet_donation_keys") | tr '\n' ' ')" ""
+QDON="$SANDBOX/quadlet-donation-out"
+sed -E 's|^DONATION_ENABLED=.*|DONATION_ENABLED=true|; s|^DONATION_PERCENT=.*|DONATION_PERCENT=5|; s|^DONATION_TOR_ENABLED=.*|DONATION_TOR_ENABLED=false|' \
+    "$ROOT/os/quadlet/fixture.env" >"$SANDBOX/donation.env"
+run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/donation.env" "$QDON" >/dev/null
+qdon_line=$(sed -n 's/^Environment=//p' "$QDON/dashboard.container")
+assert_contains "#3694: DONATION_ENABLED=true reaches the dashboard unit" "$qdon_line" '"DONATION_ENABLED=true"'
+assert_contains "#3694: DONATION_PERCENT=5 reaches the dashboard unit" "$qdon_line" '"DONATION_PERCENT=5"'
+assert_contains "#3694: DONATION_TOR_ENABLED=false reaches the dashboard unit" "$qdon_line" '"DONATION_TOR_ENABLED=false"'
 # systemd.exec reads Environment= as a SPACE-separated list of KEY=VALUE, so an unquoted value
 # holding a space ends its assignment and systemd drops the remainder as malformed — silently: the
 # unit starts and the container simply runs without the flags it was configured with (#2040).

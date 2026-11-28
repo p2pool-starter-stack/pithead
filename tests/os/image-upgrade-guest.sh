@@ -113,7 +113,12 @@ GUEST_PRIMITIVE="rpc http"
 _remote_get_info="$(curl -sS --max-time 5 -w '\n%{http_code}' "http://$_remote_monero_host:$_remote_monero_rpc/get_info" 2>/dev/null)"
 _remote_rpc_status="${_remote_get_info##*$'\n'}"
 [ -n "$_remote_rpc_status" ]
+GUEST_PRIMITIVE="tari grpc tcp"
+_remote_tari_host="$(jq -r '.tari.remote.host' "$INPUT/config.json")"
+_remote_tari_grpc="$(jq -r '.tari.remote.grpc_port // 18142' "$INPUT/config.json")"
+timeout 5 bash -c "echo >/dev/tcp/$_remote_tari_host/$_remote_tari_grpc" 2>/dev/null
 GUEST_PRIMITIVE=""
+unset _remote_tari_host _remote_tari_grpc
 # get_info's own status/nettype/height/target_height are public monerod facts (its `status` field,
 # network type and chain heights), not this box's state or topology — worth knowing whether p2pool
 # and the remote node even agree on which network they're both on.
