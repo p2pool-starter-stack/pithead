@@ -264,6 +264,13 @@ class TestRowOrderView:
         rows[-1] = {"ts": 0}
         assert type(order.view("n", "ts", rows)) is list
 
+    def test_replaced_first_row_with_same_length_and_last_row_is_noticed(self):
+        rows = [{"ts": 1}, {"ts": 2}, {"ts": 3}]
+        order = RowOrder()
+        assert isinstance(order.view("n", "ts", rows), TimeOrdered)
+        rows[0] = {"ts": 99}
+        assert type(order.view("n", "ts", rows)) is list
+
     def test_insert_in_the_middle_keeps_the_ends_but_is_noticed(self):
         rows = [{"ts": 1}, {"ts": 2}, {"ts": 3}]
         order = RowOrder()
