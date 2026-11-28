@@ -89,7 +89,6 @@ _xvb_gate_order_self_test() (
     }
 )
 
-# The REAL payload against the real dashboard modules: a seeded snapshot and marker in a temp dir.
 _xvb_gate_payload_self_test() {
     local root out py=(python3)
     root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
