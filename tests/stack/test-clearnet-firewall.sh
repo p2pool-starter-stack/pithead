@@ -110,11 +110,11 @@ cnfw_apply true true
     ok "firewall back on with the flags set: apply keeps both completed syncs' markers" ||
     bad "firewall back on with the flags set: apply keeps both completed syncs' markers" "a marker was removed"
 assert_eq "spent markers close both public-dial exemptions" "$(run_sourced "$V" tor_egress_sync_ips)" ""
-cp "$V/bin/iptables-restore" "$V/bin/iptables-restore.before-failure"
-printf '#!/usr/bin/env bash\ncat >/dev/null; exit 1\n' >"$V/bin/iptables-restore"
+export SANDBOX_EGRESS_RULES=absent
 cnfw_apply true true
-assert_rc "pending markers cannot waive failed firewall verification before host attestation" "$?" "1"
-mv "$V/bin/iptables-restore.before-failure" "$V/bin/iptables-restore"
+cnfw_rc=$?
+unset SANDBOX_EGRESS_RULES
+assert_rc "pending markers cannot waive failed firewall verification before host attestation" "$cnfw_rc" "1"
 if run_sourced "$V" tor_egress_sync_rules_match iptables "$CN_RULES"; then
     bad "readback refuses stale exceptions after sync" "accepted stale public-dial rule"
 else ok "readback refuses stale exceptions after sync"; fi
@@ -167,6 +167,8 @@ printf '{"id":"%s","action":"egress-sync","chain":"tari"}\n' "$CN_RID" >"$CN_CDI
 )
 assert_eq "control-off retry records the other chain's success" "$(jq -r .status "$CN_CDIR/results/$CN_RID.json")" "applied"
 assert_eq "control-off result names the verified chain" "$(jq -r .chain "$CN_CDIR/results/$CN_RID.json")" "tari"
+# shellcheck source=tests/stack/firewall/egress-run-pending.sh
+source "$ROOT/tests/stack/firewall/egress-run-pending.sh"
 printf '00000000-0000-4000-8000-000000000001\n' >"$CN_SDIR/monero.synced"
 CN_RESTART_PROBE=$(
     cd "$V" || exit

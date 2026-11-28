@@ -33,14 +33,15 @@ EB_UNIT="$EB/units/pithead-egress.service"
 echo "== unit: render_tor_egress_boot_unit — ordered ahead of docker, pulled in by it (#2460) =="
 BU=$(run_sourced "$SANDBOX" render_tor_egress_boot_unit /usr/sbin/iptables 172.28.0.0/24 172.28.0.25)
 assert_contains "runs before docker.service starts the containers" "$BU" "Before=docker.service"
-assert_contains "every docker start pulls it in (boot and socket activation)" "$BU" "WantedBy=docker.service"
+assert_contains "every docker start requires it, so Docker does not start when it fails (boot and socket activation)" "$BU" "RequiredBy=docker.service"
+assert_eq "Docker does not merely want it" "$(printf '%s\n' "$BU" | grep -c '^WantedBy=')" "0"
 assert_contains "runs after the host's own firewall loaders, so they cannot flush it" "$BU" \
     "After=ufw.service firewalld.service netfilter-persistent.service nftables.service"
 assert_contains "a oneshot that stays active" "$BU" "RemainAfterExit=yes"
 assert_contains "pre-creates DOCKER-USER, tolerating an existing chain" "$BU" "ExecStart=-/usr/sbin/iptables -N DOCKER-USER"
 assert_eq "the DROP is the FIRST insert, so a half-finished start fails closed" \
     "$(printf '%s\n' "$BU" | grep -m1 -- ' -I ')" \
-    "ExecStart=/usr/sbin/iptables -I DOCKER-USER 1 -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -j DROP"
+    "ExecStart=/usr/sbin/iptables -I DOCKER-USER 1 -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -j DROP -w 5"
 assert_eq "an insert failure fails the unit (no '-' prefix on any insert)" "$(printf '%s\n' "$BU" | grep -c '^ExecStart=-.* -I ')" "0"
 assert_eq "every ExecStart runs iptables and nothing else (no checkout path, no socket-activation deadlock)" \
     "$(printf '%s\n' "$BU" | grep '^ExecStart=' | grep -vc '^ExecStart=-\{0,1\}/usr/sbin/iptables ')" "0"
@@ -58,7 +59,7 @@ eb_boot() { # <unit text> <chain file>
         cmd="${line#ExecStart=}" tolerant=0
         case "$cmd" in -*) tolerant=1 cmd="${cmd#-}" ;; esac
         case "$cmd" in /bin/bash\ *) continue ;; esac
-        read -r -a w <<<"$cmd"
+        read -r -a w <<<"${cmd% -w 5}"
         case "${w[1]}" in
         -N) ;;
         -I)
@@ -188,3 +189,18 @@ dr=$(SYSTEMCTL_ENABLED=1 eb_doctor)
 assert_contains "the live rules still read as installed" "$dr" "fail-closed via iptables"
 assert_contains "a missing boot unit WARNs that a reboot drops the rules" "$dr" "will NOT survive a reboot"
 assert_not_contains "no reboot WARN once the unit is enabled" "$(SYSTEMCTL_ENABLED=0 eb_doctor)" "will NOT survive a reboot"
+
+echo "== unit: every iptables call in the boot unit waits for the xtables lock =="
+eb_nowait() { grep -o "/usr/sbin/iptables [^;']*" | grep -vc -- ' -w 5$'; }
+assert_eq "every iptables call in the plain unit waits up to 5 s for the xtables lock" "$(eb_nowait <<<"$BU")" "0"
+BU_MARK=$(run_sourced "$SANDBOX" render_tor_egress_boot_unit /usr/sbin/iptables 172.28.0.0/24 172.28.0.25 172.28.0.26 172.28.0.27 172.28.0.28 172.28.0.29)
+assert_eq "every iptables call waits in a unit with sync, P2Pool, XvB and donation markers" "$(eb_nowait <<<"$BU_MARK")" "0"
+assert_eq "each marker line's insert waits for the lock" "$(grep -c "^ExecStart=/bin/bash -c '.* -j ACCEPT -w 5; fi'$" <<<"$BU_MARK")" "4"
+EB_OLD=$(run_sourced "$SANDBOX" render_tor_egress_boot_unit "$EB/bin/iptables" 172.28.0.0/24 172.28.0.25)
+printf '%s\n' "${EB_OLD// -w 5/}" >"$EB_UNIT"
+rm -f "$EB/systemctl.log"
+SYSTEMCTL_ENABLED=0 eb_run apply_tor_egress_firewall >/dev/null 2>&1
+assert_eq "an enabled unit without the lock wait is rewritten by the next apply" "$(cat "$EB_UNIT")" \
+    "$(run_sourced "$SANDBOX" render_tor_egress_boot_unit "$EB/bin/iptables" 172.28.0.0/24 172.28.0.25)"
+assert_contains "and systemd is reloaded for it" "$(cat "$EB/systemctl.log")" "daemon-reload"
+assert_contains "and it is re-linked from its [Install] section, so an older WantedBy link goes" "$(cat "$EB/systemctl.log")" "reenable pithead-egress.service"

@@ -35,6 +35,7 @@ chmod +x "$LKW/bin/sudo"
 lock_wiring_fixture() { # <dir>
     mkdir -p "$1/data/tor" "$1/data/dashboard"
     cat >"$1/.env" <<'ENVEOF'
+TOR_EGRESS_FIREWALL=false
 MONERO_ONION_ADDRESS=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion
 TARI_ONION_ADDRESS=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.onion
 P2POOL_ONION_ADDRESS=cccccccccccccccccccccccccccccccccccccccccccccccccccccccc.onion
@@ -43,7 +44,7 @@ HOST_IP=box.lan
 DEPLOYMENT_COMPLETED=true
 COMPOSE_PROFILES=local_node
 ENVEOF
-    printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"%s"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$VALID_TARI" >"$1/config.json"
+    printf '{ "network":{"tor_egress_firewall":false}, "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"%s"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$VALID_TARI" >"$1/config.json"
     printf 'CADDY-ORIG\n' >"$1/Caddyfile"
     printf 'ONIONKEY-ORIG\n' >"$1/data/tor/hs_ed25519_secret_key"
     printf 'DBDATA-ORIG\n' >"$1/data/dashboard/dashboard.db"

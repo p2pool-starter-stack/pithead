@@ -10,7 +10,7 @@ echo "== unit: PITHEAD_KEEP_RUNNING scopes compose_up_checked (#2639) =="
 KR="$SANDBOX/keep-running"
 KRBIN="$KR/bin"
 mkdir -p "$KRBIN"
-printf 'COMPOSE_PROFILES=local_node,local_tari,payout_confirm,tari_payout_confirm\n' >"$KR/.env"
+printf 'TOR_EGRESS_FIREWALL=false\nCOMPOSE_PROFILES=local_node,local_tari,payout_confirm,tari_payout_confirm\n' >"$KR/.env"
 # RUNNING_STUB lists the containers `docker ps` reports running; the service list is the stack's.
 cat >"$KRBIN/docker" <<'EOF'
 #!/usr/bin/env bash

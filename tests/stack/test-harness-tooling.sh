@@ -127,7 +127,7 @@ assert_eq "Cosign commit pin" "$(sed -n 's/^ARG COSIGN_COMMIT=//p' "$dockerfile"
 assert_eq "Cosign keeps only the x/net floor" "$(sed -n 's/^ARG COSIGN_GO_RAISES=//p' "$dockerfile")" '"golang.org/x/net@v0.62.0"'
 assert_eq "only the two live Trivy exceptions remain" \
     "$(grep -E '^CVE-' "$ROOT/.config/trivyignore")" \
-    $'CVE-2026-23949\nCVE-2026-24049'
+    $'CVE-2026-23949 exp:2026-12-20\nCVE-2026-24049 exp:2026-12-20'
 
 echo "== unit: resolve-pins self-test (#1137) =="
 # pin-watch.sh above compares VERSIONS; it does not ask whether a pinned tag@sha256 digest still

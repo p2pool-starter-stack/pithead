@@ -63,11 +63,12 @@ mkdir -p "$(dirname "$CONFIG_PATH")"
 
 echo "Initializing Monero configuration from template..."
 
-# Inject environment variables into the configuration template
-# We explicitly list variables to avoid accidental substitution of system environment variables
-envsubst '${MONERO_NODE_USERNAME}${MONERO_NODE_PASSWORD}${MONERO_ONION_ADDRESS}${MONERO_PRUNE}${MONERO_PREP_THREADS}${MONERO_OUT_PEERS}${NETWORK_PREFIX}' <"$TEMPLATE_PATH" >"$CONFIG_PATH"
+mask=$(umask)
+umask 077
+rendered=$(mktemp "$CONFIG_PATH.XXXXXX")
+trap 'rm -f "$rendered"' EXIT
+envsubst '${MONERO_NODE_USERNAME}${MONERO_NODE_PASSWORD}${MONERO_ONION_ADDRESS}${MONERO_PRUNE}${MONERO_PREP_THREADS}${MONERO_OUT_PEERS}${NETWORK_PREFIX}' <"$TEMPLATE_PATH" >"$rendered"
 
-# Apply the optional clearnet initial-sync transform (#183) and warn loudly while it's active.
 if clearnet_sync_active; then
     echo "=========================================================================="
     echo "WARNING: MONERO CLEARNET INITIAL SYNC IS ACTIVE (#183)"
@@ -76,11 +77,12 @@ if clearnet_sync_active; then
     echo "  broadcast STAYS on Tor, and wallets are never exposed. The dashboard"
     echo "  switches monerod back to Tor automatically once the chain is synced (#234)."
     echo "=========================================================================="
-    apply_clearnet_initial_sync "$CONFIG_PATH"
+    apply_clearnet_initial_sync "$rendered"
 elif [ "${MONERO_CLEARNET_SYNC:-false}" = "true" ]; then
     echo "Monero clearnet initial sync already completed (#234) — starting Tor-only."
 fi
+mv -fT -- "$rendered" "$CONFIG_PATH"
+umask "$mask"
 
 echo "Starting Monero Daemon (monerod)..."
-# Execute the daemon process, replacing the current shell to ensure correct signal handling (SIGTERM)
 exec monerod --config-file="$CONFIG_PATH" --non-interactive

@@ -167,16 +167,18 @@ control_validate_data_dir_overlaps() { # <staged-file>
     protected_paths=("$monero_current" "$tari_current" "$p2pool_current" "$tor_current" "$current_dashboard"
         "$control_dir" "$clearnet_dir" "$caddy_dir" "$proxy_tls_dir" "$data_root/proxy-tls" "$pithead_tls_dir" "$(os_update_staging_dir)"
         "$PWD/${LAN_GUARD_MARKER%/*}" "$PWD/data/firstboot")
-    for path in "${protected_paths[@]}"; do
-        lex=$(realpath -ms -- "$path" 2>/dev/null) || lex=""
-        real=$(realpath -m -- "$path" 2>/dev/null) || real=""
+    for ((j = 0; j < ${#protected_paths[@]}; j++)); do
+        lex=$(realpath -ms -- "${protected_paths[j]}" 2>/dev/null) || lex=""
+        real=$(realpath -m -- "${protected_paths[j]}" 2>/dev/null) || real=""
+        [ -n "$lex" ] && [ -n "$real" ] || {
+            printf 'the protected host folder %s cannot be resolved safely. %s' "${protected_names[j]}" "$(_control_host_remedy)"
+            return 1
+        }
         protected_lexes+=("$lex")
         protected_reals+=("$real")
     done
     for ((i = 0; i < ${#paths[@]}; i++)); do
         for ((j = 0; j < ${#protected_paths[@]}; j++)); do
-            [ -n "${protected_lexes[j]}" ] && [ -n "${protected_reals[j]}" ] || continue
-            # Keeping any service at its own current mount is intentional; every cross-over is not.
             if [ "$i" -eq "$j" ] && [ "$j" -lt 5 ] &&
                 [ "${lexes[i]}" = "${protected_lexes[j]}" ] &&
                 [ "${reals[i]}" = "${protected_reals[j]}" ]; then

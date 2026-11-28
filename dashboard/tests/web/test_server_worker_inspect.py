@@ -52,7 +52,7 @@ class TestWorkerInspect:
         scrubbed = {"DONATION": 3, "pools": [{"url": "rig:3333"}]}
         resp = await worker_client.post(
             "/api/control/worker-apply",
-            json={"worker": "rig1", "changes": sent},
+            json={"worker": "rig1", "changes": sent, "confirm": "APPLY"},
             headers=CONTROL_HEADERS,
         )
         assert resp.status == 200

@@ -35,6 +35,10 @@ peer's failures and creates its session. Existing authenticated cookies retain a
 including for operators sharing the blocked peer. The failure map holds at most 1,024 peers and
 evicts the entry it began tracking first when full, even if that peer is still in cooldown. Guessing is bounded per peer (five tries a minute), not globally, and the token does not rotate, so several peers multiply the rate; the six-character token holds about 29.7 bits. A network failure is reported separately from throttling.
 
+The session cookie holds the hex HMAC-SHA256 of the cookie name keyed with the token, never the
+token itself. It stays valid for as long as the token does, also across a restart of the page, and
+the token form does not accept it in place of the token.
+
 ## The stage machine
 
 `wizard_stage()` in `wizard/server.py` derives the step from **spool files only**, and the client

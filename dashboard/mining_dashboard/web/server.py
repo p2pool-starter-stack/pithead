@@ -344,6 +344,8 @@ async def handle_worker_apply(request):
     err = control_service.validate_worker_changes(changes)
     if err:
         raise web.HTTPBadRequest(text=err)
+    if "pools" in changes and body.get("confirm") != "APPLY":
+        raise web.HTTPBadRequest(text="A pools change needs the typed APPLY confirmation.")
     changes = strip_sentinel_credentials(changes)
     actor = request.headers.get("X-Auth-User", "")
     state_mgr = request.app["state_manager"]

@@ -60,6 +60,7 @@ RSLREBOOTED="$RSL/.rebooted"
 rsl_seed() { # a provisioned box with clean logs: re-armed before EVERY run, contended or not
     printf '{}\n' >"$RSL/config.json"
     cat >"$RSL/.env" <<EOF
+TOR_EGRESS_FIREWALL=false
 DEPLOYMENT_COMPLETED=true
 HOST_IP=box.lan
 DASHBOARD_DATA_DIR=$RSL/envdir/dashboard

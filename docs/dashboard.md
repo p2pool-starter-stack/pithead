@@ -508,8 +508,9 @@ instead of a blank axis.
 
 The editor covers the keys RigForge lets the control path change: `pools`, `DONATION`, `autotune`,
 `watchdog`, `watchdog_interval_min`, and `max_temp_c`. Nothing else (identity, filesystem paths, API
-ports, the control token) is editable from here. Two modes edit the same set of keys and submit the
-same `{worker, changes}` request:
+ports, the control token) is editable from here. A change that includes `pools` asks you to type
+`APPLY` before it is sent, and the dashboard refuses a `pools` change that arrives without that
+confirmation. Two modes edit the same set of keys and submit the same `{worker, changes}` request:
 
 - **Table** (the default) — one row per writable key, prefilled from the last config the dashboard
   applied. Only the rows you touch go into the change.

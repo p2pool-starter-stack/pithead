@@ -44,14 +44,19 @@ fixture() {
                 esac
                 ;;
             *'docker inspect'*)
-                if [ "$arm" = restart ] && [ "$(cat "$td/clock")" -gt 10000060 ]; then
+                if [ "$arm" = podman-time ]; then
+                    echo 'cid 2026-11-28 07:00:31.123456789 +0000 UTC'
+                elif [ "$arm" = restart ] && [ "$(cat "$td/clock")" -gt 10000060 ]; then
                     echo 'replacement started'
                 else
                     echo 'container started'
                     if [ "$arm" = failed-final-inspect ] && [ "$(cat "$td/clock")" -gt 10000060 ]; then return 1; fi
                 fi
                 ;;
-            'date -d '*) echo 10000000 ;;
+            'date -d '*)
+                [ "$arm" != podman-time ] || [[ "$1" != *' UTC'* ]] || return 1
+                echo 10000000
+                ;;
             'date +%s')
                 if [ "$arm" = bad-clock ]; then echo nonsense; else cat "$td/clock"; fi
                 ;;
@@ -117,6 +122,7 @@ fixture() {
     echo "PASS: $arm -> $want"
 }
 fixture quiet PASS
+fixture podman-time PASS
 fixture boundary PASS
 fixture churn FAIL
 fixture early-only FAIL

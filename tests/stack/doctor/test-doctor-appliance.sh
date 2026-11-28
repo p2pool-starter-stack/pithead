@@ -85,10 +85,6 @@ echo "== unit: check_data_wipe_note — doctor surfaces the wipe note, a support
 mk_tmpdir CDW
 mkdir -p "$CDW/esp"
 export PITHEAD_PRESEED_DIR="$CDW/esp"
-# Stands in for /run (tmpfs): data_wipe_note()'s one-shot cache has to live in a file, never a
-# shell variable, because every caller reads it through `$(...)` command substitution, which
-# forks a subshell (#1208 job 557/560 — a variable-based cache never worked, since a subshell's
-# writes to it vanish when the subshell exits).
 export PITHEAD_DATA_WIPE_NOTE_CACHE="$CDW/wipe-note-cache.json"
 
 out=$(PITHEAD_APPLIANCE=0 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
@@ -119,7 +115,6 @@ assert_eq "the .pending marker itself stays consumed (never re-armed by a re-run
 assert_contains "the underlying wipe log is untouched — only the marker was consumed" \
     "$(cat "$CDW/esp/pithead-data-wiped")" "2026-08-21T09:00:00Z"
 
-# A LATER boot (cache cleared, marker already consumed on disk) is what finally ends it.
 rm -f "$PITHEAD_DATA_WIPE_NOTE_CACHE"
 out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
 assert_eq "a later boot -> silent, never a stale re-WARN (#1208)" "$out" ""
@@ -134,6 +129,14 @@ rm -f "$PITHEAD_DATA_WIPE_NOTE_CACHE"
 out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
 assert_eq "a factory-reset info line is one-shot too (later boot -> silent)" "$out" ""
 
+out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_reset_requested 2>&1)
+assert_eq "no factory reset requested -> doctor says nothing" "$out" ""
+: >"$CDW/esp/pithead-reset"
+out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_reset_requested 2>&1)
+assert_contains "a factory reset still requested -> WARN" "$out" "WARN"
+assert_contains "the WARN says the next boot erases /data" "$out" "the next boot erases /data"
+out=$(PITHEAD_APPLIANCE=0 run_sourced "$SANDBOX" check_reset_requested 2>&1)
+assert_eq "off the appliance -> silent even with a factory reset requested" "$out" ""
 unset PITHEAD_PRESEED_DIR PITHEAD_DATA_WIPE_NOTE_CACHE
 rm -rf "$CDW"
 unset CDW out

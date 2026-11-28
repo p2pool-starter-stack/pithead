@@ -49,7 +49,7 @@ by channel:
   `FORWARD → DOCKER-USER` jump when it creates the network, so the chain is traversed on egress.
   A reboot empties the chain, and the containers restart on their own when Docker starts, so
   `pithead` also installs `pithead-egress.service`: a oneshot unit ordered before
-  `docker.service` and pulled in by it, carrying the same rules. It inserts the `DROP` first,
+  `docker.service` and required by it, carrying the same rules. Docker does not start when it fails. It inserts the `DROP` first,
   so a start that fails halfway blocks more than intended rather than less. Its P2Pool and XvB
   accepts check separate current-choice markers at boot. Disabling a choice removes its boot
   marker before refreshing the live rules; a shared guard still blocks startup until the host
@@ -132,7 +132,8 @@ Until the host attests a selected first sync's Tor transition, a failed live fir
 prevents Compose startup. A selected
 P2Pool, XvB or donation exception also refuses startup on refresh failure; after a choice is disabled, its
 marker keeps that refusal through firewall opt-out until an enabled refresh proves the stale rule
-gone. Ordinary startup retains the firewall warning. Before Docker creates its first network,
+gone. Ordinary startup also refuses when the rules cannot be installed; `network.tor_egress_firewall: false`
+starts without them. Before Docker creates its first network,
 the absent `FORWARD` jump is allowed only when Docker confirms the mining network is absent and no
 mining container runs; Docker then adds the jump.
 The check does CIDR-containment math, not a literal string match: a foreign `ACCEPT` or

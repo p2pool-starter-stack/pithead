@@ -118,12 +118,9 @@ generate_node_password() {
     printf '%s' "${raw:0:32}"
 }
 
-# --- Tor v3 onion client authorization (#343) ---
-# Base32-encode a hex string (RFC 4648, no padding, uppercase) — the encoding Tor wants for its
-# x25519 client-auth keys. Implemented in awk so it needs no `base32` binary (absent on macOS),
-# which keeps it portable and unit-testable everywhere. Input: an even-length hex string.
 b32encode_hex() {
-    awk -v hex="$1" 'BEGIN {
+    B32_HEX="$1" awk 'BEGIN {
+        hex = ENVIRON["B32_HEX"]
         alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
         bits = ""
         n = length(hex)
@@ -176,21 +173,13 @@ cred_needs_generating() {
     [ -z "$value" ] || [ "$value" == "$placeholder" ]
 }
 
-# Persist the (possibly just-generated) local node RPC credentials back into config.json so they
-# stay stable across re-runs / `apply` and the user can see what was set for them. Atomic (write a
-# sibling temp file, then mv) and keeps config.json owner-only. Best-effort: a save failure warns
-# rather than aborting, since the in-memory creds still make this run work.
 persist_node_credentials() {
     local user="$1" pass="$2" tmp="${CONFIG_FILE}.tmp"
-    # A dry run must only read (#556) — the caller already generated the creds in memory for the
-    # render/diff; skip the write-back to config.json (or a staged control-channel copy).
     [ "$PITHEAD_DRY_RUN" -eq 1 ] && return 0
-    # Subshell umask (#368): the temp file carries the credentials, so it too must be owner-only
-    # from creation — mv preserves its mode onto config.json.
     if (
         umask 077
-        jq --arg u "$user" --arg p "$pass" \
-            '.monero.node_username = $u | .monero.node_password = $p' \
+        JQ_NP="$pass" jq --arg u "$user" \
+            '.monero.node_username = $u | .monero.node_password = env.JQ_NP' \
             "$CONFIG_FILE" >"$tmp" 2>/dev/null
     ); then
         mv "$tmp" "$CONFIG_FILE"

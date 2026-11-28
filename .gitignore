@@ -11,6 +11,7 @@ config.json.bak-control
 /.pithead.bundle.*
 /data/*
 !/data/egress-map.tsv
+/build/.tari-render.*
 /build/monero/bitmonero.conf
 /build/tari/config.toml
 Caddyfile

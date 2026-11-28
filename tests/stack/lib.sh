@@ -217,6 +217,7 @@ EOF
 case "$*" in
   'iptables -S PITHEAD-LAN') echo '-A PITHEAD-LAN -j DROP' ;;
   'iptables -S DOCKER-USER')
+    [ "${SANDBOX_EGRESS_RULES:-}" = absent ] || echo '-A DOCKER-USER -s 172.28.0.0/24 -m comment --comment pithead-tor-egress -j DROP'
     for port in 18081 18083 18142; do
       echo "-A DOCKER-USER -p tcp -m tcp --dport $port -m conntrack --ctstate NEW -m comment --comment pithead-lan-guard -j PITHEAD-LAN"
     done ;;

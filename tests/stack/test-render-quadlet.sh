@@ -209,6 +209,11 @@ assert_eq "quadlet Tari node and wallet images match compose (#2624)" \
 assert_eq "tari-wallet quadlet can repair and drop uid (#2454)" "$(grep -Ec '^(User=0:0|AddCapability=CHOWN DAC_OVERRIDE SETUID SETGID)$' "$QPAY/tari-wallet.container")" "2"
 assert_contains "tari-wallet healthcheck probes gRPC (#2498)" "$(cat "$QPAY/tari-wallet.container")" "HealthCmd=/wallet-config/wallet-healthcheck.sh"
 assert_eq "local render emits no wallet units" "$(find "$QLOCAL" -name 'wallet-rpc.container' -o -name 'tari-wallet.container' | wc -l | tr -d ' ')" "0"
+compose_control_env=$(awk '/^  docker-control:/{f=1;next} f&&/^  [a-z]/{f=0} f' "$ROOT/docker-compose.yml" | sed -nE 's/^ +- ([A-Z_]+=[^ ]*)$/\1/p' | paste -sd ' ' -)
+assert_eq "compose parse finds the docker-control switches (control)" "$(grep -oE 'POST=1|ALLOW_START=1|ALLOW_STOP=1' <<<"$compose_control_env" | wc -l | tr -d ' ')" "3"
+assert_eq "quadlet docker-control carries exactly the compose switches in all three renders" \
+    "$(sed -n 's/^Environment=//p' "$QOUT/docker-control.container" "$QLOCAL/docker-control.container" "$QPAY/docker-control.container")" \
+    "$(printf '%s\n' "$compose_control_env" "$compose_control_env" "$compose_control_env")"
 
 QBUMP="$SANDBOX/quadlet-compose-bump-out"
 sed -E 's|^    image: caddy:[^ ]+$|    image: caddy:9.9.9@sha256:0000000000000000000000000000000000000000000000000000000000000000|' \

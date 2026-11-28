@@ -140,3 +140,50 @@ chmod +x "$DRBIN/curl"
 _xp_out=$(PITHEAD_APPLIANCE=0 RUNNING_CONTAINERS=tor PATH="$DRBIN:$PATH" run_sourced "$_xp_env" check_tor_clearnet_egress 2>&1)
 assert_contains "Tor egress hint names control prerequisite" "$_xp_out" "dashboard.control.enabled:true"
 assert_contains "Tor egress hint names login prerequisite" "$_xp_out" "dashboard login"
+
+echo "== unit: doctor checks the stratum TLS key pair on the host =="
+_xp_tlsd="$_xp_env/proxy-tls"
+mkdir -p "$_xp_tlsd"
+_xp_tls_row() {
+    printf 'PROXY_STRATUM_TLS=%s\nPROXY_TLS_DIR=%s\n' "$1" "$_xp_tlsd" >"$_xp_env/.env"
+    PITHEAD_APPLIANCE="${2:-0}" run_sourced "$_xp_env" check_stratum_tls_keypair 2>&1
+}
+assert_eq "stratum TLS off with no key pair: doctor row is silent" "$(_xp_tls_row false)" ""
+_xp_out=$(_xp_tls_row true)
+assert_contains "stratum TLS on with no key pair: FAIL" "$_xp_out" "✗ FAIL"
+assert_contains "stratum TLS on with no key pair: names both files" "$_xp_out" "missing: cert.pem and key.pem"
+assert_contains "stratum TLS on with no key pair: names apply" "$_xp_out" "./pithead apply"
+_xp_out=$(_xp_tls_row true 1)
+assert_contains "stratum TLS on with no key pair, appliance: FAIL" "$_xp_out" "✗ FAIL"
+assert_contains "stratum TLS on with no key pair, appliance: names Configuration" "$_xp_out" "Open Configuration"
+assert_not_contains "stratum TLS on with no key pair, appliance: no console command" "$_xp_out" "./pithead apply"
+printf 'key' >"$_xp_tlsd/key.pem"
+_xp_out=$(_xp_tls_row true)
+assert_contains "stratum TLS on with only the key: names the cert" "$_xp_out" "missing: cert.pem"
+assert_not_contains "stratum TLS on with only the key: key is not named" "$_xp_out" "key.pem"
+assert_contains "stratum TLS on with only the key: FAIL" "$_xp_out" "✗ FAIL"
+printf 'cert' >"$_xp_tlsd/cert.pem"
+_xp_out=$(_xp_tls_row true)
+assert_contains "stratum TLS on with the key pair: OK" "$_xp_out" "✓ OK   Stratum TLS key pair is present."
+assert_not_contains "stratum TLS on with the key pair: no FAIL" "$_xp_out" "FAIL"
+rm -f "$_xp_tlsd/key.pem"
+_xp_out=$(_xp_tls_row true)
+assert_contains "stratum TLS on with only the cert: names the key" "$_xp_out" "missing: key.pem"
+assert_not_contains "stratum TLS on with only the cert: cert is not named" "$_xp_out" "cert.pem"
+assert_contains "stratum TLS on with only the cert: FAIL" "$_xp_out" "✗ FAIL"
+assert_eq "stratum TLS off with only the cert: doctor row is silent" "$(_xp_tls_row false)" ""
+mkdir -p "$_xp_env/data/proxy-tls"
+printf 'cert' >"$_xp_env/data/proxy-tls/cert.pem"
+printf 'key' >"$_xp_env/data/proxy-tls/key.pem"
+printf 'PROXY_STRATUM_TLS=true\n' >"$_xp_env/.env"
+assert_contains "stratum TLS on with no folder setting: the default folder is checked" \
+    "$(PITHEAD_APPLIANCE=0 run_sourced "$_xp_env" check_stratum_tls_keypair 2>&1)" "✓ OK   Stratum TLS key pair is present."
+_xp_doc="$SANDBOX/doctor-stratum-tls-bb"
+mkdir -p "$_xp_doc/bin"
+cp "$STACK" "$_xp_doc/pithead"
+printf '#!/usr/bin/env bash\ncase "$*" in info) exit 1 ;; *) exit 0 ;; esac\n' >"$_xp_doc/bin/docker"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$_xp_doc/bin/sudo"
+chmod +x "$_xp_doc/bin/docker" "$_xp_doc/bin/sudo"
+printf 'PROXY_STRATUM_TLS=true\nPROXY_TLS_DIR=%s\n' "$_xp_tlsd" >"$_xp_doc/.env"
+_xp_out=$(cd "$_xp_doc" && PITHEAD_APPLIANCE=0 PATH="$_xp_doc/bin:$PATH" ./pithead doctor 2>&1)
+assert_contains "doctor runs the stratum TLS key pair row" "$_xp_out" "missing: key.pem"

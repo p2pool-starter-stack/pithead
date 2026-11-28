@@ -24,16 +24,21 @@ tor_recovery_info() {
     printf '%s' "$body" | jq -c --argjson out "$out" '.outgoing_connections_count = $out'
 }
 
-tor_recovery_state_saturated() { # <state file>
-    local state="$1"
-    sudo test -f "$state" && sudo test ! -L "$state" || return 1
-    sudo grep -qx 'CircuitBuildAbandonedCount 1000' "$state" || return 1
-    sudo grep -qx 'TotalBuildTimes 1000' "$state" || return 1
-    ! sudo grep -q '^CircuitBuildTimeBin ' "$state" || return 1
+tor_recovery_state_saturated() {
+    local verdict
+    verdict=$(
+        sudo python3 -I - "$1" 2>/dev/null <<'PY'
+import os, re, stat, sys
+fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+data = os.read(fd, 1048576) if stat.S_ISREG(os.fstat(fd).st_mode) else b""
+if re.search(rb"(?m)^CircuitBuildAbandonedCount 1000$", data) and re.search(rb"(?m)^TotalBuildTimes 1000$", data):
+    print("" if re.search(rb"(?m)^CircuitBuildTimeBin ", data) else "saturated")
+PY
+    ) || return 1
+    [ "$verdict" = saturated ]
 }
 
-# Read-only saturated-history reading for the dashboard's heal (#3052); it never changes state.
-control_tor_history() ( # <control-dir> <id> <actor> <outage> <observed-at>
+control_tor_history() (
     local cdir="$1" id="$2" actor="$3" dir saturated=false record="$1/results/tor-heal-outage.json" old='{}' next now status est='' pend=''
     PITHEAD_LOCK_TIMEOUT=0 mutation_lock_acquire tor-history || return 1
     [ "${_PITHEAD_LOCK_OWNED:-0}" = 1 ] || return 1

@@ -379,9 +379,9 @@ firstboot_consume_rig() ( # <spool-dir>
         keep_tok=$(jq -r '.access_token // ""' "$PWD/rig.json" 2>/dev/null)
     if ! (
         umask 077
-        jq --arg w "${worker:-$(hostname)}" --arg t "$keep_tok" '{pool: .pool, worker: $w}
+        JQ_T="$keep_tok" jq --arg w "${worker:-$(hostname)}" '{pool: .pool, worker: $w}
         + (if (.stratum_password // "") == "" then {} else {stratum_password: .stratum_password} end)
-        + (if $t == "" then {} else {access_token: $t} end)' \
+        + (if env.JQ_T == "" then {} else {access_token: env.JQ_T} end)' \
             "$req" >"${snap%/*}/rig.json" 2>/dev/null && mv -fT "${snap%/*}/rig.json" "$PWD/rig.json"
     ); then
         rm -f "$spool/rig-request.json" "$PWD/rig.json"

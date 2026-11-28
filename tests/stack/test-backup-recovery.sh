@@ -47,6 +47,7 @@ exec /usr/bin/tar "$@"
 EOF
 chmod +x "$FB/bin/docker" "$FB/bin/sudo" "$FB/bin/systemctl" "$FB/bin/tar"
 cat >"$FB/.env" <<EOF
+TOR_EGRESS_FIREWALL=false
 MONERO_ONION_ADDRESS=mona.onion
 TARI_ONION_ADDRESS=taria.onion
 P2POOL_ONION_ADDRESS=p2pa.onion

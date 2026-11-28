@@ -110,9 +110,9 @@ restore_egress_boot_unit() {
         return 1
         ;;
     esac
-    on_bench "sudo systemctl disable --now pithead-egress.service >/dev/null 2>&1; sudo rm -f /etc/systemd/system/pithead-egress.service; sudo systemctl daemon-reload" >/dev/null 2>&1 || true
+    on_bench "sudo systemctl disable pithead-egress.service >/dev/null 2>&1; sudo systemctl --job-mode=ignore-dependencies stop pithead-egress.service >/dev/null 2>&1; sudo rm -f /etc/systemd/system/pithead-egress.service; sudo systemctl daemon-reload" >/dev/null 2>&1 || true
     if [ "$(egress_boot_unit_state)" = absent ] &&
-        on_bench "! systemctl show -p Wants --value docker.service | grep -q pithead-egress" >/dev/null 2>&1; then
+        on_bench "! systemctl show -p Wants -p Requires --value docker.service | grep -q pithead-egress" >/dev/null 2>&1; then
         ok "restore proof: pithead-egress.service removed — no trace of this run's boot unit on the bench (#2460)"
         return 0
     fi

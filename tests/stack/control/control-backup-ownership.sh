@@ -83,6 +83,7 @@ EOS
     printf '#!/usr/bin/env bash\nexec "$@"\n' >"$XB/bin/sudo"
     chmod +x "$XB/bin/docker" "$XB/bin/sudo"
     cat >"$XB/.env" <<'EOS'
+TOR_EGRESS_FIREWALL=false
 MONERO_ONION_ADDRESS=mona.onion
 TARI_ONION_ADDRESS=taria.onion
 P2POOL_ONION_ADDRESS=p2pa.onion

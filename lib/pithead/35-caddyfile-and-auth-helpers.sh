@@ -55,7 +55,12 @@ generate_caddyfile() {
     if [ -n "${DASHBOARD_AUTH_HASH_B64:-}" ]; then
         local hash
         hash=$(printf '%s' "$DASHBOARD_AUTH_HASH_B64" | openssl base64 -d -A)
-        auth=$(printf '        basic_auth {\n            %s %s\n        }' "$DASHBOARD_AUTH_USER" "$hash")
+        auth=$(printf '%s\n' \
+            '        forward_auth 127.0.0.1:8000 {' \
+            '            uri /api/auth/basic' \
+            '            header_up X-Forwarded-For {http.request.remote.host}' \
+            '            copy_headers X-Auth-User' \
+            '        }')
         epoch=$(printf 'pithead-session-epoch-v1:%s:%s' "$DASHBOARD_AUTH_USER" "$DASHBOARD_AUTH_HASH_B64" | sha256_hex)
         gate=$(printf '%s\n' \
             '    request_header -X-Auth-User' \
@@ -79,7 +84,6 @@ generate_caddyfile() {
             '        vars pithead_basic 1' \
             '        redir @pithead_page /login 303' \
             "$auth" \
-            '        request_header X-Auth-User {http.auth.user.id}' \
             '    }' \
             '    @pithead_session not vars pithead_basic 1' \
             '    forward_auth @pithead_session 127.0.0.1:8000 {' \
@@ -107,12 +111,6 @@ generate_caddyfile() {
             }
         }
     }'
-    # Caddy LAN listen port (#740). An empty HOST_PORT — or a value that equals the scheme's own
-    # default (443 for HTTPS, 80 for HTTP) — keeps the standard port and renders today's Caddyfile
-    # verbatim. A custom port is appended to the site address so an existing reverse proxy on the
-    # host can keep 80/443 (co-hosting, #181). In HTTPS mode a custom port also disables Caddy's
-    # automatic :80 -> HTTPS redirect (a global option emitted once at the top of the file) so port
-    # 80 is left free for that proxy; the fronting proxy owns any http->https bounce instead.
     local dport="${HOST_PORT:-}" port_suffix="" global_block="" own_plain_port=0
     if [ "$DASHBOARD_SECURE" == "true" ]; then
         [ "$dport" == "443" ] && dport=""

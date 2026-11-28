@@ -333,7 +333,7 @@ egress_restore() { # <before> <unit now> [sticky]
         step() { printf 'step:%s\n' "$1" >&2; }
         on_bench() {
             case "$1" in
-            *"disable --now"*)
+            *"disable pithead-egress.service"*)
                 removals=$((removals + 1))
                 [ "$STICKY" = 1 ] || UNIT=absent
                 ;;

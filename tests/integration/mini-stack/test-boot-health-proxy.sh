@@ -40,12 +40,27 @@ docker run -d --name "$name-dashboard" --network "container:$name-caddy" \
 run_driver() {
     docker run --rm -i --network "$1" -e DASHBOARD_AUTH_HASH_B64 --entrypoint python pithead-dashboard:itest - "$2" "$3" <"$ROOT/tests/integration/mini-stack/boot-health-proxy.py"
 }
+restart_dashboard() {
+    docker restart "$name-dashboard" >/dev/null
+    for _ in $(seq 60); do
+        docker exec "$name-dashboard" python -c "
+import urllib.error, urllib.request
+try:
+    urllib.request.urlopen('http://127.0.0.1:8000/api/auth/check', timeout=2)
+except urllib.error.HTTPError:
+    pass
+" 2>/dev/null && return 0
+        sleep 1
+    done
+    error "dashboard did not come back after restart"
+}
 run_driver "container:$name-caddy" local 127.0.0.1
 run_driver "$name" external "$name-caddy"
 # A real fronting proxy turns an external socket into a loopback connection to Caddy.
 docker run -d --name "$name-front" --network "container:$name-caddy" \
     -v "$ROOT/tests/integration/mini-stack/boot-health-front-proxy.py:/fixture.py:ro" \
     --entrypoint python pithead-dashboard:itest /fixture.py >/dev/null
+restart_dashboard
 run_driver "$name" proxy "$name-caddy"
 run_driver "container:$name-caddy" final 127.0.0.1
 docker exec -i -e DASHBOARD_AUTH_HASH_B64 "$name-dashboard" python - <<'PYLOG'
@@ -62,6 +77,7 @@ from pathlib import Path
 if 'fixture-password' in Path('/access-log/access.log').read_text():
     raise AssertionError('password leaked into access log')
 "
+restart_dashboard
 login_out=$(run_driver "container:$name-caddy" login 127.0.0.1)
 old_cookie=$(printf '%s\n' "$login_out" | sed -n 's/^COOKIE=//p')
 [ -n "$old_cookie" ]

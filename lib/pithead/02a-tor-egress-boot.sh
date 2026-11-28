@@ -35,19 +35,17 @@ After=ufw.service firewalld.service netfilter-persistent.service nftables.servic
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=-$ipt -N DOCKER-USER
+ExecStart=-$ipt -N DOCKER-USER -w 5
 EOF
     for rule in "${rules[@]}"; do
-        printf 'ExecStart=-%s -D DOCKER-USER -m comment --comment %s %s\n' "$ipt" "$TOR_EGRESS_TAG" "$rule"
+        printf 'ExecStart=-%s -D DOCKER-USER -m comment --comment %s %s -w 5\n' "$ipt" "$TOR_EGRESS_TAG" "$rule"
     done
     for ip in "$@"; do
-        printf 'ExecStart=-%s -D DOCKER-USER -m comment --comment %s -s %s -j ACCEPT\n' "$ipt" "$TOR_EGRESS_TAG" "$ip"
+        printf 'ExecStart=-%s -D DOCKER-USER -m comment --comment %s -s %s -j ACCEPT -w 5\n' "$ipt" "$TOR_EGRESS_TAG" "$ip"
     done
     for ((i = ${#rules[@]} - 1; i >= 0; i--)); do
-        printf 'ExecStart=%s -I DOCKER-USER 1 -m comment --comment %s %s\n' "$ipt" "$TOR_EGRESS_TAG" "${rules[$i]}"
+        printf 'ExecStart=%s -I DOCKER-USER 1 -m comment --comment %s %s -w 5\n' "$ipt" "$TOR_EGRESS_TAG" "${rules[$i]}"
     done
-    # Check markers at boot: an old unit must not reopen a completed sync or a disabled choice
-    # when its rewrite failed after the live firewall removed that exception.
     for ip in "$@"; do
         case "$ip" in
         *.26) chain=monero ;;
@@ -66,9 +64,9 @@ EOF
         printf -v qtag '%q' "$TOR_EGRESS_TAG"
         printf -v qip '%q' "$ip"
         if [ -n "${chain:-}" ]; then
-            cmd="if test ! -e $qmarker && test ! -L $qmarker; then $qipt -I DOCKER-USER 1 -m comment --comment $qtag -s $qip -j ACCEPT; fi"
+            cmd="if test ! -e $qmarker && test ! -L $qmarker; then $qipt -I DOCKER-USER 1 -m comment --comment $qtag -s $qip -j ACCEPT -w 5; fi"
         else
-            cmd="if { test -d $qmarker && test ! -L $qmarker; } || { test -d $qmarker2 && test ! -L $qmarker2; }; then $qipt -I DOCKER-USER 1 -m comment --comment $qtag -s $qip -j ACCEPT; fi"
+            cmd="if { test -d $qmarker && test ! -L $qmarker; } || { test -d $qmarker2 && test ! -L $qmarker2; }; then $qipt -I DOCKER-USER 1 -m comment --comment $qtag -s $qip -j ACCEPT -w 5; fi"
         fi
         printf "ExecStart=/bin/bash -c '%s'\n" "$cmd"
         chain=
@@ -88,7 +86,7 @@ EOF
     cat <<EOF
 
 [Install]
-WantedBy=docker.service
+RequiredBy=docker.service
 EOF
 }
 
@@ -115,7 +113,7 @@ provision_tor_egress_boot_unit() { # <subnet> <tor_ip> [sync-ip ...]
         return 0
     fi
     if printf '%s\n' "$want" | sudo tee "$unit_dir/$TOR_EGRESS_BOOT_UNIT" >/dev/null &&
-        sudo systemctl daemon-reload && sudo systemctl enable "$TOR_EGRESS_BOOT_UNIT" >/dev/null 2>&1; then
+        sudo systemctl daemon-reload && sudo systemctl reenable "$TOR_EGRESS_BOOT_UNIT" >/dev/null 2>&1; then
         log "Tor-egress firewall will be restored at boot, before Docker starts the containers ($TOR_EGRESS_BOOT_UNIT)."
     else
         warn "egress-boot:unit-install-failed — could not install $TOR_EGRESS_BOOT_UNIT. The firewall is live now, but a host reboot will bring the containers back WITHOUT it until './pithead up' runs."

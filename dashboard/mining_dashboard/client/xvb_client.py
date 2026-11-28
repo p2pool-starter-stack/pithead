@@ -140,7 +140,7 @@ def parse_round_stats(text):
             players = int(fields[7])
         except ValueError:
             continue
-        if players <= 0:
+        if not 0 < players <= 10**9:
             continue
         first_ts = ts if first_ts is None else max(first_ts, ts)
         last_ts = ts if last_ts is None else min(last_ts, ts)

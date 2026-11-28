@@ -120,6 +120,18 @@ class TestLogin:
         other = await login(stack, headers={**EPOCH, "X-Forwarded-For": "10.0.0.2"})
         assert other.status == 200
 
+    async def test_rate_limit_counts_one_ipv6_network_as_one_client(self, stack):
+        for n in range(auth.FAILURE_LIMIT):
+            await login(
+                stack,
+                password="nope",
+                headers={**EPOCH, "X-Forwarded-For": f"2001:db8:1:2::{n + 1}"},
+            )
+        same_net = await login(stack, headers={**EPOCH, "X-Forwarded-For": "2001:db8:1:2:abcd::9"})
+        assert same_net.status == 429
+        other_net = await login(stack, headers={**EPOCH, "X-Forwarded-For": "2001:db8:1:3::1"})
+        assert other_net.status == 200
+
     async def test_concurrent_verifications_beyond_the_cap_are_refused(self, stack):
         release = asyncio.Event()
         started = []
@@ -157,6 +169,60 @@ class TestLogin:
         assert resp.status == 200
         assert 'id="login-form"' in await resp.text()
         assert 'id="login-remember"' in await resp.text()
+
+
+def basic_header(user=GOOD[0], password=GOOD[1]):
+    raw = base64.b64encode(f"{user}:{password}".encode()).decode()
+    return {"Authorization": "Basic " + raw}
+
+
+class TestBasic:
+    async def test_good_credentials_pass_with_the_actor(self, stack):
+        resp = await stack.get("/api/auth/basic", headers=basic_header())
+        assert resp.status == 204
+        assert resp.headers["X-Auth-User"] == "admin"
+
+    async def test_wrong_password_is_challenged(self, stack):
+        resp = await stack.get("/api/auth/basic", headers=basic_header(password="nope"))
+        assert resp.status == 401
+        assert resp.headers["WWW-Authenticate"] == 'Basic realm="restricted"'
+        assert "X-Auth-User" not in resp.headers
+
+    async def test_repeated_failures_lock_out_even_good_credentials(self, stack, verifier_calls):
+        for _ in range(auth.FAILURE_LIMIT):
+            bad = await stack.get("/api/auth/basic", headers=basic_header(password="nope"))
+            assert bad.status == 401
+        before = len(verifier_calls)
+        locked = await stack.get("/api/auth/basic", headers=basic_header())
+        assert locked.status == 429
+        assert int(locked.headers["Retry-After"]) >= 1
+        assert len(verifier_calls) == before
+
+    async def test_malformed_credentials_count_without_reaching_the_verifier(
+        self, stack, verifier_calls
+    ):
+        for value in ("Basic !!!", "Basic " + base64.b64encode(b"no-colon").decode()):
+            resp = await stack.get("/api/auth/basic", headers={"Authorization": value})
+            assert resp.status == 401
+        assert verifier_calls == []
+        assert len(stack.server.app["auth"]["attempts"]._failures["127.0.0.1"]) == 2
+
+    async def test_basic_and_form_failures_share_one_budget(self, stack):
+        for _ in range(auth.FAILURE_LIMIT - 1):
+            await stack.get("/api/auth/basic", headers=basic_header(password="nope"))
+        assert (await login(stack, password="nope")).status == 401
+        assert (await login(stack)).status == 429
+
+    async def test_the_limit_is_per_client(self, stack):
+        for _ in range(auth.FAILURE_LIMIT):
+            await stack.get(
+                "/api/auth/basic",
+                headers={**basic_header(password="nope"), "X-Forwarded-For": "10.0.2.1"},
+            )
+        other = await stack.get(
+            "/api/auth/basic", headers={**basic_header(), "X-Forwarded-For": "10.0.2.2"}
+        )
+        assert other.status == 204
 
 
 class TestCheck:
@@ -308,3 +374,20 @@ class TestAttempts:
         assert len(attempts._failures) == auth.MAX_TRACKED_CLIENTS
         assert "c0" not in attempts._failures
         assert "new" in attempts._failures
+
+
+@pytest.mark.parametrize(
+    ("address", "key"),
+    [
+        ("192.0.2.7", "192.0.2.7"),
+        ("2001:db8:1:2:3:4:5:6", "2001:db8:1:2::/64"),
+        ("2001:db8:1:2::", "2001:db8:1:2::/64"),
+        ("::ffff:192.0.2.7", "192.0.2.7"),
+        ("::1", "::/64"),
+        ("not-an-address", "not-an-address"),
+        (None, "unknown"),
+        ("", "unknown"),
+    ],
+)
+def test_limiter_key_groups_ipv6_by_64_and_keeps_ipv4_whole(address, key):
+    assert auth.limiter_key(address) == key

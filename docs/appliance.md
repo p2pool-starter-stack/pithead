@@ -711,6 +711,11 @@ failure in the `pithead-data-reset` service journal. An unavailable read-only pr
 does not authorize further repairs or erasure. A reformat also requires its mount
 directory to be allocated before formatting starts.
 
+If a factory reset you asked for cannot finish reformatting the data area, the reset
+stays requested: the `pithead-data-reset` service journal records the failure, the
+reset runs again at the next boot, and
+`cd /data/pithead && ./pithead doctor` warns until it has run.
+
 ## Recovering from a backup
 
 Fresh flash, restore, done — if the machine is gone (dead disk, stolen, dropped), a backup
@@ -823,7 +828,7 @@ appliance; a manually deployed debug image carries its own SSH key for developme
 **"Wrong token."** A generated token changes each time the setup service restarts; a valid
 preseed token is reused. Read the current token from the console or your preseed file.
 Five wrong attempts from the same network peer start a 60-second
-cooldown. Wait for the time shown on the page, then retry the same token; the wizard stays open
+cooldown. An IPv6 peer is counted by its /64 network, so devices sharing one /64 share the five. Wait for the time shown on the page, then retry the same token; the wizard stays open
 and other authenticated operators keep their sessions.
 
 **The address was rejected.** For Monero you most likely pasted a subaddress (starts with

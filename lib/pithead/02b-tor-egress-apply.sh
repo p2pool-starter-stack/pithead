@@ -239,18 +239,19 @@ egress_sync_run_pending() {
     mkdir -p "$cdir/results"
     [ -d "$cdir/requests" ] && [ ! -L "$cdir/requests" ] || return 1
     for file in "$cdir"/requests/*.json; do
-        [ -e "$file" ] || continue
+        [ -e "$file" ] || [ -L "$file" ] || continue
         name=${file##*/}
         id=${name%.json}
         [[ "$id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]] || {
-            rm -f "$file"
+            claimed="$cdir/.claim.egress.$$"
+            rm -rf -- "$claimed" && mv -T -- "$file" "$claimed" && rm -rf -- "$claimed" || true
             continue
         }
         claimed="$cdir/.claim.egress.$id"
-        mv -- "$file" "$claimed" || continue
+        rm -rf -- "$claimed" && mv -T -- "$file" "$claimed" || continue
         file="$claimed"
         [ -f "$file" ] && [ ! -L "$file" ] && [ "$(wc -c <"$file")" -le 1024 ] || {
-            rm -f "$file"
+            rm -rf -- "$file"
             continue
         }
         chain=$(jq -r --arg id "$id" 'if .id == $id and .action == "egress-sync" and

@@ -15,6 +15,7 @@ import json
 from datetime import UTC, datetime
 
 from mining_dashboard.client.xmrig_client import parse_rigforge
+from mining_dashboard.client.xvb_client import _WINNERS_MAX_FUTURE_S
 from mining_dashboard.config import config
 from mining_dashboard.helper.utils import effective_hashrate, get_tier_info
 from mining_dashboard.service import mining_verdict as mv
@@ -77,7 +78,7 @@ def _xvb_winners_gate_sec(avg_1h, avg_24h, tiers, last_win_ts, now):
     _, threshold = get_tier_info(min(avg_1h, avg_24h), tiers)
     if threshold > 0 and avg_1h <= threshold * (1 + _XVB_WINNERS_MARGIN):
         return _XVB_WINNERS_SYNC_FAST_SEC
-    if last_win_ts > 0 and now - last_win_ts < _XVB_WIN_FRESH_S:
+    if last_win_ts > 0 and -_WINNERS_MAX_FUTURE_S <= now - last_win_ts < _XVB_WIN_FRESH_S:
         return _XVB_WINNERS_SYNC_FAST_SEC
     return _XVB_WINNERS_SYNC_SEC
 

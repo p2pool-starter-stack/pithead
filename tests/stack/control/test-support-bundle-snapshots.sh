@@ -350,3 +350,51 @@ assert_eq "the manifest records the steps the limit skipped" \
 assert_eq "the skip names the limit" \
     "$(sb_man "$SN/x5" '[.failures[] | select(.status == "skipped") | .reason | contains("total time limit")] | all')" "true"
 assert_eq "the manifest states the total limit it applied" "$(sb_man "$SN/x5" '.limits.total_seconds')" "1"
+
+echo "== support bundle snapshots: the cookie, the Tor state and marker bodies are read only as regular files =="
+SR="$SN/reads"
+mkdir -p "$SR/e2e" "$SR/link" "$SR/dangling" "$SR/fifo" "$SR/folder/control_auth_cookie" "$SR/short" \
+    "$SR/m" "$SR/m2" "$SR/g-link" "$SR/g-fifo" "$SR/g-folder/state" "$SR/g-none"
+ln -s "$SN/tor/control_auth_cookie" "$SR/e2e/control_auth_cookie"
+ln -s "$SN/tor/state" "$SR/e2e/state"
+sed "s#^TOR_DATA_DIR=.*#TOR_DATA_DIR=$SR/e2e#" "$sn_env" >"$SN/env5"
+sn_tor fine
+sn_run c412c412-0000-4000-8000-000000000006 fine "PITHEAD_ENV_FILE=$SN/env5" "PITHEAD_SUPPORT_TOR_CONTROL=127.0.0.1:$(cat "$SN/port")"
+kill "$SN_TOR_PID" 2>/dev/null || true
+sb_unzip "$SB/results/c412c412-0000-4000-8000-000000000006.zip" "$SN/x6"
+assert_not_contains "a linked cookie is not sent to the control port" "$(cat "$SN/x6/bundle/tor/control.txt")" "PROGRESS=100"
+assert_not_contains "a linked Tor state file is not read" "$(cat "$SN/x6/bundle/tor/state-guards.txt")" "guardone"
+run_sourced "$SANDBOX" bundle_support_read_py >"$SR/snap.py" 2>/dev/null
+run_sourced "$SANDBOX" bundle_support_snap_py >>"$SR/snap.py"
+python3 -I -c 'import socket, sys
+s = socket.create_server(("127.0.0.1", 0)); open(sys.argv[1], "w").write(str(s.getsockname()[1]))
+while True: c = s.accept()[0]; open(sys.argv[2], "a").write(c.makefile("rb").readline().decode()); c.close()' "$SR/port" "$SR/conn.log" &
+timeout 10 bash -c 'until [ -s "$1" ]; do sleep 0.1; done' _ "$SR/port"
+printf '%-32s' 'LINKED COOKIE' >"$SR/m/plain"
+ln -s "$SR/m/plain" "$SR/link/control_auth_cookie"
+ln -s "$SR/none" "$SR/dangling/control_auth_cookie"
+mkfifo "$SR/fifo/control_auth_cookie" "$SR/m/pipe" "$SR/g-fifo/state"
+printf '%031d' 0 >"$SR/short/control_auth_cookie"
+sr_out=$(for c in link dangling fifo folder short; do
+    printf ' %s:%s' "$c" "$(timeout 10 python3 -I "$SR/snap.py" tor "$SR/$c" "127.0.0.1:$(cat "$SR/port")" 2>/dev/null | jq -r .reachable)"
+done)
+assert_eq "a linked, dangling, FIFO, folder or short cookie gives the unavailable Tor snapshot" "$sr_out" " link:false dangling:false fifo:false folder:false short:false"
+assert_eq "no refused cookie opens a control connection" "$(cat "$SR/conn.log" 2>/dev/null)" ""
+timeout 10 python3 -I "$SR/snap.py" tor "$SN/tor" "127.0.0.1:$(cat "$SR/port")" >/dev/null 2>&1
+assert_contains "a regular 32-byte cookie is sent as before" "$(cat "$SR/conn.log")" "AUTHENTICATE $SN_COOKIE_HEX"
+kill "$!" 2>/dev/null || true
+ln -s "$SR/m/plain" "$SR/m2/linked"
+timeout 10 python3 -I "$SR/snap.py" markers "$SR/m" >"$SR/m.out"
+assert_eq "a FIFO in the marker tree does not hold the listing" "$?:$(tail -n 1 "$SR/m.out")" "0:    content: LINKED COOKIE"
+assert_not_contains "a marker swapped for a link after its listing is not read" \
+    "$(timeout 10 python3 -I -c 'import os, runpy, sys; os.lstat = os.stat; sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name="__main__")' "$SR/snap.py" markers "$SR/m2")" "LINKED COOKIE"
+printf 'TorVersion Tor 0.4.8.12\nGuard in=bridges rsa_id=CC bridge_addr=192.0.2.9:443 nickname=b\nKey SEEDED\n' >"$SR/g-state"
+assert_eq "the guard lines of a regular state file are the same bytes as before" "$(python3 -I "$SR/snap.py" guards "$SR/g-state" | od -c)" \
+    "$(awk '/^(TorVersion|LastWritten|Guard) / { gsub(/bridge_addr=[^ ]+/, "bridge_addr=[redacted]"); print }' "$SR/g-state" | od -c)"
+ln -s "$SR/g-state" "$SR/g-link/state"
+exec 3<>"$SR/g-fifo/state" && printf 'Guard fed\n' >&3
+sr_out=$(for c in link fifo folder none; do
+    printf ' %s:%s' "$c" "$(timeout 10 python3 -I "$SR/snap.py" guards "$SR/g-$c/state" 2>/dev/null | wc -c | tr -d ' ')"
+done)
+exec 3>&-
+assert_eq "a linked, FIFO, folder or missing state file gives no guard lines" "$sr_out" " link:0 fifo:0 folder:0 none:0"

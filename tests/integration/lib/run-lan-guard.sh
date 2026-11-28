@@ -280,7 +280,7 @@ assert_lan_guard_boot_restore() { # <port>...
         assert_contains "Docker waits for Tor egress too (#2901)" \
             "$(rx 'systemctl show -p After --value docker.service')" "pithead-egress.service"
         rc=0
-        rx 'sudo systemctl restart pithead-egress.service' >/dev/null 2>&1 || rc=$?
+        rx 'sudo systemctl --job-mode=ignore-dependencies restart pithead-egress.service' >/dev/null 2>&1 || rc=$?
         assert_rc "the Tor-egress boot unit starts after the LAN guard (#2901)" "$rc" "0"
         rc=0
         rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1 || rc=$?

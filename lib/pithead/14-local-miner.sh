@@ -209,9 +209,9 @@ render_local_miner_config() {
     port=$(stratum_port_effective)
     secret=$(env_get PROXY_STRATUM_PASSWORD 2>/dev/null || true)
     ceiling=$(local_miner_pool_ceiling_mb "$dir")
-    (tmp=$(mktemp "$dir/config.json.XXXXXX") && jq -n --arg url "127.0.0.1:$port" --arg pass "$secret" --argjson reserve "$(($(hugepages_decision_pages) * 2))" \
+    (tmp=$(mktemp "$dir/config.json.XXXXXX") && JQ_PASS="$secret" jq -n --arg url "127.0.0.1:$port" --argjson reserve "$(($(hugepages_decision_pages) * 2))" \
         --argjson ceiling "$ceiling" \
-        '{pools: [({url: $url} + (if $pass != "" then {pass: $pass} else {} end))], hugepages_reserve_extra_mb: $reserve}
+        'env.JQ_PASS as $pass | {pools: [({url: $url} + (if $pass != "" then {pass: $pass} else {} end))], hugepages_reserve_extra_mb: $reserve}
          + (if $ceiling > 0 then {hugepages_pool_ceiling_mb: $ceiling} else {} end)' \
         >"$tmp" && mv -f "$tmp" "$dir/config.json")
     log "Local miner config rendered to $dir/config.json (pool 127.0.0.1:$port)."
@@ -295,7 +295,7 @@ rig_access_token() {
         tok=$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')
         [[ "$tok" =~ ^[0-9a-f]{32}$ ]] || return 1
         tmp=$(mktemp "$PWD/.rig.json.XXXXXXXXXX") || return 1
-        if ! { (umask 077 && jq --arg t "$tok" '. + {access_token: $t}' "$PWD/rig.json" >"$tmp" 2>/dev/null) &&
+        if ! { (umask 077 && JQ_T="$tok" jq '. + {access_token: env.JQ_T}' "$PWD/rig.json" >"$tmp" 2>/dev/null) &&
             chmod 600 "$tmp" && mv -f "$tmp" "$PWD/rig.json"; }; then
             rm -f "$tmp"
             return 1
@@ -318,16 +318,8 @@ rig_coordinator_ip() {
     getent ahostsv4 "$host" 2>/dev/null | awk '$1 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ { print $1; exit }'
 }
 
-# RigForge's config for a rig, derived from rig.json exactly the way the Both role's is derived
-# from config.json — rebuilt every boot, never repaired (bar the keys Worker Inspect writes, #3204).
-# The pool the operator gave, the worker name that labels this rig there (RigForge's pools[].user,
-# the hostname when empty), the stratum password when one was set, and (#1836) the rig's own token
-# on every API, the read-only sister feed the coordinator probes, and the writable control path
-# pinned to the coordinator's address, which is how the Workers view adopts the rig. Without the
-# token XMRig's API stood open on the LAN. control_upgrade stays off (a rig updates through its A/B
-# bundle); no hugepages_reserve_extra_mb (no stack here to leave headroom for).
 render_rig_miner_config() {
-    local dir tok allow keep
+    local dir tok allow keep tmp
     dir=$(rigforge_dir)
     if [ ! -d "$dir" ]; then
         warn "This machine is a rig, but there is no RigForge tree at $dir — this image does not carry the miner."
@@ -340,11 +332,15 @@ render_rig_miner_config() {
     allow=$(rig_coordinator_ip)
     [ -n "$allow" ] || warn "The rig's control API stays off: the pool host does not resolve to an IPv4 address to pin it to. The read-only feed still serves, token required."
     keep=$(jq -sc 'if length == 1 and (.[0] | type == "object") then .[0] | with_entries(select(.key | IN("DONATION", "autotune", "watchdog", "watchdog_interval_min", "max_temp_c"))) else {} end' "$dir/config.json" 2>/dev/null) || keep='{}'
-    jq --argjson keep "$keep" --arg tok "$tok" --arg allow "$allow" '$keep + {pools: [({url: .pool, user: (.worker // "")}
+    tmp=$(mktemp "$dir/config.json.XXXXXX") || return 1
+    JQ_TOK="$tok" jq --argjson keep "$keep" --arg allow "$allow" '$keep + {pools: [({url: .pool, user: (.worker // "")}
         + (if (.stratum_password // "") == "" then {} else {pass: .stratum_password} end))],
-        ACCESS_TOKEN: $tok, api: "enabled"}
+        ACCESS_TOKEN: env.JQ_TOK, api: "enabled"}
         + (if $allow == "" then {} else {control: "enabled", api_allow_from: $allow} end)' \
-        "$PWD/rig.json" >"$dir/config.json" 2>/dev/null || return 1
+        "$PWD/rig.json" >"$tmp" 2>/dev/null && mv -fT -- "$tmp" "$dir/config.json" || {
+        rm -f "$tmp"
+        return 1
+    }
     chmod 600 "$dir/config.json" 2>/dev/null || true
 }
 

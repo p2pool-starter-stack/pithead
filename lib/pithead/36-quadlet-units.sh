@@ -143,7 +143,7 @@ Environment=WAIT_FOR_TOR=1 $(_qenvq TARI_CLEARNET_SYNC)
 Entrypoint=/var/tari/config/entrypoint.sh
 Exec=--disable-splash-screen --non-interactive
 Volume=$(_qenv TARI_DATA_DIR):/var/tari/node
-Volume=$(_qenv QUADLET_HOST_CONFIG_DIR)/build/tari:/var/tari/config
+Volume=$(_qenv QUADLET_HOST_CONFIG_DIR)/build/tari:/var/tari/config:ro
 Volume=$(_qenv CLEARNET_STATE_DIR):/clearnet-state:ro
 Tmpfs=/tmp:size=64m,mode=1777
 PublishPort=$(_qenv TARI_GRPC_BIND):18142:18142
@@ -358,7 +358,7 @@ Description=pithead control socket proxy
 ContainerName=docker-control
 Image=$(_qcompose_image docker-control)
 Network=proxy.network
-Environment=CONTAINERS=1 POST=1 ALLOW_START=1 ALLOW_STOP=1
+Environment=POST=1 ALLOW_START=1 ALLOW_STOP=1
 Volume=$proxy_sock:/var/run/docker.sock:ro
 Tmpfs=/run
 Tmpfs=/tmp

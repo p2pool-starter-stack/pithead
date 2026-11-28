@@ -493,6 +493,16 @@ the host's `/etc`.
   scope here for want of inputs this guest cannot give them: the `monero.mode=local` scenario
   (#2443, needs a seeded chain) and `--xvb-routing-smoke` (#2444, its probe discards its own
   diagnostics, so the red is unreadable).
+  The guest runs with `xvb.enabled` false. One short leg (`appliance-xvb-short-leg.sh`,
+  `selftest-xvb-short-leg.sh`) runs right after provisioning and before the DIY gate. It first reads
+  the dashboard's mode as `P2POOL (XvB Disabled)`. It then checks that the guest reaches the XvB
+  endpoint through Tor, and records a counted `missing` skip with the reason when it cannot. Next it
+  sets `xvb.enabled` through the host-side config edit and `./pithead apply -y`, waits for the
+  dashboard to show XvB active with a zero fetch-failure count, and routes the live proxy to XvB with the
+  controller's own actuator. The proxy's one enabled pool must be the XvB pool over Tor under the
+  stack wallet's donor id. It restores the P2Pool route and the snapshotted config, and requires the
+  dashboard to read XvB off again. Each wait is bounded (180 s state, 150 s proxy API and route), so
+  the leg adds a few minutes.
 
 `--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects

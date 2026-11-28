@@ -123,8 +123,8 @@ control_backup() { # <id> <actor> <control-dir>
     mv "$archive" "$dest"
     chown "0:$APP_GID" "$dest" 2>/dev/null || true
     chmod 640 "$dest" 2>/dev/null || true
-    (umask 077 && control_write_result "$results" "$id" "$(jq -n --arg p "$pass" --arg f "$fname" '
-        {status:"applied", passphrase:$p, archive:$f,
+    (umask 077 && control_write_result "$results" "$id" "$(JQ_P="$pass" jq -n --arg f "$fname" '
+        {status:"applied", passphrase:env.JQ_P, archive:$f,
          contents:["config.json","the stack .env (secrets)","Caddyfile, if present",
                    "the Tor onion-service key directory, if present","the dashboard database"],
          note:"This passphrase is shown once and cannot be recovered — save it now.",
@@ -180,11 +180,9 @@ control_onion_client_key() { # <id> <actor> <control-dir>
         return 0
     fi
     IFS=$'\t' read -r onion privkey <<<"$cred"
-    # Same perms as the backup kit, for the same reason: root-owned, readable only by the
-    # dashboard's own uid/gid, because this file holds a secret while its window is open.
-    (umask 077 && control_write_result "$results" "$id" "$(jq -n --arg o "$onion" --arg k "$privkey" '
-        {status:"applied", onion_url:("http://" + $o), client_key:$k,
-         torrc_line:(($o | sub("\\.onion$"; "")) + ":descriptor:x25519:" + $k),
+    (umask 077 && control_write_result "$results" "$id" "$(JQ_K="$privkey" jq -n --arg o "$onion" '
+        {status:"applied", onion_url:("http://" + $o), client_key:env.JQ_K,
+         torrc_line:(($o | sub("\\.onion$"; "")) + ":descriptor:x25519:" + env.JQ_K),
          note:"This is a PRIVATE key and is shown once. Paste it into Tor Browser when it asks for the onion key, or put the torrc line in your ClientOnionAuthDir.",
          ts:(now|floor)}')")
     chown "0:$APP_GID" "$results/$id.json" 2>/dev/null || true
