@@ -302,9 +302,8 @@ no defaults and may come from the
 are required. The gate is optional: with all three unset it skips with a log message, for a
 release lane that has not provisioned its status-publishing App yet. That skip is attested, not
 assumed — the manual attestation is then the only gate: before the cut, read the exact release
-SHA's status and job evidence by hand and record it in the release issue, exactly as
-[Which gates are automated, and which are not](#which-gates-are-automated-and-which-are-not)
-requires. This repo's lane sets all three: context `bench-ci/tier4`, App `pithead-bench-ci`. The
+SHA's status and job evidence by hand and record it in the release issue, as the e2e step below
+does. This repo's lane sets all three: context `bench-ci/tier4`, App `pithead-bench-ci`. The
 bench publishes that status only after its full tier-4 suite completes; a missing, failed,
 unreadable, or wrong-App status aborts the cut before anything is built. Dry runs enforce the
 lint/test toolchain on the run's effective PATH, just as a real cut does. A dry run still does

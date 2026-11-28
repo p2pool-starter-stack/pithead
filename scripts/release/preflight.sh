@@ -39,8 +39,6 @@ require_release_status_gate() {
         fail_release_status_gate "GitHub App $slug has id ${app_id:-missing}, expected $expected."
         return 0
     fi
-    # ponytail: reads only the first 100 statuses on the commit. A commit carrying more than that,
-    # it fails closed, never open. Paginate if a release SHA ever collects that many statuses.
     if ! statuses="$(gh api "repos/p2pool-starter-stack/pithead/commits/$GIT_COMMIT/statuses?per_page=100")"; then
         fail_release_status_gate "Could not read the $context status for release commit $GIT_COMMIT."
         return 0

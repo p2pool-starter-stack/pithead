@@ -189,10 +189,8 @@ assert_rc "env values loaded and exported" "$?" "0"
 # MUTATION PROOF: log a loaded value rather than its name.
 assert_not_contains "loader never logs values" "$rt_out" "$RT_SENTINEL"
 for name in RELEASE_REQUIRED_STATUS_CONTEXT RELEASE_REQUIRED_STATUS_APP_ID RELEASE_REQUIRED_STATUS_APP_SLUG RELEASE_INTEGRATION_ARGS RELEASE_TOOL_PATH; do
-    # MUTATION PROOF: omit per-name provenance logging.
     assert_contains "loader names each setting" "$rt_out" "loaded $name"
 done
-# MUTATION PROOF: omit the loaded count.
 assert_contains "loader reports count" "$rt_out" "5 loaded, 0 retained"
 rt_out="$(
     rt_drive <<'SH'
@@ -201,9 +199,7 @@ load_release_env
 [ "$RELEASE_REQUIRED_STATUS_APP_ID" = existing ] && [ "$RELEASE_REQUIRED_STATUS_APP_SLUG" = '' ]
 SH
 )"
-# MUTATION PROOF: overwrite already-set values, including the empty string.
 assert_rc "environment values win, including empty" "$?" "0"
-# MUTATION PROOF: report overridden settings as loaded.
 assert_contains "loader reports retained names and count" "$rt_out" "3 loaded, 2 retained"
 # MUTATION PROOF: include skipped file values in the log.
 assert_not_contains "retained settings do not leak file values" "$rt_out" "$RT_SENTINEL"
