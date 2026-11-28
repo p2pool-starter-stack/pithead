@@ -1,5 +1,33 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
+echo "== dashboard.auth.password verdict is the same in every locale (#4453) =="
+build_val_sandbox
+cp "$ROOT/docker-compose.yml" "$V/docker-compose.yml"
+dash_pw_apply() {
+    seed_env
+    jq -n --arg w "$WALLET" --arg t "$VALID_TARI" --arg p "$2" --argjson o "$([ -n "${3:-}" ] && echo true || echo false)" \
+        '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},tari:{wallet_address:$t},p2pool:{pool:"main"},dashboard:{secure:true,host:"box.lan",onion:{enabled:$o},auth:{username:"admin",password:$p}}}' >"$V/config.json"
+    (cd "$V" && LC_ALL="$1" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)
+}
+dash_pw_cases() {
+    local loc="$1"
+    echo "-- LC_ALL=$loc --"
+    out=$(dash_pw_apply "$loc" "pässwörd-12345")
+    assert_not_contains "non-ASCII password is accepted" "$out" "dashboard.auth.password must be"
+    out=$(dash_pw_apply "$loc" "$(printf 'ä%.0s' $(seq 36))")
+    assert_not_contains "36 two-byte characters are accepted" "$out" "dashboard.auth.password must be"
+    out=$(dash_pw_apply "$loc" "ääääääx")
+    assert_contains "7 characters are rejected, whatever their byte count" "$out" "dashboard.auth.password must be 8–128 characters"
+    out=$(dash_pw_apply "$loc" "$(printf 'a%.0s' $(seq 129))")
+    assert_contains "129 characters are rejected" "$out" "dashboard.auth.password must be 8–128 characters"
+    out=$(dash_pw_apply "$loc" 'pässwörd-"12345')
+    assert_contains "a double-quote is rejected" "$out" "dashboard.auth.password must be 8–128 characters"
+    out=$(dash_pw_apply "$loc" "$(printf 'ä%.0s' $(seq 16))" onion)
+    assert_contains "onion: 16 identical two-byte characters are a repeated character" "$out" "single repeated character"
+}
+dash_pw_cases C
+dash_pw_cases C.UTF-8
+
 echo "== black-box: onion password dry-run refusal and cancelled apply =="
 # Manual QA must distinguish a read-only validation failure from normal apply, which writes
 # a generated password before asking for confirmation. Drive the real CLI with Docker stubbed.
