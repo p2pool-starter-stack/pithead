@@ -102,6 +102,25 @@ class TestControlRoutesEnabled:
         )
         assert resp.status == 400
 
+    async def test_commit_non_string_id_is_a_400(self, control_client):
+        resp = await control_client.post(
+            "/api/control/commit", json={"id": 123}, headers=CONTROL_HEADERS
+        )
+        assert resp.status == 400
+
+    async def test_commit_spool_failure_is_a_500_not_a_body_error(
+        self, control_client, monkeypatch
+    ):
+        def full(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(control_service, "submit", full)
+        resp = await control_client.post(
+            "/api/control/commit", json={"id": str(uuid.uuid4())}, headers=CONTROL_HEADERS
+        )
+        assert resp.status == 500
+        assert "Body must be JSON" not in await resp.text()
+
     async def test_commit_waits_past_stale_preview_result(self, control_client, control_spool):
         # The preview result under the same id must not be mistaken for the commit outcome:
         # with only the preview result present, commit times out to 202 pending.

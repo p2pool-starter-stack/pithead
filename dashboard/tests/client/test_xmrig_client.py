@@ -90,7 +90,7 @@ class FakeSession:
         self._exc = exc
         self.calls = []
 
-    def get(self, url, headers=None, timeout=None):
+    def get(self, url, headers=None, timeout=None, allow_redirects=True):
         self.calls.append((url, headers))
         return FakeGet(self._response, self._exc)
 
