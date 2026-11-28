@@ -47,6 +47,25 @@ _xvb_short_route_ok() {
         >/dev/null 2>&1
 }
 
+_xvb_short_route_shape() {
+    printf '%s' "$1" | jq -r --arg w "$2" '
+        [.pools[]? | select(.enabled)] as $on | (.donor // "") as $d |
+        "enabled pools: \($on | length), first is the XvB pool: \(($on[0].url // "") == .xvb_url), user is the donor id: \(($on[0].user // "") == $d), donor id prefixes the wallet: \(($d | length) >= 8 and ($w | startswith($d))), over Tor: \($on[0].tor // false)"' 2>/dev/null || printf 'route unreadable'
+}
+
+_xvb_short_route_wait() {
+    local route="" deadline
+    deadline=$(($(date +%s) + ${XVB_SHORT_ROUTE_TIMEOUT:-60}))
+    while :; do
+        route="$(_xvb_guest_python "$(_xvb_short_route_payload)")"
+        _xvb_short_route_ok "$route" "$HARNESS_WALLET" && return 0
+        [ "$(date +%s)" -lt "$deadline" ] || break
+        sleep 3
+    done
+    _xvb_short_route_shape "$route" "$HARNESS_WALLET"
+    return 1
+}
+
 _xvb_short_no_route() {
     local status
     if ! status="$(_xvb_wait_for_tor)"; then
@@ -85,9 +104,8 @@ _xvb_short_prove() {
         bad "XvB leg: the controller could not route the live proxy to XvB within ${XVB_ACTUATE_TIMEOUT:-150}s (guest: $(_xvb_guest_stderr))"
         return 1
     fi
-    route="$(_xvb_guest_python "$(_xvb_short_route_payload)")"
-    if ! _xvb_short_route_ok "$route" "$HARNESS_WALLET"; then
-        bad "XvB leg: the live proxy route is not the XvB pool over Tor under the stack wallet's donor id (guest: $(_xvb_guest_stderr))"
+    if ! route="$(_xvb_short_route_wait)"; then
+        bad "XvB leg: the live proxy route is not the XvB pool over Tor under the stack wallet's donor id within ${XVB_SHORT_ROUTE_TIMEOUT:-60}s ($route; guest: $(_xvb_guest_stderr))"
         return 1
     fi
     ok "XvB leg: the live proxy routes to the XvB pool over Tor under the stack wallet's donor id"

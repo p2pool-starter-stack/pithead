@@ -13,7 +13,7 @@ source "$HERE/xvb-selftest-clock.sh"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 _xvb_selftest_clock "$work/clock"
-XVB_SHORT_STATE_TIMEOUT=4 XVB_PROXY_READY_TIMEOUT=4 XVB_ACTUATE_TIMEOUT=4
+XVB_SHORT_STATE_TIMEOUT=4 XVB_PROXY_READY_TIMEOUT=4 XVB_ACTUATE_TIMEOUT=4 XVB_SHORT_ROUTE_TIMEOUT=6
 
 ok() { printf x >>"$work/pass"; }
 bad() { printf x >>"$work/fail"; }
@@ -36,7 +36,13 @@ _xvb_short_set_on() {
     printf on >"$work/xvb"
 }
 _xvb_actuate() { [ "$1" != XVB ] || [ "${ACTUATE:-up}" = up ]; }
-_xvb_guest_python() { printf '%s' "$ROUTE"; }
+_xvb_guest_python() {
+    local n
+    n=$(cat "$work/reads" 2>/dev/null) || n=0
+    n=$((${n:-0} + 1))
+    printf '%s' "$n" >"$work/reads"
+    if [ "$n" -le "${LATE:-0}" ]; then printf '%s' "${EARLY_ROUTE:-}"; else printf '%s' "$ROUTE"; fi
+}
 _xvb_short_state() {
     if [ "$(cat "$work/xvb")" = on ]; then
         printf 'XVB\t%s\n' "${FAILS:-0}"
@@ -65,6 +71,9 @@ case_run() {
 
 ROUTE="$good_route"
 case_run "a clean on and off leg passes four rows" 4 0 0 1 1
+: >"$work/reads"
+case_run "a route that settles a few seconds late passes" 4 0 0 1 1 LATE=1 'EARLY_ROUTE={"xvb_url":"x.example:4247","donor":"fixturew","pools":[{"url":"p2pool:3333","user":"fixturew","enabled":true,"tor":false}]}'
+: >"$work/reads"
 case_run "a guest with no Tor skips, never turns XvB on" 1 0 1 0 0 TOR=down
 case_run "an unreachable XvB endpoint skips, never turns XvB on" 1 0 1 0 0 FETCH=down
 case_run "XvB on by default is red before anything is changed" 0 1 0 0 0 "BASE=XVB"
