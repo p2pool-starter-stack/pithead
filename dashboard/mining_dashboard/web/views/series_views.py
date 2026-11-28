@@ -17,6 +17,7 @@ formats at the edge and emits tokens the client maps to CSS, never HTML.
 import time
 
 from mining_dashboard.config import config
+from mining_dashboard.helper.time_rows import window_rows
 from mining_dashboard.helper.utils import format_duration, format_hashrate, format_time_abs
 from mining_dashboard.service.metrics import share_reject_pct
 from mining_dashboard.service.payout_identity import configured_wallet_id
@@ -71,18 +72,16 @@ def _downsample_share_stats(rows, target=_MAX_CHART_POINTS):
 
 
 def _filter_share_stats(rows, range_arg, window=None):
-    """Restrict share-stat deltas (#116) to the selected window — same bounds as
-    ``_filter_events``, for the ``ts``-keyed delta rows."""
     if window is not None:
         lo, hi = window
-        return [s for s in rows if lo <= s["ts"] <= hi]
+        return [s for s in window_rows(rows, "ts", lo, hi) if lo <= s["ts"] <= hi]
     if range_arg == "all":
         return rows
     secs = _RANGE_SECONDS.get(range_arg, 0)
     if secs <= 0:
         return rows
     cutoff = time.time() - secs
-    return [s for s in rows if s["ts"] >= cutoff]
+    return [s for s in window_rows(rows, "ts", cutoff) if s["ts"] >= cutoff]
 
 
 def _window_reject_pct(rows, seconds):

@@ -2,10 +2,10 @@
 # there; one entry per surface covers everything (CONTRIBUTING.md § One integration branch, #1163, #1425).
 version: 2
 updates:
-  # GitHub Actions — keep the SHA-pinned actions (#282) fresh. Dependabot rewrites the SHA and the
-  # `# vX.Y.Z` comment together.
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: "weekly"
     groups:
@@ -41,13 +41,11 @@ updates:
   - package-ecosystem: "docker"
     directories:
       - "/dashboard"
+      - "/build/cosign"
       - "/build/monero"
       - "/build/p2pool"
       - "/build/tor"
       - "/build/xmrig-proxy"
-      # The local test-runner image (#2078): a base digest here is as unscanned as any other if
-      # nothing asks. Same reasoning scripts/install-test-tools.sh gives for the bench images.
-      - "/tests/runner"
     schedule:
       interval: "weekly"
     groups:
@@ -86,6 +84,16 @@ updates:
       - dependency-name: "*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
+  - package-ecosystem: "gomod"
+    directories:
+      - "/os/rootfs/tools/compose"
+      - "/os/rootfs/tools/cosign"
+    schedule:
+      interval: "weekly"
+    groups:
+      rootfs-tools:
+        patterns: ["*"]
+
   # Third-party image digests pinned directly in docker-compose.yml (Tari node + wallet,
   # docker-socket-proxy, caddy) — outside build/*, so the `docker` entry above never sees them,
   # and they feed both channels: pulled on the DIY stack, baked into the appliance image (#833).
@@ -106,6 +114,16 @@ updates:
       - dependency-name: "*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
+  - package-ecosystem: "docker-compose"
+    directory: "/tests/integration/mini-stack"
+    schedule:
+      interval: "weekly"
+    groups:
+      compose:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "pithead-dashboard"
+
   # Test-harness images. POLICY CHANGED (#2059 follow-up): these used to be covered by no entry at
   # all, on the reasoning that test scaffolding is never shipped or flashed, so a stale base costs a
   # rebuild rather than a CVE in a user's hands. That is still true of the CONSEQUENCE, and it is
@@ -124,6 +142,7 @@ updates:
     directories:
       - "/tests/netwatch"
       - "/tests/integration/tor-client"
+      - "/tests/runner"
       - "/tests/integration/mergemine"
     schedule:
       interval: "weekly"
@@ -154,4 +173,12 @@ updates:
         patterns: ["*"]
       mergemine-fixture-security:
         applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      pre-commit:
         patterns: ["*"]

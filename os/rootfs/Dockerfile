@@ -1,26 +1,30 @@
-FROM golang:1.26.11-trixie@sha256:cff05dd6b81c901f2e8249eb6f91c69a60451d0f12c26bfef08e476a85b32d4d AS gobuild
+FROM golang:1.27.4-trixie@sha256:f18c3d73a184fb0582828510722e723b63a93f7188d11dd223d9be6f6880e65d AS gobuild
 
-ARG COMPOSE_VERSION=v5.7.2
 ARG COMPOSE_COMMIT=ed25575984c8dbd1ad137c93002d782f52478809
-ARG COSIGN_VERSION=v3.1.3
-ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
+ARG COSIGN_COMMIT=0e48502cf5ef34e2e60bbd3617aa19945712f705
 ARG COMPOSE_GO_RAISES="golang.org/x/net@v0.62.0"
-ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.62.0 google.golang.org/grpc@v1.83.2 github.com/klauspost/compress@v1.18.7 github.com/go-jose/go-jose/v4@v4.1.6"
+ARG COSIGN_GO_RAISES="golang.org/x/net@v0.62.0"
 ENV CGO_ENABLED=0
 
-RUN git clone --filter=blob:none --no-checkout https://github.com/docker/compose /src/compose \
+COPY os/rootfs/tools/ /tools/
+
+RUN COMPOSE_VERSION="$(/tools/module-version.sh /tools/compose/go.mod github.com/docker/compose/v5)" \
+    && [ -n "${COMPOSE_VERSION}" ] \
+    && git clone --filter=blob:none --no-checkout https://github.com/docker/compose /src/compose \
     && git -C /src/compose checkout --detach "${COMPOSE_COMMIT}" \
     && { [ "$(git -C /src/compose describe --tags --exact-match "${COMPOSE_COMMIT}")" = "${COMPOSE_VERSION}" ] \
-        || { echo "COMPOSE_COMMIT ${COMPOSE_COMMIT} is not tag ${COMPOSE_VERSION} — a compose bump is TWO ARGs; resolve the pair with: gh api repos/docker/compose/commits/${COMPOSE_VERSION} --jq .sha" >&2; exit 1; }; } \
+        || { echo "COMPOSE_COMMIT ${COMPOSE_COMMIT} is not tag ${COMPOSE_VERSION} — a compose bump is tools/compose/go.mod AND COMPOSE_COMMIT; resolve the commit with: gh api repos/docker/compose/commits/${COMPOSE_VERSION} --jq .sha" >&2; exit 1; }; } \
     && go -C /src/compose get ${COMPOSE_GO_RAISES} \
     && go build -C /src/compose -trimpath -tags e2e \
         -ldflags "-w -X github.com/docker/compose/v5/internal.Version=${COMPOSE_VERSION}" \
         -o /out/docker-compose ./cmd
 
-RUN git clone --filter=blob:none --no-checkout https://github.com/sigstore/cosign /src/cosign \
+RUN COSIGN_VERSION="$(/tools/module-version.sh /tools/cosign/go.mod github.com/sigstore/cosign/v3)" \
+    && [ -n "${COSIGN_VERSION}" ] \
+    && git clone --filter=blob:none --no-checkout https://github.com/sigstore/cosign /src/cosign \
     && git -C /src/cosign checkout --detach "${COSIGN_COMMIT}" \
     && { [ "$(git -C /src/cosign describe --tags --exact-match "${COSIGN_COMMIT}")" = "${COSIGN_VERSION}" ] \
-        || { echo "COSIGN_COMMIT ${COSIGN_COMMIT} is not tag ${COSIGN_VERSION} — a cosign bump is TWO ARGs; resolve the pair with: gh api repos/sigstore/cosign/commits/${COSIGN_VERSION} --jq .sha" >&2; exit 1; }; } \
+        || { echo "COSIGN_COMMIT ${COSIGN_COMMIT} is not tag ${COSIGN_VERSION} — a cosign bump is tools/cosign/go.mod AND COSIGN_COMMIT; resolve the commit with: gh api repos/sigstore/cosign/commits/${COSIGN_VERSION} --jq .sha" >&2; exit 1; }; } \
     && go -C /src/cosign get ${COSIGN_GO_RAISES} \
     && go build -C /src/cosign -trimpath \
         -ldflags "-buildid= -X sigs.k8s.io/release-utils/version.gitVersion=${COSIGN_VERSION} \
@@ -28,12 +32,14 @@ RUN git clone --filter=blob:none --no-checkout https://github.com/sigstore/cosig
             -X sigs.k8s.io/release-utils/version.gitTreeState=dirty" \
         -o /out/cosign ./cmd/cosign
 
-RUN /out/docker-compose version && /out/cosign version \
+RUN COMPOSE_VERSION="$(/tools/module-version.sh /tools/compose/go.mod github.com/docker/compose/v5)" \
+    && COSIGN_VERSION="$(/tools/module-version.sh /tools/cosign/go.mod github.com/sigstore/cosign/v3)" \
+    && /out/docker-compose version && /out/cosign version \
     && /out/docker-compose version | grep -qF "${COMPOSE_VERSION}" \
     && /out/cosign version | grep -qF "${COSIGN_VERSION}" \
-    && go version /out/docker-compose | grep -qxF "/out/docker-compose: go1.26.11" \
-    && go version /out/cosign | grep -qxF "/out/cosign: go1.26.11" \
-    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/klauspost/compress[[:space:]]+v1\.18\.7[[:space:]]' \
+    && go version /out/docker-compose | grep -qxF "/out/docker-compose: $(go env GOVERSION)" \
+    && go version /out/cosign | grep -qxF "/out/cosign: $(go env GOVERSION)" \
+    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/klauspost/compress[[:space:]]+v1\.20\.1[[:space:]]' \
     && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/go-jose/go-jose/v4[[:space:]]+v4\.1\.6[[:space:]]'
 
 # ---------------------------------------------------------------------------------------------
@@ -218,6 +224,10 @@ COPY os/overlay/pithead-sync /usr/local/sbin/pithead-sync
 COPY os/overlay/pithead-mount-generator /usr/lib/systemd/system-generators/pithead-mount-generator
 COPY os/overlay/pithead-boot.service os/overlay/pithead-setup-again.service os/overlay/pithead-address-watch.service os/overlay/pithead-address-watch.timer os/overlay/pithead-miner-recovery.service os/overlay/pithead-miner-recovery.timer /etc/systemd/system/
 COPY os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version os/overlay/pithead-address-watch os/overlay/pithead-miner-recovery /usr/local/sbin/
+COPY os/overlay/pithead-egress-audit.service /etc/systemd/system/pithead-egress-audit.service
+COPY os/overlay/pithead-egress-audit /usr/local/sbin/pithead-egress-audit
+COPY os/rootfs/pithead-egress-audit-slice /usr/local/share/pithead/02f-host-egress-audit.sh
+COPY data/egress-map.tsv /usr/share/pithead/egress-map.tsv
 # Physical-presence configuration channel (#786 sub-issue D): pithead-boot's one stage before render; no unit of its own.
 COPY os/overlay/pithead-media-config /usr/local/sbin/pithead-media-config
 # Hugepages sizing (#977): the sysctl.d reservation above is sized for the supported 16 GB machine;
@@ -296,7 +306,7 @@ RUN sed -i 's/^#\?use-ipv6=.*/use-ipv6=no/' /etc/avahi/avahi-daemon.conf
 RUN systemctl enable podman.socket pithead-boot.service pithead-cpu-governor.service avahi-daemon \
         systemd-timesyncd systemd-resolved \
         systemd-networkd systemd-networkd-wait-online pithead-sync.service pithead-firstboot.service \
-        pithead-data-reset.service pithead-machine-id.service pithead-hugepages.service \
+        pithead-data-reset.service pithead-machine-id.service pithead-hugepages.service pithead-egress-audit.service \
         pithead-journal-persist.service pithead-setup-again.service pithead-boot-version.service \
         pithead-address-watch.timer pithead-miner-recovery.timer \
     && systemctl disable ssh

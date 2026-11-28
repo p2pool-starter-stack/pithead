@@ -20,6 +20,7 @@ from mining_dashboard.config import config
 from mining_dashboard.helper.utils import effective_hashrate, get_tier_info
 from mining_dashboard.service import mining_verdict as mv
 from mining_dashboard.service.control_service import SECRET_SENTINEL, mask_secrets
+from mining_dashboard.service.workers.worker_presence import worker_key
 
 # xmrig-proxy 6.x /workers rows are positional arrays; name the fields we read so the
 # normalization below isn't a wall of magic indices. A row has >= _PX_MIN_FIELDS entries.
@@ -383,9 +384,9 @@ class WorkerLifecycle:
         live = []
         seen = set()
         for w in workers:
-            name = w.get("name")
-            seen.add(name)
-            st = self._state.setdefault(name, {"connected_since": None, "last_active": 0.0})
+            key = worker_key(w)
+            seen.add(key)
+            st = self._state.setdefault(key, {"connected_since": None, "last_active": 0.0})
             if w.get("status") == "online":
                 if st["connected_since"] is None:  # new connection or a reconnect
                     st["connected_since"] = now

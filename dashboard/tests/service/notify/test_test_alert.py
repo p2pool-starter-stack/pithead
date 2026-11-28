@@ -68,12 +68,12 @@ def test_one_failed_sink_does_not_hide_the_other_verdicts_or_secrets():
         enabled=True,
         bot_token=token,
         chat_id="123",
-        tor_proxy="",
+        tor_proxy="socks5h://tor:9050",
     )
     sinks = [
-        WebhookSink(f"https://refused.invalid/{webhook_secret}", tor_proxy=""),
-        WebhookSink("https://rejected.invalid/hook", tor_proxy=""),
-        NtfySink("https://ntfy.invalid/topic", token=ntfy_secret, tor_proxy=""),
+        WebhookSink(f"https://refused.invalid/{webhook_secret}", tor_proxy="socks5h://tor:9050"),
+        WebhookSink("https://rejected.invalid/hook", tor_proxy="socks5h://tor:9050"),
+        NtfySink("https://ntfy.invalid/topic", token=ntfy_secret, tor_proxy="socks5h://tor:9050"),
     ]
     attempts = []
     responses = []

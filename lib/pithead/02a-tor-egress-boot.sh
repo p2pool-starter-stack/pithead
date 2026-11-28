@@ -19,15 +19,9 @@
 # the last apply writes the live rules.
 TOR_EGRESS_BOOT_UNIT="pithead-egress.service"
 
-# The unit text for <iptables path> <subnet> <tor_ip>. Pure (args only) so it unit-tests.
-#
-# Inserts run in REVERSE, each at position 1: the DROP goes in first and every ACCEPT lands above
-# it. If an insert fails halfway, systemd stops at that line with the DROP already live, so a
-# partial install over-blocks instead of opening the box. The `-D` lines first make a manual
-# restart idempotent (a start with the rules already present replaces rather than stacks them);
-# the `-` prefix lets them fail when the rule is absent, which at boot it always is.
-render_tor_egress_boot_unit() { # <iptables> <subnet> <tor_ip> [sync-ip ...]
+render_tor_egress_boot_unit() {
     local ipt="$1" subnet="$2" tor_ip="$3" rule i ip chain marker marker2 cmd qmarker qmarker2 qipt qtag qip
+    local audit_body audit_line audit_cmd
     shift 3
     local -a rules
     mapfile -t rules < <(tor_egress_rules "$subnet" "$tor_ip")
@@ -78,6 +72,17 @@ EOF
         chain=
         marker2=
     done
+    if command -v nft >/dev/null 2>&1 && audit_body=$(render_host_egress_audit_nft appliance); then
+        audit_cmd='printf "%%s\n"'
+        while IFS= read -r audit_line; do
+            audit_line="${audit_line//%/%%}"
+            audit_line="${audit_line//\\/\\\\}"
+            audit_line="${audit_line//\"/\\\"}"
+            audit_cmd+=" \"$audit_line\""
+        done <<<"$audit_body"
+        audit_cmd+=' | nft -f -'
+        printf "ExecStart=-/bin/bash -c '%s'\n" "$audit_cmd"
+    fi
     cat <<EOF
 
 [Install]

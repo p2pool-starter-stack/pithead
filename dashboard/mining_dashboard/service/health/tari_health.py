@@ -15,7 +15,7 @@ Every signal the node offers is its own opinion of itself, so this monitor weigh
 Verdict: no signal is ``green``; one is ``amber`` with the reason; two corroborating signals, or
 explorer lag alone, is ``red``. Explorer lag is not counted while the node is on its initial sync
 (the sync view shows that progress; the node's own sync target exists only then, so it is no signal
-for a synced node). A missing or failed explorer fetch contributes nothing — never a false red.
+for a synced node).
 
 This monitor detects and alerts; it changes nothing. The verdict feeds the Tari panel, /api/state,
 ``pithead doctor`` and ``status``, and an alert on each entry into red whose next step is the
@@ -29,7 +29,12 @@ import os
 import time
 
 from mining_dashboard.config.config import TOR_SOCKS_PROXY
-from mining_dashboard.helper.http import bounded_get
+from mining_dashboard.helper.http import (
+    PROXY_PURPOSE_HEALTH,
+    bounded_get,
+    proxy_map,
+    purpose_proxy,
+)
 
 logger = logging.getLogger("TariHealth")
 
@@ -61,11 +66,10 @@ def _explorer_tip(url: str) -> int | None:
             url,
             max_bytes=EXPLORER_MAX_BYTES,
             timeout=EXPLORER_TIMEOUT_SEC,
-            proxies={"http": TOR_SOCKS_PROXY, "https": TOR_SOCKS_PROXY},
+            proxies=proxy_map(purpose_proxy(TOR_SOCKS_PROXY, PROXY_PURPOSE_HEALTH)),
         ).json()
         return int(body["tipInfo"]["metadata"]["best_block_height"])
     except Exception as exc:
-        # The type only: a request error's text carries the URL, which may hold a token.
         logger.info(
             "Tari explorer reference unavailable (%s); verdict uses local signals only.",
             type(exc).__name__,
@@ -94,6 +98,8 @@ class TariChainHealth:
         self._zero_since = None
         self._explorer_tip = None
         self._explorer_at = None
+        self._explorer_good_at = None
+        self._tip_expired = False
         self._best = None  # highest height seen: only a rise past it is progress
         self._was_red = False  # a red alert was delivered during the current stretch of red
         self.verdict = {"level": "green", "reasons": [], "advice": ""}
@@ -160,8 +166,15 @@ class TariChainHealth:
         ):
             self._explorer_at = now
             tip = await asyncio.to_thread(self._explorer, self.explorer_url)
-            # A failed fetch drops the reference rather than keeping an old one alive past its hour.
-            self._explorer_tip = tip
+            if tip is not None:
+                self._explorer_tip, self._explorer_good_at = tip, now
+                self._tip_expired = False
+            elif (
+                self._explorer_tip is not None
+                and now - self._explorer_good_at >= 2 * EXPLORER_INTERVAL_SEC
+            ):
+                self._explorer_tip = None
+                self._tip_expired = True
         verdict = self.observe(sync, connections, now)
         await self._alert_progress(sync)
         await self._alert(verdict)
@@ -191,6 +204,10 @@ class TariChainHealth:
         if self._notify is None:
             return
         level = verdict["level"]
+        if level == "red":
+            self._tip_expired = False
+        elif level == "green" and self._tip_expired:
+            return
         if level != "red":
             self._was_red = False  # the next red is a new entry
         if level == "red" and not self._was_red:

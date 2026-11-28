@@ -11,11 +11,14 @@ import requests
 from mining_dashboard.helper.http import (
     MAX_RESPONSE_BYTES,
     BoundedResponse,
+    NoUsableProxy,
     ResponseTooLarge,
     bounded_get,
     bounded_read,
     bounded_request,
 )
+
+_PROXIES = {"http": "socks5h://tor.test:9050", "https": "socks5h://tor.test:9050"}
 
 
 def _streaming_resp(chunks, status_code=200, encoding="utf-8"):
@@ -32,7 +35,7 @@ class TestBoundedGet:
             "mining_dashboard.helper.http.requests.get",
             return_value=_streaming_resp([b'{"tag_nam', b'e": "v1.2.3"}']),
         ) as g:
-            resp = bounded_get("https://example.test/x", timeout=20)
+            resp = bounded_get("https://example.test/x", timeout=20, proxies=_PROXIES)
         assert resp.status_code == 200
         assert resp.text == '{"tag_name": "v1.2.3"}'
         assert resp.json() == {"tag_name": "v1.2.3"}
@@ -45,7 +48,7 @@ class TestBoundedGet:
             "mining_dashboard.helper.http.requests.get",
             return_value=_streaming_resp([b"x" * 1024, b"x" * 1024]),
         ):
-            resp = bounded_get("https://example.test/x", max_bytes=2048)
+            resp = bounded_get("https://example.test/x", max_bytes=2048, proxies=_PROXIES)
         assert resp.content == b"x" * 2048
 
     def test_over_cap_raises_request_exception(self):
@@ -56,7 +59,7 @@ class TestBoundedGet:
             return_value=_streaming_resp([b"x" * 1024] * 3),
         ):
             with pytest.raises(requests.RequestException):
-                bounded_get("https://example.test/x", max_bytes=2048)
+                bounded_get("https://example.test/x", max_bytes=2048, proxies=_PROXIES)
 
     def test_stops_reading_at_the_cap(self):
         # The over-cap chunk is the last one consumed — the rest of a multi-GB body is never read.
@@ -66,7 +69,7 @@ class TestBoundedGet:
             return_value=_streaming_resp(chunks),
         ):
             with pytest.raises(ResponseTooLarge):
-                bounded_get("https://example.test/x", max_bytes=1024)
+                bounded_get("https://example.test/x", max_bytes=1024, proxies=_PROXIES)
         assert next(chunks, None) is not None  # at least one chunk was left unread
 
     def test_kwargs_pass_through(self):
@@ -90,7 +93,7 @@ class TestBoundedGet:
     def test_bad_encoding_degrades_not_crashes(self):
         resp_obj = _streaming_resp([b"\xff\xfe"], encoding=None)
         with patch("mining_dashboard.helper.http.requests.get", return_value=resp_obj):
-            resp = bounded_get("https://example.test/x")
+            resp = bounded_get("https://example.test/x", proxies=_PROXIES)
         assert isinstance(resp.text, str)  # errors="replace", never a decode crash
 
     def test_raise_for_status_matches_requests_contract(self):
@@ -113,13 +116,168 @@ class TestBoundedDeadline:
         with patch("mining_dashboard.helper.http.requests.get", return_value=resp):
             started = time.monotonic()
             with pytest.raises(requests.Timeout):
-                bounded_get("https://example.test/x", deadline=0.2)
+                bounded_get("https://example.test/x", deadline=0.2, proxies=_PROXIES)
         assert time.monotonic() - started < 1
 
     def test_a_body_inside_the_deadline_is_returned(self):
         resp = _streaming_resp([b"ok"])
         with patch("mining_dashboard.helper.http.requests.get", return_value=resp):
-            assert bounded_get("https://example.test/x", deadline=5).content == b"ok"
+            assert bounded_get("https://example.test/x", deadline=5, proxies=_PROXIES).content == (
+                b"ok"
+            )
+
+
+class TestEgressGuard:
+    def test_public_host_without_proxy_is_refused(self):
+        with patch("mining_dashboard.helper.http.requests.get") as g:
+            with pytest.raises(NoUsableProxy):
+                bounded_get("https://api.github.com/repos/x/releases/latest")
+        g.assert_not_called()
+
+    def test_the_refusal_is_a_request_exception_subclass(self):
+        assert issubclass(NoUsableProxy, requests.RequestException)
+
+    def test_the_refusal_opens_no_socket(self):
+        with patch("socket.socket") as sock:
+            with pytest.raises(NoUsableProxy):
+                bounded_get("https://api.github.com/x")
+            with pytest.raises(NoUsableProxy):
+                bounded_request("POST", "http://8.8.8.8:8080/json_rpc")
+        sock.assert_not_called()
+
+    def test_a_malformed_url_raises_a_request_exception(self):
+        with patch("mining_dashboard.helper.http.requests.get") as g:
+            with pytest.raises(NoUsableProxy):
+                bounded_get("http://[::1")
+        g.assert_not_called()
+
+    def test_a_netloc_with_a_backslash_is_refused(self):
+        with patch("mining_dashboard.helper.http.requests.get") as g:
+            for url in ("http://evil.com\\@10.0.0.1/x", "http://10.0.0.1\\@evil.com/x"):
+                with pytest.raises(NoUsableProxy):
+                    bounded_get(url, proxies=_PROXIES)
+        g.assert_not_called()
+
+    def test_a_private_host_behind_userinfo_is_still_evaluated(self):
+        with patch(
+            "mining_dashboard.helper.http.requests.get", return_value=_streaming_resp([b"ok"])
+        ):
+            assert bounded_get("https://user:pass@127.0.0.1:8000/api/x").content == b"ok"
+        with pytest.raises(NoUsableProxy):
+            bounded_get("http://10.0.0.1@evil.com/x")
+
+    def test_a_session_caller_to_a_public_host_is_refused(self):
+        session = MagicMock()
+        with pytest.raises(NoUsableProxy):
+            bounded_request("GET", "https://example.test/1/summary", session=session)
+        assert not session.get.called
+
+    def test_empty_proxies_string_counts_as_no_proxy(self):
+        with pytest.raises(NoUsableProxy):
+            bounded_get("https://example.test/x", proxies="")
+
+    def test_empty_scheme_entries_count_as_no_proxy(self):
+        with pytest.raises(NoUsableProxy):
+            bounded_get("https://example.test/x", proxies={"https": ""})
+        with pytest.raises(NoUsableProxy):
+            bounded_get("http://example.test/x", proxies={"http": ""})
+        with pytest.raises(NoUsableProxy):
+            bounded_get("https://example.test/x", proxies={"https": "   "})
+
+    def test_the_proxy_is_checked_per_target_scheme(self):
+        with pytest.raises(NoUsableProxy):
+            bounded_get("https://example.test/x", proxies={"http": "socks5h://tor.test:9050"})
+        with pytest.raises(NoUsableProxy):
+            bounded_get("http://example.test/x", proxies={"https": "socks5h://tor.test:9050"})
+        with patch(
+            "mining_dashboard.helper.http.requests.get", return_value=_streaming_resp([b"ok"])
+        ):
+            got = bounded_get("https://example.test/x", proxies={"https": "socks5h://t:1"})
+        assert got.content == b"ok"
+
+    def test_a_string_proxy_covers_every_scheme(self):
+        with patch(
+            "mining_dashboard.helper.http.requests.get", return_value=_streaming_resp([b"ok"])
+        ):
+            assert bounded_get("https://example.test/x", proxies="socks5h://t:1").content == b"ok"
+
+    def test_hostnames_are_never_private(self):
+        for url in (
+            "http://localhost:8080/x",
+            "http://mybox.local/x",
+            "http://1234/x",
+            "https://example.test/x",
+        ):
+            with pytest.raises(NoUsableProxy):
+                bounded_get(url)
+
+    def test_private_ip_literals_are_allowed_direct(self):
+        urls = [
+            "http://127.0.0.1:3344/1/summary",
+            "https://10.0.0.5/x",
+            "http://172.16.9.9/x",
+            "https://192.168.1.7/x",
+            "http://169.254.10.1/x",
+            "https://100.64.0.1/x",
+            "https://100.127.255.255/x",
+            "http://[::1]:8080/x",
+            "https://[fd00::7]/x",
+            "https://[fc00::1]/x",
+            "https://[fe80::1]/x",
+        ]
+        with patch(
+            "mining_dashboard.helper.http.requests.get",
+            side_effect=lambda *args, **kwargs: _streaming_resp([b"ok"]),
+        ) as g:
+            for url in urls:
+                assert bounded_get(url).content == b"ok"
+        assert g.call_count == len(urls)
+
+    def test_public_ip_literals_are_refused_without_a_proxy(self):
+        for url in (
+            "https://8.8.8.8/x",
+            "https://100.128.0.1/x",
+            "https://172.32.0.1/x",
+            "https://[2001:4860:4860::8888]/x",
+            "https://16842753/x",
+            "HTTP://EXAMPLE.COM/x",
+        ):
+            with pytest.raises(NoUsableProxy):
+                bounded_get(url)
+
+    def test_an_unproxied_call_never_follows_redirects(self):
+        with patch(
+            "mining_dashboard.helper.http.requests.get", return_value=_streaming_resp([b"ok"])
+        ) as g:
+            bounded_get("http://10.0.0.1:18081/json_rpc")
+            bounded_get("http://127.0.0.1/x", allow_redirects=True)
+        for call in g.call_args_list:
+            assert call.kwargs["allow_redirects"] is False
+
+    def test_a_proxied_call_keeps_redirects_on_the_proxy(self):
+        with patch(
+            "mining_dashboard.helper.http.requests.get", return_value=_streaming_resp([b"ok"])
+        ) as g:
+            bounded_get("https://example.test/x", proxies=_PROXIES)
+        assert "allow_redirects" not in g.call_args.kwargs
+
+    def test_a_proxy_for_one_scheme_never_follows_redirects(self):
+        with patch(
+            "mining_dashboard.helper.http.requests.get", return_value=_streaming_resp([b"ok"])
+        ) as g:
+            bounded_get("http://example.test/x", proxies={"http": "socks5h://tor:9050"})
+        assert g.call_args.kwargs["allow_redirects"] is False
+
+    def test_an_ipv4_mapped_public_literal_is_refused(self):
+        for url in ("https://[::ffff:8.8.8.8]/x", "https://[::ffff:0808:0808]/x"):
+            with pytest.raises(NoUsableProxy):
+                bounded_get(url)
+
+    def test_an_ipv4_mapped_private_literal_is_allowed_direct(self):
+        with patch(
+            "mining_dashboard.helper.http.requests.get", return_value=_streaming_resp([b"ok"])
+        ):
+            assert bounded_get("http://[::ffff:10.0.0.1]:18081/x").content == b"ok"
 
 
 class _Stream:
@@ -227,7 +385,7 @@ class TestBoundedRequest:
         bounding its reads must not silently drop that by falling back to module-level requests."""
         session = MagicMock()
         session.get.return_value = _streaming_resp([b"{}"])
-        resp = bounded_request("GET", "http://x/1/summary", session=session)
+        resp = bounded_request("GET", "http://127.0.0.1:3344/1/summary", session=session)
         assert resp.json() == {}
         assert session.get.called
         assert session.get.call_args.kwargs["stream"] is True
@@ -236,7 +394,7 @@ class TestBoundedRequest:
         session = MagicMock()
         session.put.return_value = _streaming_resp([b'{"ok": true}'])
         assert bounded_request(
-            "PUT", "http://x/1/config", session=session, json={"a": 1}
+            "PUT", "http://127.0.0.1:3344/1/config", session=session, json={"a": 1}
         ).json() == {"ok": True}
         assert session.put.call_args.kwargs["json"] == {"a": 1}
         assert not session.get.called
@@ -245,20 +403,22 @@ class TestBoundedRequest:
         with patch(
             "mining_dashboard.helper.http.requests.post", return_value=_streaming_resp([b"{}"])
         ) as post:
-            bounded_request("POST", "http://x/json_rpc", json={"m": "x"})
+            bounded_request("POST", "http://127.0.0.1:18081/json_rpc", json={"m": "x"})
         assert post.call_args.kwargs["json"] == {"m": "x"}
 
     def test_the_cap_applies_to_any_method(self):
         session = MagicMock()
         session.put.return_value = _streaming_resp([b"x" * 1024] * 3)
         with pytest.raises(ResponseTooLarge):
-            bounded_request("PUT", "http://x/1/config", max_bytes=2048, session=session)
+            bounded_request(
+                "PUT", "http://127.0.0.1:3344/1/config", max_bytes=2048, session=session
+            )
 
     def test_bounded_get_still_delegates_with_its_660_signature(self):
         with patch(
             "mining_dashboard.helper.http.requests.get", return_value=_streaming_resp([b"{}"])
         ) as g:
-            bounded_get("https://example.test/x", timeout=7, params={"a": "b"})
+            bounded_get("https://example.test/x", timeout=7, params={"a": "b"}, proxies=_PROXIES)
         assert g.call_args.kwargs["timeout"] == 7
         assert g.call_args.kwargs["params"] == {"a": "b"}
         assert g.call_args.kwargs["stream"] is True

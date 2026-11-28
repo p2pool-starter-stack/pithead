@@ -64,6 +64,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/hugepages-boot-verdict.sh"
 # shellcheck source=tests/os/secure-boot-boot-verdict.sh
 . "$SCRIPT_DIR/secure-boot-boot-verdict.sh"
+# shellcheck source=tests/os/host-egress-audit-boot-verdict.sh
+. "$SCRIPT_DIR/host-egress-audit-boot-verdict.sh"
 # shellcheck source=tests/os/failure-evidence.sh
 . "$SCRIPT_DIR/failure-evidence.sh"
 # shellcheck source=tests/os/staging-failure-evidence.sh
@@ -152,6 +154,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/setup-again-leg.sh"
 # shellcheck source=tests/os/wizard-console-leg.sh
 . "$SCRIPT_DIR/wizard-console-leg.sh"
+# shellcheck source=tests/os/netwatch-window.sh
+. "$SCRIPT_DIR/netwatch-window.sh"
 # shellcheck source=tests/os/rig-config-meta-wait.sh
 . "$SCRIPT_DIR/rig-config-meta-wait.sh"
 # shellcheck source=tests/os/rig-control-off-leg.sh
@@ -193,8 +197,8 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     -h | --help)
-        printf 'tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|tor-heal-exhausted|p2pool-heal|all]\n'
-        sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//'
+        printf 'tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|tor-heal-exhausted|p2pool-heal|monerod-redial|all]\n'
+        sed -n '2,60p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
     *)
@@ -252,6 +256,8 @@ source "$SCRIPT_DIR/phases/tor-heal.sh" || exit $?
 source "$SCRIPT_DIR/phases/tor-heal-exhausted.sh" || exit $?
 # shellcheck source=tests/os/phases/pool-heal.sh
 source "$SCRIPT_DIR/phases/pool-heal.sh" || exit $?
+# shellcheck source=tests/os/phases/monerod-redial.sh
+source "$SCRIPT_DIR/phases/monerod-redial.sh" || exit $?
 require_owner_payouts
 require_host
 require_clean_bench
@@ -292,6 +298,7 @@ stack) _run_phase stack phase_stack ;;
 tor-heal) _run_phase tor-heal phase_tor_heal ;;
 tor-heal-exhausted) _run_phase tor-heal-exhausted phase_tor_heal_exhausted ;;
 p2pool-heal) _run_phase p2pool-heal phase_p2pool_heal ;;
+monerod-redial) _run_phase monerod-redial phase_monerod_redial ;;
 all)
     # ALL of them. This arm once ran five of eight while the release checklist told a maintainer
     # that step 1 covered everything — the mid-write and mid-commit power cuts, the corrupt-bundle
