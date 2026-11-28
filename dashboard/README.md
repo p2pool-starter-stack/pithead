@@ -4,22 +4,6 @@ The monitoring web UI and XvB switching engine for Pithead. It aggregates stats 
 collectors, the XMRig proxy, and the Tari node, and serves a single-page dashboard (behind Caddy)
 on `127.0.0.1:8000`.
 
-The app answers only requests that come through Caddy. pithead generates `DASHBOARD_PROXY_SECRET`
-into `.env` with the other generated secrets and passes it to the Caddy and dashboard containers.
-Caddy reads it from its environment (`{env.DASHBOARD_PROXY_SECRET}`, so the rendered Caddyfile and
-Caddy's config never hold the value) and sends it as `X-Pithead-Proxy-Secret` on every request it
-forwards, `forward_auth` checks included, with `Host` set to `127.0.0.1:8000`. The app answers 403
-to a request without the header, with a wrong value, or with a `Host` other than `127.0.0.1:8000`
-or `localhost:8000`. An empty or unset secret refuses every request. Only `GET /api/health` answers
-without the header (it still checks `Host`).
-
-Local callers send the header themselves: the container healthcheck (`healthcheck.sh`) sends
-`HEAD /api/state` with the value from its own environment, so a 200 proves the server answers and
-the state builds; `pithead status` and `doctor` read the value from `.env` and pass it to curl on
-stdin (`--header @-`), never as an argument; doctor's "dashboard app answers" check uses
-`/api/health`. pithead keeps the value across applies; to replace it, delete its line from `.env`
-and run `apply`.
-
 ## Architecture
 
 The server is a data API; the browser renders the UI. There is no server-side templating.

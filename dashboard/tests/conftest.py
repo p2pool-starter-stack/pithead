@@ -7,9 +7,7 @@ import sqlite3
 
 import pytest
 
-from mining_dashboard.config import config
 from mining_dashboard.service.storage_service import StateManager
-from mining_dashboard.web import auth
 
 
 @pytest.fixture(autouse=True)
@@ -74,19 +72,3 @@ def full_disk(monkeypatch):
         monkeypatch.setattr(store, "_conn", FullDiskConnection())
 
     return make
-
-
-PROXY_SECRET = "test-proxy-secret"
-
-
-@pytest.fixture
-def aiohttp_client(aiohttp_client, monkeypatch):
-    monkeypatch.setattr(config, "DASHBOARD_PROXY_SECRET", PROXY_SECRET)
-    front = {"Host": "127.0.0.1:8000", auth.FRONT_HEADER: PROXY_SECRET}
-
-    async def client(app, *, front_headers=True, **kwargs):
-        if front_headers:
-            kwargs["headers"] = {**front, **kwargs.get("headers", {})}
-        return await aiohttp_client(app, **kwargs)
-
-    return client

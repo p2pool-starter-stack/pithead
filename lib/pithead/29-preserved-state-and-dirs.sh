@@ -12,7 +12,6 @@ load_preserved_state() {
     MONERO_ONION=$(env_get MONERO_ONION_ADDRESS)
     TARI_ONION=$(env_get TARI_ONION_ADDRESS)
     P2POOL_ONION=$(env_get P2POOL_ONION_ADDRESS)
-    DASHBOARD_PROXY_SECRET=$(env_get DASHBOARD_PROXY_SECRET)
     DASHBOARD_ONION=$(env_get DASHBOARD_ONION_ADDRESS)
     DASHBOARD_ONION_CLIENT_PUBKEY=$(env_get DASHBOARD_ONION_CLIENT_PUBKEY)
     DASHBOARD_ONION_CLIENT_PRIVKEY=$(env_get DASHBOARD_ONION_CLIENT_PRIVKEY)
@@ -21,7 +20,6 @@ load_preserved_state() {
     [ -n "$PROXY_AUTH_TOKEN" ] || PROXY_AUTH_TOKEN=$(openssl rand -hex 12)
     [ -n "$WALLET_RPC_PASSWORD" ] || WALLET_RPC_PASSWORD=$(openssl rand -hex 12)
     [ -n "$TARI_WALLET_PASSWORD" ] || TARI_WALLET_PASSWORD=$(openssl rand -hex 16)
-    [ -n "$DASHBOARD_PROXY_SECRET" ] || DASHBOARD_PROXY_SECRET=$(openssl rand -hex 32)
     [ -n "$MONERO_ONION" ] || MONERO_ONION="placeholder"
     [ -n "$TARI_ONION" ] || TARI_ONION="placeholder"
     [ -n "$P2POOL_ONION" ] || P2POOL_ONION="placeholder"

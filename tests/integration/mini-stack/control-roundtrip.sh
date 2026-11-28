@@ -51,7 +51,6 @@ dashboard_control_request() { # <preview|commit> <json-body>; sets CONTROL_RESPO
     CONTROL_RESPONSE="$SANDBOX/control-response.json"
     compose exec -T dashboard python3 - "$route" "$body" >"$CONTROL_RESPONSE" 2>/dev/null <<'PY' &
 import json
-import os
 import sys
 import time
 import urllib.request
@@ -64,7 +63,6 @@ request = urllib.request.Request(
         "Content-Type": "application/json",
         "X-Auth-User": "mini-stack-admin",
         "X-Pithead-Control": "1",
-        "X-Pithead-Proxy-Secret": os.environ["DASHBOARD_PROXY_SECRET"],
     },
 )
 response = urllib.request.urlopen(request, timeout=40)
@@ -75,8 +73,7 @@ if response.status == 202:
     for _ in range(60):
         time.sleep(0.25)
         response = urllib.request.urlopen(
-            urllib.request.Request(f"http://127.0.0.1:8000/api/control/result?id={rid}", headers={"X-Pithead-Proxy-Secret": os.environ["DASHBOARD_PROXY_SECRET"]}),
-            timeout=5,
+            f"http://127.0.0.1:8000/api/control/result?id={rid}", timeout=5
         )
         payload = json.loads(response.read())
         if response.status != 202 and payload.get("status") != skip:
@@ -107,11 +104,9 @@ PY
 
 dashboard_config() {
     compose exec -T dashboard python3 - <<'PY'
-import os
 import urllib.request
 
-request = urllib.request.Request("http://127.0.0.1:8000/api/config", headers={"X-Pithead-Proxy-Secret": os.environ["DASHBOARD_PROXY_SECRET"]})
-print(urllib.request.urlopen(request, timeout=5).read().decode())
+print(urllib.request.urlopen("http://127.0.0.1:8000/api/config", timeout=5).read().decode())
 PY
 }
 

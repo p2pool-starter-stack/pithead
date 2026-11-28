@@ -54,12 +54,10 @@ grab("cred", _cred)
 grab("rounds", lambda: S.get(
     "https://xmrvsbeast.com/p2pool/winners_recent_full_pub.txt", timeout=50
 ).text.splitlines()[:3])
+# 6. Our own side of the ledger, locally: what the proxy is actually routing and the mode —
+#    distinguishes "our donation sagged" from "XvB delivered less" without inference.
 def _local():
-    req = urllib.request.Request(
-        "http://127.0.0.1:8000/api/state",
-        headers={"X-Pithead-Proxy-Secret": os.environ["DASHBOARD_PROXY_SECRET"]},
-    )
-    d = json.load(urllib.request.urlopen(req, timeout=10))
+    d = json.load(urllib.request.urlopen("http://127.0.0.1:8000/api/state", timeout=10))
     hr = d.get("hashrate", {})
     return {"mode": hr.get("mode_name"), "routed_1h": hr.get("xvb_routed_1h"),
             "p2p_1h": hr.get("p2p_1h"), "total": hr.get("total"),

@@ -688,7 +688,6 @@ services:
         bind:
           create_host_path: false
     environment:
-      - DASHBOARD_PROXY_SECRET=${DASHBOARD_PROXY_SECRET:-}
       - PROXY_STRATUM_PASSWORD=${PROXY_STRATUM_PASSWORD:-}
       - PROXY_STRATUM_TLS=${PROXY_STRATUM_TLS:-false}
       - STRATUM_TLS_FINGERPRINT=${STRATUM_TLS_FINGERPRINT:-}
@@ -1019,8 +1018,6 @@ services:
     tmpfs:
       - /tmp
       - /config
-    environment:
-      - DASHBOARD_PROXY_SECRET=${DASHBOARD_PROXY_SECRET:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

@@ -81,29 +81,11 @@ phase_setup_defaults() {
     fi
     code=$(curl -ksS -o /dev/null -w '%{http_code}' -m 8 "https://$guest_ip/")
     [ "$code" = 401 ] && ok "fresh default dashboard requires its generated login" || bad "fresh default dashboard is not protected (HTTP $code)"
-    local anonymous=$code
     code=$(curl -ksS -u "admin:$password" -o /dev/null -w '%{http_code}' -m 8 "https://$guest_ip/")
     [ "$code" = 200 ] && ok "fresh default dashboard accepts the generated login" || bad "fresh generated login does not open the dashboard (HTTP $code)"
-    [ "$anonymous$code" = 401200 ] || setup_defaults_front_diag "$guest_ip"
     if SSH_TIMEOUT=60 _ssh 'bash -s' <"$SCRIPT_DIR/credential-journals.sh"; then
         ok "fresh default firstboot and system journals contain no bcrypt credential (#3131)"
     else
         bad "fresh default firstboot or system journal contains bcrypt, or could not be checked (#3131)"
     fi
-}
-
-setup_defaults_front_diag() {
-    info "front diag: anonymous body: $(curl -ksS -m 8 "https://$1/" 2>&1 | head -n 1)"
-    SSH_TIMEOUT=60 _ssh 'bash -s' 2>&1 <<'EOF' | while IFS= read -r line; do info "$line"; done
-cd /data/pithead || exit 0
-secret_of() { sed -n 's/^DASHBOARD_PROXY_SECRET=//p' | head -n 1 | tr -d "\"'"; }
-envs() { podman inspect "$1" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null; }
-same() { [ -n "$1" ] && [ "$1" = "$2" ] && echo yes || echo no; }
-e=$(secret_of <.env) c=$(envs caddy | secret_of) d=$(envs dashboard | secret_of)
-echo "front diag: secret length .env=${#e} caddy=${#c} dashboard=${#d}; equal .env/caddy=$(same "$e" "$c") .env/dashboard=$(same "$e" "$d") caddy/dashboard=$(same "$c" "$d")"
-echo "front diag: created caddy=$(podman inspect caddy --format '{{.Created}}' 2>&1) dashboard=$(podman inspect dashboard --format '{{.Created}}' 2>&1) .env mtime=$(stat -c %y .env)"
-echo "front diag: app with its own value: $(printf 'X-Pithead-Proxy-Secret: %s\n' "$d" | curl -sS -o /dev/null -w '%{http_code}' -m 5 --header @- http://127.0.0.1:8000/api/auth/check)"
-echo "front diag: app without a value: $(curl -sS -o /dev/null -w '%{http_code}' -m 5 http://127.0.0.1:8000/api/auth/check)"
-curl -sS -m 5 http://127.0.0.1:2019/config/apps/http/servers | jq -r '[.. | objects | select(.handler? == "reverse_proxy") | "front diag: caddy upstream \([.upstreams[]?.dial] | join(",")) Host=\(.headers.request.set.Host // ["unset"] | join(",")) secret=\(.headers.request.set["X-Pithead-Proxy-Secret"] // ["unset"] | join(","))"] | unique[]' || echo "front diag: caddy config unreadable"
-EOF
 }

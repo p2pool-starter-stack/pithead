@@ -32,7 +32,6 @@ run_case() {
         mv "$dir/new.json" "$dir/original.json"
     fi
     cp "$dir/original.json" "$dir/config.json"
-    printf 'DASHBOARD_PROXY_SECRET=fixture-secret\n' >"$dir/.env"
     cat >"$dir/pithead" <<'CLI'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -75,7 +74,6 @@ CLI
     cat >"$dir/bin/curl" <<'CURL'
 #!/usr/bin/env bash
 set -euo pipefail
-[[ " $* " = *" --header @- "* ]] && [ "$(cat)" = 'X-Pithead-Proxy-Secret: fixture-secret' ] || exit 22
 endpoint=${!#}
 endpoint=${endpoint##*/}
 printf 'curl-%s\n' "$endpoint" >>trace

@@ -20,10 +20,10 @@ set_wallet() { fake_ctl fake-wallet-rpc 18082 "$1" >/dev/null || c_bad "set Mone
 set_tari_wallet() { fake_ctl fake-tari-wallet 18153 "$1" >/dev/null || c_bad "set Tari wallet transfers" "control POST failed"; }
 wallet_calls() { fake_ctl fake-wallet-rpc 18082 '{}' | jq -r '.calls'; }
 tari_wallet_calls() { fake_ctl fake-tari-wallet 18153 '{}' | jq -r '.calls'; }
-wallet_status() {
-    compose exec -T dashboard python3 -c 'import json,os,sys,urllib.request; s=json.load(urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8000/api/state",headers={"X-Pithead-Proxy-Secret":os.environ["DASHBOARD_PROXY_SECRET"]}),timeout=5)); print(json.dumps(s["earnings"]["tari_confirmed" if sys.argv[1]=="tari" else "confirmed"]))' "$1"
+wallet_status() { # <monero|tari>
+    compose exec -T dashboard python3 -c 'import json,sys,urllib.request; s=json.load(urllib.request.urlopen("http://127.0.0.1:8000/api/state",timeout=5)); print(json.dumps(s["earnings"]["tari_confirmed" if sys.argv[1]=="tari" else "confirmed"]))' "$1"
 }
-wait_wallet_field() {
+wait_wallet_field() { # <chain> <field> <expected>
     local end=$(($(date +%s) + 20))
     while [ "$(date +%s)" -lt "$end" ]; do
         [ "$(wallet_status "$1" | jq -r ".${2}" 2>/dev/null)" = "$3" ] && return 0
@@ -52,12 +52,11 @@ wait_payout() { # wait_payout <chain> <amount> [timeout]
         result="$(
             compose exec -T dashboard python3 - "$chain" "$amount" <<'PY' 2>&1
 import json
-import os
 import sys
 import urllib.request
 
 chain, amount = sys.argv[1], float(sys.argv[2])
-state = json.load(urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8000/api/state", headers={"X-Pithead-Proxy-Secret": os.environ["DASHBOARD_PROXY_SECRET"]}), timeout=5))
+state = json.load(urllib.request.urlopen("http://127.0.0.1:8000/api/state", timeout=5))
 confirmed = state["earnings"]["confirmed" if chain == "monero" else "tari_confirmed"]
 total = confirmed["xmr_all" if chain == "monero" else "xtm_all"]
 if confirmed.get("enabled") and total == amount:
@@ -134,10 +133,9 @@ scenario_payout_confirmation() {
     empty_state="$(
         compose exec -T dashboard python3 - <<'PY' 2>&1
 import json
-import os
 import urllib.request
 
-state = json.load(urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8000/api/state", headers={"X-Pithead-Proxy-Secret": os.environ["DASHBOARD_PROXY_SECRET"]}), timeout=5))
+state = json.load(urllib.request.urlopen("http://127.0.0.1:8000/api/state", timeout=5))
 monero, tari = state["earnings"]["confirmed"], state["earnings"]["tari_confirmed"]
 if monero.get("enabled") and tari.get("enabled") and monero.get("xmr_all") == 0.25 and tari.get("xtm_all") == 2.5:
     print("OK")
@@ -180,14 +178,13 @@ PY
     outage_state="$(
         compose exec -T dashboard python3 - <<'PY'
 import json
-import os
 import time
 import urllib.request
 
 first_seen = {}
 deadline = time.monotonic() + 45
 while time.monotonic() < deadline:
-    state = json.load(urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8000/api/state", headers={"X-Pithead-Proxy-Secret": os.environ["DASHBOARD_PROXY_SECRET"]}), timeout=5))
+    state = json.load(urllib.request.urlopen("http://127.0.0.1:8000/api/state", timeout=5))
     wallets = {"monero": state["earnings"]["confirmed"], "tari": state["earnings"]["tari_confirmed"]}
     now = time.monotonic()
     for chain, wallet in wallets.items():

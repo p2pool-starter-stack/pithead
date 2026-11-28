@@ -14,7 +14,7 @@ dashboard/mining_dashboard/service/storage_service.py	785
 dashboard/mining_dashboard/service/workers/worker_config_store.py	422
 dashboard/mining_dashboard/service/xvb/algo_service.py	558
 dashboard/mining_dashboard/sim/donation_model.py	539
-dashboard/mining_dashboard/web/server.py	627
+dashboard/mining_dashboard/web/server.py	626
 dashboard/mining_dashboard/web/static/app/chart.mjs	663
 dashboard/mining_dashboard/web/static/app/logic.mjs	534
 dashboard/mining_dashboard/web/static/config/configview.mjs	555
@@ -80,7 +80,7 @@ tests/stack/control/test-control-support-bundle.sh	440
 tests/stack/control/test-control-upgrade.sh	795
 tests/stack/dashboard/test-dashboard-onion.sh	422
 tests/stack/dashboard/test-dashboard.sh	591
-tests/stack/doctor/test-doctor.sh	466
+tests/stack/doctor/test-doctor.sh	463
 tests/stack/standalone/test_compose.sh	462
 tests/stack/firewall/tor-egress-enforcement.sh	444
 tests/stack/test-backup.sh	476

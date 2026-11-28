@@ -78,9 +78,11 @@ wallet_rpc() { # method
 ready() {
     local end=$(($(date +%s) + 1200)) st height tip
     while [ "$(date +%s)" -lt "$end" ]; do
-        st=$(compose exec -T dashboard python3 -c 'import json,os,urllib.request; s=json.load(urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8000/api/state",headers={"X-Pithead-Proxy-Secret":os.environ["DASHBOARD_PROXY_SECRET"]}),timeout=5)); print(json.dumps({k:s["earnings"][k] for k in ("confirmed","tari_confirmed")}))' 2>/dev/null) || st='{}'
+        st=$(compose exec -T dashboard python3 -c 'import json,urllib.request; s=json.load(urllib.request.urlopen("http://127.0.0.1:8000/api/state",timeout=5)); print(json.dumps({k:s["earnings"][k] for k in ("confirmed","tari_confirmed")}))' 2>/dev/null) || st='{}'
         if printf '%s' "$st" | jq -e 'all(.confirmed,.tari_confirmed; .enabled and .reachable and .address_match and (.down != true))' >/dev/null &&
             compose exec -T wallet-rpc test ! -e /home/ubuntu/wallets/.payout-scanning &&
+            # Cached cards can precede the listener after restart. Retry every direct check.
+            # Healthchecks must pass with zero scan grace; the card cannot be forced green.
             compose exec -T -e PAYOUT_SCAN_GRACE_SEC=0 wallet-rpc /usr/local/bin/wallet-healthcheck.sh >/dev/null &&
             compose exec -T -e PAYOUT_SCAN_GRACE_SEC=0 tari-wallet /wallet-config/wallet-healthcheck.sh &&
             height=$(wallet_rpc get_height | jq -er .result.height) &&

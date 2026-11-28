@@ -55,26 +55,3 @@ assert_not_contains "no login: no verifier site" "$caddy_off" "127.0.0.1:8001"
 assert_not_contains "no login: no epoch" "$caddy_off" "X-Pithead-Auth-Epoch"
 assert_contains "no login: the sign-in paths are 404, as before" "$caddy_off" "respond @pithead_auth_paths 404"
 assert_contains "no login: the actor placeholder still renders empty" "$caddy_off" "header_up X-Auth-User {http.auth.user.id}"
-front_counts() {
-    printf '%s/%s/%s\n' \
-        "$(printf '%s\n' "$1" | grep -cE '^ *(reverse_proxy|forward_auth)( @[a-z_]+)? 127\.0\.0\.1:8000 \{$')" \
-        "$(printf '%s\n' "$1" | grep -cxE ' *header_up X-Pithead-Proxy-Secret \{env\.DASHBOARD_PROXY_SECRET\}')" \
-        "$(printf '%s\n' "$1" | grep -cxE ' *header_up Host \{upstream_hostport\}')"
-}
-assert_eq "front: every app upstream sends the proxy secret and the app's own Host (login)" "$(front_counts "$caddy_on")" "4/4/4"
-assert_eq "front: every app upstream sends the proxy secret and the app's own Host (no login)" "$(front_counts "$caddy_off")" "1/1/1"
-# shellcheck disable=SC1090
-caddy_secret="$(
-    cd "$SANDBOX" && source "$STACK" 2>/dev/null
-    set +e
-    DASHBOARD_SECURE=true HOST_IP=box.lan DASHBOARD_AUTH_USER=admin DASHBOARD_AUTH_HASH_B64="$auth_hb64" \
-        DASHBOARD_PROXY_SECRET=render-sentinel-value generate_caddyfile >/dev/null 2>&1
-    cat Caddyfile
-)"
-assert_not_contains "front: the rendered Caddyfile never holds the secret value" "$caddy_secret" "render-sentinel-value"
-front_secret() { load_preserved_state && printf '%s' "$DASHBOARD_PROXY_SECRET"; }
-printf 'DASHBOARD_PROXY_SECRET=kept-value\n' >"$SANDBOX/front.env"
-assert_eq "front: load_preserved_state keeps an existing proxy secret" \
-    "$(PITHEAD_ENV_FILE="$SANDBOX/front.env" run_sourced "$SANDBOX" front_secret 2>/dev/null)" "kept-value"
-assert_eq "front: load_preserved_state generates a 64-hex proxy secret when none exists" \
-    "$(PITHEAD_ENV_FILE="$SANDBOX/absent.env" run_sourced "$SANDBOX" front_secret 2>/dev/null | grep -cE '^[0-9a-f]{64}$')" "1"

@@ -574,8 +574,7 @@ async def _cancel_bg_tasks(app):
 
 
 def create_app(state_manager, latest_data_ref):
-    middlewares = [security_headers_middleware, auth.front_middleware, auth.refresh_middleware]
-    app = web.Application(middlewares=middlewares)
+    app = web.Application(middlewares=[security_headers_middleware, auth.refresh_middleware])
     app["state_manager"] = state_manager
     app["latest_data"] = latest_data_ref
     app["_bg_tasks"] = set()

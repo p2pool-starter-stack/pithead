@@ -144,7 +144,7 @@ wait_dashboard_api() { # wait_dashboard_api [tries]
     local tries="${1:-30}"
     for _ in $(seq 1 "$tries"); do
         compose exec -T dashboard python3 -c \
-            "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)" >/dev/null 2>&1 && return 0
+            "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/state', timeout=3)" >/dev/null 2>&1 && return 0
         sleep 2
     done
     return 1
@@ -181,7 +181,6 @@ log "scenario 0: /api/state exposes a well-formed #170 topology + egress contrac
 contract="$(
     compose exec -T dashboard python3 - <<'PY' 2>&1
 import json
-import os
 import urllib.request
 
 NODES = {"rigs", "browser", "xmrig-proxy", "caddy", "dashboard", "p2pool",
@@ -193,7 +192,7 @@ def bail(msg):
     raise SystemExit(1)
 
 
-st = json.load(urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8000/api/state", headers={"X-Pithead-Proxy-Secret": os.environ["DASHBOARD_PROXY_SECRET"]}), timeout=5))
+st = json.load(urllib.request.urlopen("http://127.0.0.1:8000/api/state", timeout=5))
 eg, topo = st.get("egress"), st.get("topology")
 if not isinstance(eg, dict) or not isinstance(topo, dict):
     bail("egress/topology section missing")
