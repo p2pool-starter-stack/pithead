@@ -296,6 +296,7 @@ main() {
     build_images
     stage_push
     smoke_test
+    capture_packages
     promote
     sign_images
     if [ "${PITHEAD_REHEARSAL:-0}" = 1 ]; then

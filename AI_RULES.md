@@ -16,14 +16,16 @@ This is the shared source for `AGENTS.md`, `CLAUDE.md`, and `.cursorrules`.
 
 ## Change boundaries
 
-- Branch from `develop`; `main` holds released commits. Preserve other worktrees
-  and uncommitted changes. Keep moves and behavior changes in separate commits.
+- Branch from `develop`; `main` holds released commits. Security and bug fixes
+  always target `develop`; a `develop-vX.Y.Z` line takes feature work only.
+  Preserve other worktrees and uncommitted changes. Keep moves and behavior changes in separate commits.
 - Merge into `develop` only on green required checks plus the `adversarial-review`
   status from a non-author session, human-driven or automated, with
   `gh pr merge --squash` once the branch is up to date with `develop`: never
-  `--admin`, never auto-merge. The one exception to the squash is a forward merge
-  into a `develop-v*` line, which merges with `--merge`; see
-  [forward merges](docs/dev/releasing.md#forward-merges-into-release-line-branches).
+  `--admin`, never auto-merge. Two merges are not squashed: a forward merge into a
+  `develop-v*` line, and folding a line back into `develop`. Both merge with
+  `--merge`; see [forward merges](docs/dev/releasing.md#forward-merges-into-release-line-branches)
+  and [folding a line back](docs/dev/releasing.md#folding-a-release-line-back-into-develop).
   Bench evidence goes in the PR first when the change needs it.
 - Edit CLI sources in `lib/pithead/`, then run `make`. Root `pithead` is generated
   and ignored. Slice order is significant; do not rename or nest slices casually.

@@ -93,7 +93,7 @@ _xvb_gate_order_self_test() (
 _xvb_gate_payload_self_test() {
     local root out
     root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-    out="$(PAYLOAD="$(_xvb_gate_payload | base64 -d)" PYTHONPATH="$root/dashboard" python3 -c '
+    out="$(PAYLOAD="$(_xvb_gate_payload | base64 -d)" PYTHONPATH="$root/dashboard" TOR_SOCKS_PROXY="socks5h://127.0.0.1:9050" python3 -c '
 import os, subprocess, sys, tempfile
 d = tempfile.mkdtemp()
 def run(snapshot, marker):

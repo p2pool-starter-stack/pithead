@@ -109,6 +109,7 @@ stack_uninstall() {
     fi
     mutation_lock_acquire uninstall
     remove_tor_egress_boot_unit
+    remove_host_egress_audit
     for unit in remove_egress_check_units remove_lan_guard_check_units; do "$unit" || units_left=1; done
     if down_out=$(docker compose down --remove-orphans -v 2>&1); then
         remove_deactivated_profile_containers

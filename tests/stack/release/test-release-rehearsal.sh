@@ -162,6 +162,7 @@ rehearsal_main() {
     build_images() { printf 'build\n' >>"$REHEARSAL_TEST/calls"; }
     stage_push() { printf 'stage\n' >>"$REHEARSAL_TEST/calls"; }
     smoke_test() { printf 'smoke\n' >>"$REHEARSAL_TEST/calls"; }
+    capture_packages() { printf 'capture\n' >>"$REHEARSAL_TEST/calls"; }
     promote() { printf 'promote\n' >>"$REHEARSAL_TEST/calls"; }
     sign_images() { printf 'sign\n' >>"$REHEARSAL_TEST/calls"; }
     publish() { printf 'publish\n' >>"$REHEARSAL_TEST/calls"; }
@@ -170,7 +171,7 @@ rehearsal_main() {
 }
 rehearsal_out="$(rehearsal_case rehearsal_main 1 2>&1)"
 assert_rc "rehearsal main completes" "$?" 0
-assert_eq "rehearsal runs every stage through signing" "$(cat "$REHEARSAL_TEST/calls")" $'preflight\ngate\ntest\nbuild\nstage\nsmoke\npromote\nsign'
+assert_eq "rehearsal runs every stage through signing" "$(cat "$REHEARSAL_TEST/calls")" $'preflight\ngate\ntest\nbuild\nstage\nsmoke\ncapture\npromote\nsign'
 assert_contains "rehearsal announces its stop point" "$rehearsal_out" 'Rehearsal complete: nothing was tagged or published'
 rehearsal_out="$(rehearsal_case rehearsal_main 0 2>&1)"
 assert_rc "ordinary custom-registry main completes" "$?" 0
@@ -314,6 +315,7 @@ pin_publish() {
         append_bundle_sha256() { :; }
         WORKDIR="$SANDBOX/pin-work"
         mkdir -p "$WORKDIR"
+        printf 'tor Alpine:v3.24 musl 1.2.5-r10\n' >"$WORKDIR/os-packages.txt"
         git() {
             case "$1" in
             tag) printf 'TAG %s\n' "$*" ;;

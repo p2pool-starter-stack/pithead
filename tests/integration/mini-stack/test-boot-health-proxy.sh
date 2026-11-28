@@ -35,7 +35,7 @@ docker volume create "$name-logs" >/dev/null
 docker run -d --name "$name-caddy" --network "$name" \
     -v "$scratch/Caddyfile:/etc/caddy/Caddyfile:ro" -v "$name-logs:/var/log/caddy" "$image" >/dev/null
 docker run -d --name "$name-dashboard" --network "container:$name-caddy" \
-    -v "$name-logs:/access-log:ro" -e UPDATE_INTERVAL=2 pithead-dashboard:itest >/dev/null
+    -v "$name-logs:/access-log:ro" -e UPDATE_INTERVAL=2 -e TOR_SOCKS_PROXY=socks5h://172.28.0.25:9050 pithead-dashboard:itest >/dev/null
 # The driver runs once on the loopback side, once across the bridge as an untrusted client.
 run_driver() {
     docker run --rm -i --network "$1" -e DASHBOARD_AUTH_HASH_B64 --entrypoint python pithead-dashboard:itest - "$2" "$3" <"$ROOT/tests/integration/mini-stack/boot-health-proxy.py"

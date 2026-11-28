@@ -79,25 +79,62 @@ class TestGuard:
         guard.update(trig(False))
         assert guard.active == {}
 
-    def test_omitted_trigger_keeps_the_hold_until_the_unknown_window_passes(self, guard, clock):
+    def test_omitted_trigger_never_releases_an_active_hold(self, guard, clock):
         guard.update(trig(True, grace=0))
-        for at in (60, 659):
+        for at in (60, 659, 660, 5000):
             clock.now = at
             guard.update({})
-            assert guard.active
-        clock.now = 660
+            assert guard.active and guard.holding
+
+    def test_an_active_hold_clears_after_its_reading_returns_healthy(self, guard, clock):
+        guard.update(trig(True, grace=0))
+        clock.now = 5000
         guard.update({})
+        guard.update(trig(False))
+        assert guard.active
+        clock.now = 5059
+        guard.update(trig(False))
+        assert guard.active
+        clock.now = 5060
+        guard.update(trig(False))
         assert guard.active == {} and not guard.holding
 
-    def test_a_returning_reading_resets_the_unknown_clock(self, guard, clock):
+    def test_absence_during_recovery_restarts_the_window(self, guard, clock):
         guard.update(trig(True, grace=0))
-        clock.now = 500
+        clock.now = 10
+        guard.update(trig(False))
+        clock.now = 50
         guard.update({})
-        clock.now = 550
-        guard.update(trig(True, grace=0))
-        clock.now = 1000
-        guard.update({})
+        clock.now = 100
+        guard.update(trig(False))
+        clock.now = 159
+        guard.update(trig(False))
         assert guard.active
+        clock.now = 160
+        guard.update(trig(False))
+        assert guard.active == {}
+
+    def test_an_unfired_trigger_without_its_reading_drops_out_at_once(self, guard, clock):
+        guard.update(trig(True))
+        assert guard.holding and guard.active == {}
+        clock.now = 5
+        guard.update({})
+        assert guard.active == {} and not guard.holding
+        assert guard.pause is None
+
+    def test_a_rearmed_unfired_trigger_debounces_from_its_new_reading(self, guard, clock):
+        guard.update(trig(True))
+        clock.now = 5
+        guard.update({})
+        clock.now = 10
+        guard.update(trig(True))
+        assert guard.holding and guard.active == {}
+        clock.now = 609
+        guard.update(trig(True))
+        assert guard.active == {}
+        clock.now = 610
+        guard.update(trig(True))
+        assert guard.pause["since"] == 1010
 
     def test_pause_joins_reasons_oldest_first(self, guard, clock):
         guard.update({"a": (True, "first", 0)})

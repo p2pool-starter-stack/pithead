@@ -1,6 +1,6 @@
 # ruff: noqa: F403, F405
-from mining_dashboard.collector import pools as pools_collector
 from tests.service._data_service_support import *  # noqa: F403
+from tests.service._worker_rejection_harness import MiningGuardHarness
 
 
 class TestWorkerRejection:
@@ -149,47 +149,7 @@ class TestWorkerRejection:
                 assert svc.workers_rejected is rejected
 
 
-class TestMiningGuardRejection:
-    def _svc(self):
-        sm = MagicMock()
-        sm.load_snapshot.return_value = None
-        svc = DataService(sm, MagicMock(), MagicMock())
-        svc.docker_control = MagicMock()
-        svc.docker_control.stop = AsyncMock(return_value=True)
-        svc.docker_control.start = AsyncMock(return_value=True)
-        svc.monero_health.healthy = svc.tari_health.healthy = True
-        return svc
-
-    @staticmethod
-    def _p2p(**kw):
-        return {"p2p": {"uptime": 900, "out_peers": 2, "in_peers": 0, "zmq_active": 3, **kw}}
-
-    async def _cycle(self, svc, p2pool=None, health=None, sync=None, containers=None, signals=None):
-        monero_sync = {"health": health or {"level": "green"}, **(sync or {})}
-        with (
-            patch.object(ds_mod, "get_container_health", AsyncMock(return_value=containers or {})),
-            patch.object(
-                pools_collector,
-                "get_p2pool_log_signals",
-                AsyncMock(return_value=signals or {"lag": 0, "monerod_unsynced": False}),
-            ),
-        ):
-            await svc._update_mining_guard(monero_sync, p2pool or self._p2p())
-        await svc._apply_worker_rejection(False, False)
-
-    @staticmethod
-    def _clock(svc):
-        now = [0]
-        svc.mining_guard._clock = lambda: now[0]
-        return now
-
-    async def _hold_past_grace(self, svc, **kwargs):
-        now = self._clock(svc)
-        await self._cycle(svc, **kwargs)
-        now[0] = 10_000
-        await self._cycle(svc, **kwargs)
-        return now
-
+class TestMiningGuardRejection(MiningGuardHarness):
     async def test_healthy_node_never_rejects(self):
         svc = self._svc()
         await self._cycle(svc)
@@ -297,6 +257,35 @@ class TestMiningGuardRejection:
             await self._cycle(svc, containers={})
             assert svc.workers_rejected is True
         svc.docker_control.start.assert_not_called()
+
+    async def test_a_recreate_readmits_within_the_bound_after_a_dropped_reading(self):
+        svc = self._svc()
+        down = {"p2pool": {"running": False, "restarting": False, "health": None}}
+        up = {"p2pool": {"running": True, "restarting": False, "health": "healthy"}}
+        isolated = {"p2p": {"uptime": 9, "out_peers": 0, "in_peers": 0}}
+        gone = {"p2p": {"uptime": 0}}
+        now = self._clock(svc)
+        await self._cycle(svc, p2pool=gone, containers=down)
+        now[0] = 91
+        await self._cycle(svc, p2pool=gone, containers=down)
+        assert svc.workers_rejected is True
+        now[0] = 200
+        await self._cycle(svc, p2pool=isolated, containers=up)
+        svc.docker_control.start.assert_not_called()
+        now[0] = 205
+        await self._cycle(svc, p2pool=gone, containers=up)
+        svc.docker_control.start.assert_not_called()
+        now[0] = 260
+        await self._cycle(svc, p2pool=gone, containers=up)
+        assert svc.workers_rejected is False
+        svc.docker_control.start.assert_awaited_once_with(ds_mod.REJECT_WORKERS_CONTAINER)
+
+    async def test_a_rejected_proxy_without_triggers_readmits_on_the_first_cycle(self):
+        svc = self._svc()
+        svc.workers_rejected = True
+        await self._cycle(svc)
+        assert svc.workers_rejected is False
+        svc.docker_control.start.assert_awaited_once_with(ds_mod.REJECT_WORKERS_CONTAINER)
 
     @pytest.mark.parametrize(
         "monero_down,tari_down,needle",
