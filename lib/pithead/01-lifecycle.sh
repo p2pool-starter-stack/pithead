@@ -294,14 +294,12 @@ stack_down() {
     mutation_lock_acquire down
     log "Stopping stack..."
     if [ -f "$ENV_FILE" ]; then
-        remove_tor_egress_firewall
         docker compose down || error "Stack failed to stop — see the error above."
     else
         configless_stack_down
-        remove_tor_egress_firewall
     fi
-    # After the stop (#2749): the nodes never listen on a LAN port without the rule, and a failed
-    # stop leaves it in place.
+    remove_tor_egress_when_idle ||
+        warn "A stack container is still active or could not be checked, so the Tor-only egress rules stay. See what runs with 'docker ps', stop it, then run '$0 down' again to remove them."
     lan_guard_teardown down
     log "Stack stopped."
     mutation_lock_release
@@ -319,7 +317,6 @@ stack_down() {
 stack_down_except_caddy() {
     mutation_lock_acquire down
     log "Stopping the stack for the backup (caddy — the reverse proxy — stays up; nothing of its own is in the archive)..."
-    remove_tor_egress_firewall
     local services
     # Split the listing from the filter (the #2059 trap, documented in 02-tor-egress.sh): under
     # `set -Eeuo pipefail` a grep that matches nothing fails the whole assignment and errexit
@@ -333,8 +330,8 @@ stack_down_except_caddy() {
     if ! docker compose stop $services; then
         error "Stack failed to stop — see the error above."
     fi
-    # After the stop, as in stack_down (#2749). If a node still runs or the marker stays, the rule
-    # stays too, and the backup goes on: the archive does not depend on it.
+    remove_tor_egress_when_idle caddy ||
+        warn "A stack container other than caddy is still active or could not be checked, so the Tor-only egress rules stay and the backup goes on. See what runs with 'docker ps'; '$0 down' removes the rules once nothing is active."
     remove_lan_guard || warn "lan-guard:rule-kept — monerod or tari may still run, or $LAN_GUARD_MARKER could not be deleted; the LAN-only source rule stays."
     log "Stack stopped (caddy left running)."
     mutation_lock_release

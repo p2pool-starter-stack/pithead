@@ -14,6 +14,7 @@ from mining_dashboard.config.config import (
 )
 
 _UNSYNCED = "monerod is not synchronized"
+UNSYNCED_LOOKBACK_SEC = 30
 _AHEAD_RE = re.compile(
     r"peer (\S+) is ahead on mainchain \(height (\d{1,20}), your height (\d{1,20})\)"
 )
@@ -180,8 +181,11 @@ def get_tari_stats():
 
 
 async def get_p2pool_log_signals(window_sec=120):
-    lines = await fetch_docker_logs("p2pool", tail=500, since=time.time() - window_sec)
-    if lines and lines[0].startswith("Error"):
+    now = time.time()
+    lines = await fetch_docker_logs("p2pool", tail=500, since=now - window_sec)
+    # p2pool repeats it every second while waiting, so only a recent line means still unsynced.
+    recent = await fetch_docker_logs("p2pool", tail=500, since=now - UNSYNCED_LOOKBACK_SEC)
+    if any(batch and batch[0].startswith("Error") for batch in (lines, recent)):
         return None
     lags = {}
     for match in map(_AHEAD_RE.search, lines):
@@ -190,5 +194,5 @@ async def get_p2pool_log_signals(window_sec=120):
             lags[match[1]] = max(lag, lags.get(match[1], 0))
     return {
         "lag": sorted(lags.values())[-2] if len(lags) >= 2 else 0,
-        "monerod_unsynced": any(_UNSYNCED in line for line in lines),
+        "monerod_unsynced": any(_UNSYNCED in line for line in recent),
     }

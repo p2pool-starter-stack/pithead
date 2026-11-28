@@ -546,7 +546,9 @@ Five steps, each answering a hardware-validated failure:
    across it, so a proxy recreated during a failed or connected reading still reads as a
    recreation on the next reading. Otherwise five minutes of successful proxy
    worker-list readings with no connection for the local miner’s rendered identity queue an
-   XMRig restart, logged by `pithead-miner-recovery.service`.
+   XMRig restart, logged by `pithead-miner-recovery.service`. On a rig the same service reads the rig's
+   own XMRig API and restarts XMRig after 120 seconds without a pool connection or hashing with no new
+   share, with a 300 second cooldown between restarts.
    Other connected rigs do not reset that window. Missing readings, a connected local miner, a stopped
    miner, or a busy stack operation reset that window. The guard holds the mutation lock only for
    that busy check and around the restart, never while it reads the proxy, so a zero-wait command

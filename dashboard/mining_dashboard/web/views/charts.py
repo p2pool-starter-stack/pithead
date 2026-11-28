@@ -21,6 +21,7 @@ from mining_dashboard.config.config import (
     HASHRATE_WINDOWS,
     UPDATE_INTERVAL,
 )
+from mining_dashboard.helper.time_rows import numeric_column, window_rows
 from mining_dashboard.helper.utils import format_hashrate
 from mining_dashboard.service.xvb.earnings import ATOMIC_PER_XMR
 
@@ -97,27 +98,9 @@ def build_chart(
     raffle_wins=None,
     payouts=None,
 ):
-    """Build the Chart.js datasets from history. Each point carries its real timestamp as the
-    x value (epoch ms) so a linear time axis spaces points to scale; runs of missing samples
-    (outages) are split by a ``null`` break so the line doesn't connect across the gap.
-
-    ``window`` is an optional ``(from, to)`` epoch-second pair (a manual zoom) that bounds both
-    ends and overrides ``range_arg``. Point density and ``tension`` adapt to the visible window
-    duration (Issue #47). ``avg_window`` (#168) selects which hashrate-averaging window's columns
-    to plot (1m / 10m / 1h / 12h / 24h); 10m is the default headline series.
-
-    ``payouts`` (#381), when the view-only wallet feature is on, is the stored confirmed-payout
-    list — one gold coin marker per Monero payout, on the same hidden 0–1 axis as the raffle
-    stars; ``None`` (feature off) yields an empty ``payouts`` list.
-
-    Returns ``{"p2pool": [{x, y}], "xvb": [{x, y}], "shares": [{x, y, r, c}], "events": [...],
-    "raffle": [...], "payouts": [...], "tension": float}``
-    — the P2Pool/XvB series are stacked on the client (they sum to the total hashrate) and may
-    contain ``{x, y: None}`` break markers, kept index-aligned across both series so stacking
-    stays correct; ``shares`` is a sparse scatter (rendered un-stacked)."""
     filtered_history, filtered_shares = _filter_range(history, shares, range_arg, window)
     duration_s = _window_duration(filtered_history, range_arg, window)
-    filtered_history = _downsample_history(filtered_history, duration_s)
+    filtered_history = _downsample_history(filtered_history, duration_s, _chart_columns(avg_window))
 
     timestamps = [x["timestamp"] for x in filtered_history]
     gap_after = _gap_after_indices(timestamps)
@@ -148,15 +131,19 @@ def build_chart(
     }
 
 
+def _chart_columns(avg_window):
+    p_col, x_col = HASHRATE_WINDOW_COLUMNS.get(
+        avg_window, HASHRATE_WINDOW_COLUMNS[DEFAULT_HASHRATE_WINDOW]
+    )
+    return ("v", p_col, x_col) if avg_window == DEFAULT_HASHRATE_WINDOW else (p_col, x_col)
+
+
 def _filter_range(history, shares, range_arg, window=None):
-    """Restrict history/shares to the selected window. A custom ``window`` (from, to) epoch
-    seconds bounds both ends; otherwise the preset ``range`` bounds only the lower end (``all``
-    keeps everything)."""
     if window is not None:
         lo, hi = window
         return (
-            [x for x in history if lo <= x["timestamp"] <= hi],
-            [s for s in shares if lo <= s["ts"] <= hi],
+            [x for x in window_rows(history, "timestamp", lo, hi) if lo <= x["timestamp"] <= hi],
+            [s for s in window_rows(shares, "ts", lo, hi) if lo <= s["ts"] <= hi],
         )
     if range_arg == "all":
         return history, shares
@@ -165,8 +152,8 @@ def _filter_range(history, shares, range_arg, window=None):
         return history, shares
     cutoff = time.time() - target_seconds
     return (
-        [x for x in history if x["timestamp"] >= cutoff],
-        [s for s in shares if s["ts"] >= cutoff],
+        [x for x in window_rows(history, "timestamp", cutoff) if x["timestamp"] >= cutoff],
+        [s for s in window_rows(shares, "ts", cutoff) if s["ts"] >= cutoff],
     )
 
 
@@ -243,25 +230,25 @@ _DOWNSAMPLE_VALUE_COLUMNS = tuple(
 )
 
 
-def _downsample_history(filtered_history, duration_s):
-    """Bucket-averages history down to the duration's target point count (Issue #47). A target
-    of 0, or a series already at/under target, is returned untouched — so short/zoomed-in
-    windows keep their native 30s detail. Every per-window hashrate column (#168) is carried
-    through, so the selected Avg window plots correctly even on downsampled wide ranges."""
+def _downsample_history(filtered_history, duration_s, columns=_DOWNSAMPLE_VALUE_COLUMNS):
     target = _target_points(duration_s)
     if target <= 0 or len(filtered_history) <= target:
         return filtered_history
 
+    series = {col: numeric_column(filtered_history, col) for col in columns}
     chunk_size = len(filtered_history) / target
     downsampled = []
     for i in range(target):
-        chunk = filtered_history[int(i * chunk_size) : int((i + 1) * chunk_size)]
+        start, stop = int(i * chunk_size), int((i + 1) * chunk_size)
+        chunk = filtered_history[start:stop]
         if not chunk:
             continue
         mid = chunk[len(chunk) // 2]
         row = {"t": mid["t"], "timestamp": mid["timestamp"]}
-        for col in _DOWNSAMPLE_VALUE_COLUMNS:
-            row[col] = round(sum(x.get(col, 0) or 0 for x in chunk) / len(chunk), 2)
+        for col in columns:
+            values = series[col]
+            total = sum(values[start:stop]) if values else sum(x.get(col, 0) or 0 for x in chunk)
+            row[col] = round(total / len(chunk), 2)
         downsampled.append(row)
     return downsampled
 
@@ -274,25 +261,18 @@ _SHARE_MARKER_Y = 0.93
 
 
 def _share_points(filtered_history, filtered_shares):
-    """Sparse share markers: bucket each share onto its nearest history sample and emit one
-    ``{x, y, r, c}`` point per sample that has shares (x = sample time ms, y = the fixed top-of-
-    chart position on the client's dedicated share axis, r = radius scaled by count, c = count)."""
     if not (filtered_history and filtered_shares):
         return []
 
     hist_ts = [x["timestamp"] for x in filtered_history]
+    last = len(hist_ts)
     counts = {}
     for s in filtered_shares:
         s_ts = s["ts"]
         idx = bisect.bisect_left(hist_ts, s_ts)
-        candidates = []
-        if idx < len(hist_ts):
-            candidates.append(idx)
-        if idx > 0:
-            candidates.append(idx - 1)
-        if candidates:
-            closest_idx = min(candidates, key=lambda i: abs(hist_ts[i] - s_ts))
-            counts[closest_idx] = counts.get(closest_idx, 0) + 1
+        if idx == last or (idx > 0 and abs(hist_ts[idx - 1] - s_ts) < abs(hist_ts[idx] - s_ts)):
+            idx -= 1
+        counts[idx] = counts.get(idx, 0) + 1
 
     points = []
     for idx in sorted(counts):
