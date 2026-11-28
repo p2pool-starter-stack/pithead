@@ -10,7 +10,7 @@ printf 'rig\n' >"$RH/role-rig"
 printf 'both\n' >"$RH/role-both"
 printf 'pithead\n' >"$RH/role-coordinator"
 
-hg_role_boot() { # <role> <meminfo> -> the boot's console text, after resetting the fixture pool
+hg_role_boot() {
     printf '3072\n' >"$RH/nr_hugepages"
     rm -f "$RH/marker"
     (

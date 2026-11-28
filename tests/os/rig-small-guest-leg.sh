@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2034
 
-rig_small_guest_leg() { # <img>
+rig_small_guest_leg() {
     local img="$1" rc=0
     local saved_vm="$VM" saved_disk="$DISK" saved_serial="$SERIAL" saved_ip="$ip"
     VM="${saved_vm}-small" DISK="${saved_disk%.img}-small.img" SERIAL="${saved_serial%.log}-small.log" ip=""
@@ -13,7 +13,7 @@ rig_small_guest_leg() { # <img>
     return "$rc"
 }
 
-_rig_small_guest_run() { # <img>
+_rig_small_guest_run() {
     local img="$1" token="" tries=0 jar body scode sysfile pool after mounts unitlog
     local mode rtok light hr cls summ bench="" bline="" hrsrc="sister feed" ptries=0 oom rtries=0 htries card="" ctries=0 arc=0
     local SSH_TIMEOUT=180
