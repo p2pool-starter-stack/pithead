@@ -43,7 +43,7 @@ control_tor_newnym() ( # <control-dir> <id> <actor>; isolate the lock's exit-on-
 )
 
 control_process_request() { # <claimed-file> <control-dir>
-    local file="$1" cdir="$2" id action actor size chain
+    local file="$1" cdir="$2" id action actor size chain rc
     # Refuse a symlinked / non-regular claimed file (graft #437): a symlink dropped in requests/
     # could point the root runner at any host file. Skip + audit, never follow it.
     if [ -L "$file" ] || [ ! -f "$file" ]; then
@@ -149,9 +149,9 @@ control_process_request() { # <claimed-file> <control-dir>
             ! jq -e '.actor == "tor-heal" and (.outage | type == "string" and (. == "" or test("^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"))) and (.observed_at | type == "number" and . == floor and . >= 0)' "$file" >/dev/null; then
             control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"invalid history request",ts:(now|floor)}')"
             control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "rejected"
-        elif ! control_tor_history "$cdir" "$id" "$actor" "$(jq -r .outage "$file")" "$(jq -r .observed_at "$file")"; then
-            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"failed",error:"history observation unavailable",ts:(now|floor)}')"
-            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "failed"
+        else
+            control_tor_history "$cdir" "$id" "$actor" "$(jq -r .outage "$file")" "$(jq -r .observed_at "$file")" && rc=0 || rc=$?
+            [ "$rc" = 0 ] || control_tor_history_refusal "$cdir" "$id" "$actor" "$rc"
         fi
         ;;
     preview) control_preview "$file" "$id" "$actor" "$cdir" ;;

@@ -29,8 +29,8 @@ if [ "$1" = STATUS ]; then
         /^250-status\/circuit-established=[01]$/ { split($0, a, "="); est = a[2]; next }
         /^250\+circuit-status=$/ { listing = 1; next }
         listing && $0 == "." { listing = 0; next }
-        listing { if ($2 == "LAUNCHED" || $2 == "EXTENDED") pending++; next }
-        END { if (est == "") exit 1; printf "circuit-established=%s pending=%d\n", est, pending + 0 }
+        listing { if ($2 == "LAUNCHED" || $2 == "EXTENDED") pending++; else if ($2 == "BUILT" && $1 ~ /^[0-9]+$/) built = built (built == "" ? "" : ",") $1; next }
+        END { if (est == "") exit 1; printf "circuit-established=%s pending=%d built=%s\n", est, pending + 0, built }
     '
     exit
 fi

@@ -11,9 +11,9 @@ from mining_dashboard.service.health.tor_heal import (
     MAX_DISRUPTIVE_PER_DAY,
     NEWNYM_ATTEMPTS,
     PROBE_INTERVAL_SEC,
-    RE_ALERT_SEC,
     TorEgressHealer,
 )
+from mining_dashboard.service.health.tor_heal_exhausted import RE_ALERT_SEC
 
 TARGET = "mining_dashboard.service.health.tor_heal"
 

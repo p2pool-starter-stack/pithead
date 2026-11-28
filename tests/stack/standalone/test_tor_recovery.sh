@@ -286,7 +286,7 @@ cat "$TOR_REPLY"
 SH
 printf '250 OK\r\n250-status/circuit-established=0\r\n250+circuit-status=\r\n1 BUILT $A~a\r\n2 LAUNCHED\r\n3 EXTENDED $B~b\r\n4 CLOSED\r\n.\r\n250 OK\r\n250 closing connection\r\n' >"$WORK/reply"
 status_signal() { TOR_REPLY="$WORK/reply" TOR_CAPTURE="$WORK/signal" TOR_COOKIE_FILE="$WORK/cookie" PATH="$WORK/bin:$PATH" sh "$ROOT/build/tor/control-signal.sh" "$@"; }
-[ "$(status_signal STATUS)" = 'circuit-established=0 pending=2' ]
+[ "$(status_signal STATUS)" = 'circuit-established=0 pending=2 built=1' ]
 grep -q '^GETINFO status/circuit-established circuit-status' "$WORK/signal"
 ! grep -q 'SIGNAL' "$WORK/signal"
 printf '515 Authentication failed\r\n' >"$WORK/reply"

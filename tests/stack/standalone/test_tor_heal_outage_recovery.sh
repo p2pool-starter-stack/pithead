@@ -147,9 +147,19 @@ control_process_request "$WORK/request.json" "$WORK/control"
 tor_recovery_circuit_status() { printf 'circuit-established=1 pending=2\n'; }
 control_process_request "$WORK/request.json" "$WORK/control"
 [ "$(jq -c '[.circuit_established,.pending_circuits]' "$WORK/result")" = '[true,2]' ]
+tor_recovery_circuit_status() { printf 'circuit-established=1 pending=2 built=7,9\n'; }
+control_process_request "$WORK/request.json" "$WORK/control"
+[ "$(jq -c '[.circuit_established,.pending_circuits,.built_circuits]' "$WORK/result")" = '[true,2,[7,9]]' ]
 tor_recovery_circuit_status() { printf 'garbage\n'; }
 control_process_request "$WORK/request.json" "$WORK/control"
-[ "$(jq -c '[.circuit_established,.pending_circuits]' "$WORK/result")" = '[null,null]' ]
+[ "$(jq -c '[.circuit_established,.pending_circuits,.built_circuits]' "$WORK/result")" = '[null,null,[]]' ]
+mutation_lock_acquire() { exit 75; }
+control_process_request "$WORK/request.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = lock_refused ]
+mutation_lock_acquire() { exit 1; }
+control_process_request "$WORK/request.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = failed ]
+mutation_lock_acquire() { _PITHEAD_LOCK_OWNED=1; }
 tor_recovery_circuit_status() { return 1; }
 AUTO_HEAL_OFF=1
 env_get() {

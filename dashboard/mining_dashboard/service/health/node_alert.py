@@ -1,8 +1,10 @@
 from mining_dashboard.service.health.tor_heal import (
     BROKEN_AFTER_SEC,
     COOLDOWN_SEC,
+    DISRUPTIVE_SPACING_SEC,
     EXHAUSTED_PROBE_SEC,
     MAX_ATTEMPTS,
+    NEWNYM_ATTEMPTS,
 )
 
 TITLE = "Monero node offline"
@@ -47,8 +49,10 @@ def _heal_lines(heal):
             f"action this outage; it probes every {_minutes(EXHAUSTED_PROBE_SEC)} minutes and "
             f"re-alerts hourly until Tor recovers. {DOCTOR_ADVICE}"
         )
-    elif age is not None and age < COOLDOWN_SEC:
-        lines.append(f"Next action after a {_minutes(COOLDOWN_SEC - age)} min cooldown.")
+    elif age is not None:
+        gap = DISRUPTIVE_SPACING_SEC if attempts >= NEWNYM_ATTEMPTS else COOLDOWN_SEC
+        if age < gap:
+            lines.append(f"Next action after a {_minutes(gap - age)} min cooldown.")
     return lines
 
 

@@ -14,7 +14,7 @@ tor_recovery_circuits_wedged() {
     local status i
     for i in 1 2; do
         status=$(tor_recovery_circuit_status) || return 1
-        [[ "$status" =~ ^circuit-established=([01])\ pending=([0-9]+)$ ]] || return 1
+        [[ "$status" =~ ^circuit-established=([01])\ pending=([0-9]+)(\ built=[0-9,]*)?$ ]] || return 1
         [ "${BASH_REMATCH[1]}" = 0 ] || [ "${BASH_REMATCH[2]}" -ge "$TOR_RECOVERY_PENDING_LIMIT" ] || return 1
         [ "$i" = 2 ] || sleep 60
     done
