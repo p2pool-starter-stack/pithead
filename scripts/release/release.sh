@@ -43,13 +43,9 @@
 #   PITHEAD_REGISTRY_READ_RETRIES / PITHEAD_REGISTRY_READ_BACKOFF  Reads: 12 attempts, 10 s delay.
 #   PITHEAD_REGISTRY_WRITE_RETRIES  Total write attempts (1-10, default: 3).
 #   PITHEAD_REGISTRY_WRITE_BACKOFF  First write delay (0-60 s, default: 10); doubles up to 60 s.
-#   BENCH_CI_APP_ID       Numeric id of the installed bench-ci GitHub App (required, no default).
-#   BENCH_CI_APP_SLUG     Slug of that same App: pithead-bench-ci (required, no default).
 #   RELEASE_INTEGRATION_ARGS  Extra args passed to `make test-integration ARGS=...` (the #54 gate).
 #   PITHEAD_RELEASE_ENV    Env file (default: $RELEASE_KEY_DIR/env); explicit missing file is fatal.
 #   RELEASE_TOOL_PATH      Colon-separated absolute tool directories prepended to PATH.
-#   The env file may set BENCH_CI_APP_ID, BENCH_CI_APP_SLUG, RELEASE_INTEGRATION_ARGS,
-#   and RELEASE_TOOL_PATH; values are literal and existing environment settings win.
 #   RELEASE_SMOKE_CMD       Optional command run during the smoke stage for a fuller functional check.
 #   COSIGN_KEY / COSIGN_PASSWORD  Release signing (#376): path to the cosign private key on this box
 #                           and its passphrase. Promoted digests + the bundle get key signatures;
@@ -294,15 +290,15 @@ source "$RELEASE_LIB_DIR/bundle.sh"
 main() {
     log "Pithead release pipeline (#44)$([ "$DRY_RUN" -eq 1 ] && echo '  [DRY RUN]')"
     preflight
-    require_bench_tier4
-    WORKDIR="$(mktemp -d)" # holds the captured digests, the ingredients manifest and the bundle
+    require_release_status_gate
+    WORKDIR="$(mktemp -d)"
     test_gate
     build_images
     stage_push
     smoke_test
     capture_packages
     promote
-    sign_images # #376 — signs the digests promote re-tagged
+    sign_images
     if [ "${PITHEAD_REHEARSAL:-0}" = 1 ]; then
         ok "Rehearsal complete: nothing was tagged or published"
         return 0
