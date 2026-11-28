@@ -279,7 +279,7 @@ the machine pays in ordinary RAM rather than a restart loop. Only p2pool builds 
 monerod v0.18.5.1 allocates one only when `MONERO_RANDOMX_FULL_MEM` is set or it mines, and the
 stack does neither (#2681).
 
-The reduced pool's 2048 pages are MEASURED (#2685), not derived: a tier4-e2e run samples each
+The reduced pool's 2048 pages are MEASURED (#2685), not derived: an e2e run samples each
 daemon's own `/proc/<pid>/smaps_rollup` every 10 s across a synced local-node scenario, lifecycle
 and auth-fail-closed, and takes the peak — job 1115@701013bb1faaea1a9a337cde16dbe79fbca797d1 measured p2pool at 1305 pages and
 monerod at 129 (an upper bound: its per-thread verification scratchpads scale with the measuring
@@ -287,7 +287,7 @@ bench's own thread count, above a reduced-tier appliance's). Combined peak 1434,
 processes' second-seed caches (a seed switch is roughly every 2.8 days, so a normal run does not
 exercise them), +10% margin, rounded up to the next 512-page step: 2048.
 `tests/integration/lib/hugepage-probe.sh` carries the bound `combined peak + 256 <= REDUCED_PAGES`
-as a standing gate row against this same overlay file, on every tier4-e2e run, and #2486 (p2pool
+as a standing gate row against this same overlay file, on every e2e run, and #2486 (p2pool
 `--light-mode` on this tier, which would remove the dataset) reruns the measurement when it lands.
 Degrades are announced on every console, journaled, and repeated by `doctor` as a WARN — never a
 FAIL, so the A/B commit gate still commits a degraded-but-serving slot. Running before the boot

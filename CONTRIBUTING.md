@@ -96,6 +96,19 @@ on Linux or macOS with Bash 3.2 or newer, Python 3 and jq; it does not require G
      `/systemd/system/` is a unit name, not an address; `tests/` and `docs/` are an
      accepted exemption boundary for illustrative/fixture content, and each class also carries a
      small, explicit allowlist — see the script's own header — never a per-file exemption comment),
+     `lint-bench-refs` (the shipped surface — `lib/`, `build/`, `os/`, `dashboard/`, `install.sh`,
+     the compose file, the CLI completion, the config templates and `README.md` — never names the
+     project's
+     private CI/runner tooling: `bench-ci`/`BENCH_CI`, `pithead-developer`, the `adversarial-review`
+     status, the `rig-e2e` lock, the `tier4-e2e`/`tier4-kvm` tiers, `CI_JOB_DIR`, or a "bench
+     job"/"bench runner" — issue #4245; the appliance image and the generated CLI carry every word
+     they hold to the user's box, and only this gate stops new references creeping back).
+     Look-alikes that are the product's own vocabulary stay clean: `os/build/stage` paths and shell
+     stage variables, `pithead-control` and the `X-Pithead-Control` header, generic `PITHEAD_*`
+     inputs, and `miner-<n>` names in dashboard test fixtures; the bare word `bench`, job ids and
+     SHAs stay usable. Changelogs narrate release history and sit outside the scan, as do `tests/`,
+     `docs/`, CI glue and the release tooling — those talk to the bench by design, so naming it
+     there is the job, not the coupling),
      `lint-file-budget` (the file-budget ratchet, issue #1105 Phase 0 — see
      [File budget gate](#file-budget-gate)),
      `lint-pithead-build` (the generated `pithead` must build from `lib/pithead/*.sh` in a clean

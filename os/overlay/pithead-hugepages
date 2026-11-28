@@ -15,37 +15,6 @@
 # the local-miner render declares as headroom. Without the record they would re-inflate the
 # pool this unit just shrank, on the very same boot.
 #
-# The tiers, and why the low one is "reduced", not "skip":
-#   >= 15 GiB   full 3072 pages (6 GiB). The supported machine; nothing to say.
-#   >= 7 GiB    2048 pages (4 GiB), MEASURED (#2685, tier4-e2e job
-#               1115@701013bb1faaea1a9a337cde16dbe79fbca797d1, targeted mode: the scenario,
-#               auth-fail-closed, lifecycle and the restore), not derived.
-#               Per-process peaks over the whole run, from each daemon's own
-#               /proc/<pid>/smaps_rollup (never a HugePages_Free delta — the e2e bench's pool
-#               has other tenants):
-#                 p2pool     1305 pages peak (2,672,640 KiB), up to 47 threads. Its dataset is
-#                            the only one either process builds at the pinned versions.
-#                 monerod    129 pages peak (264,192 KiB), up to 30 threads on the measuring
-#                            bench — an upper bound: its per-thread verification scratchpads
-#                            scale with thread count, and the bench's exceeds a reduced-tier
-#                            appliance's 7-15 GiB class.
-#               Combined peak 1434 pages. + 256 for the two processes' second-seed caches
-#               (128 each), which a run this long is not guaranteed to touch (a seed switch is
-#               every ~2048 blocks, ~2.8 days) = 1690. + 10% margin = 1859, rounded up to the
-#               next 512-page (1 GiB) step = 2048. tests/integration's live harness carries the
-#               bound `combined peak + 256 <= REDUCED_PAGES` as a standing gate row, checked
-#               against this same file, on every tier4-e2e run.
-#               Since #2562 raised p2pool's container cap to 4g, a HugePages shortfall no
-#               longer restart-loops it (that was the #78 finding this tier exists to avoid):
-#               it now runs on ordinary memory instead, silently, which is what the gate row's
-#               "no instance held zero pages for 300s+" check catches.
-#               Sized for today's full-mode p2pool; #2486 (p2pool --light-mode on this tier)
-#               would remove its dataset, the largest term above, and reruns this measurement
-#               when it lands.
-#   below       0 pages: no reservation at all leaves more RAM than any reduced pool could,
-#               and the stack cannot run in what remains either way. Releasing it keeps the
-#               machine itself responsive enough to tell the operator what is wrong.
-#
 # A degraded boot leaves a two-line marker in /run (volatile on purpose — RAM cannot change
 # without a reboot): the operator prose first, then "pages=N", the machine-readable record of
 # the decision. doctor's memory section repeats the prose as a WARN, never a FAIL: the A/B
