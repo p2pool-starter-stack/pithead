@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -17,6 +18,7 @@ def request(route, body=None):
             "Content-Type": "application/json",
             "X-Auth-User": "itest",
             "X-Pithead-Control": "1",
+            "X-Pithead-Proxy-Secret": os.environ["DASHBOARD_PROXY_SECRET"],
         },
     )
     with urllib.request.urlopen(req, timeout=45) as response:  # noqa: S310

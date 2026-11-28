@@ -5,6 +5,7 @@
 p2pool_sidechain_sync_snippet() {
     cat <<'PROBE'
     set -euo pipefail
+    curl() { case "$*" in *http://127.0.0.1:8000/*) command curl --header @<(printf 'X-Pithead-Proxy-Secret: %s\n' "$(docker exec dashboard printenv DASHBOARD_PROXY_SECRET)") "$@" ;; *) command curl "$@" ;; esac; }
     file=$1/stats/pool/stats
     scratch=$(mktemp -d "${TMPDIR:?runner scratch required}/pithead-p2pool-sync.XXXXXX")
     backup=$scratch/original

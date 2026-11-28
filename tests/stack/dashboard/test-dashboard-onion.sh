@@ -39,6 +39,8 @@ assert_contains "onion vhost bound to the bridge gateway" "$caddy_onion" "http:/
 assert_contains "onion vhost carries the counted basic check" "${caddy_onion#*172.28.0.1}" "uri /api/auth/basic"
 assert_contains "onion vhost carries the session gate" "${caddy_onion#*172.28.0.1}" "forward_auth @pithead_session 127.0.0.1:8000"
 assert_contains "onion vhost serves the sign-in endpoints" "${caddy_onion#*172.28.0.1}" "@pithead_public path /login"
+assert_eq "onion vhost sends the proxy secret on every app upstream" \
+    "$(printf '%s\n' "${caddy_onion#*172.28.0.1}" | grep -c 'header_up X-Pithead-Proxy-Secret {env.DASHBOARD_PROXY_SECRET}$')" "4"
 onion_site="${caddy_onion#*172.28.0.1}"
 case "$onion_site" in
 *"tls internal"*) bad "onion vhost is plain HTTP" "'tls internal' present on the onion site" ;;

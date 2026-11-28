@@ -142,6 +142,14 @@ out="$(RUNNING_CONTAINERS="dashboard" CURL_RC=0 PATH="$DRBIN:$PATH" run_sourced 
 assert_contains "dashboard probe: answers -> OK" "$out" "answers on 127.0.0.1:8000"
 out="$(RUNNING_CONTAINERS="dashboard" CURL_RC=22 PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_dashboard_answers 2>&1)"
 assert_contains "dashboard probe: no answer -> WARN" "$out" "WARN"
+mkdir -p "$SANDBOX/drurl"
+cat >"$SANDBOX/drurl/curl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >"$CURL_ARGS"
+EOF
+chmod +x "$SANDBOX/drurl/curl"
+RUNNING_CONTAINERS="dashboard" CURL_ARGS="$SANDBOX/drurl/args" PATH="$SANDBOX/drurl:$DRBIN:$PATH" run_sourced "$SANDBOX" check_dashboard_answers >/dev/null 2>&1
+assert_contains "dashboard probe: asks the app's open health route" "$(cat "$SANDBOX/drurl/args" 2>/dev/null)" "http://127.0.0.1:8000/api/health"
 out="$(RUNNING_CONTAINERS="" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_dashboard_answers 2>&1)"
 assert_contains "dashboard probe: container down -> info" "$out" "isn't running"
 

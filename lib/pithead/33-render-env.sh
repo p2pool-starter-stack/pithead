@@ -435,6 +435,7 @@ TARI_EXPLORER_URL=$(dotenv_render_value "$TARI_EXPLORER_URL")
 P2POOL_CLEARNET=$(dotenv_render_value "$P2POOL_CLEARNET")
 PROXY_API_PORT=3344
 PROXY_AUTH_TOKEN=$(dotenv_render_value "$PROXY_AUTH_TOKEN")
+DASHBOARD_PROXY_SECRET=$(dotenv_render_value "$DASHBOARD_PROXY_SECRET")
 XMRIG_API_PORT=$(dotenv_render_value "$worker_api_port")
 XMRIG_API_AUTH=$(dotenv_render_value "$worker_api_auth")
 XMRIG_API_TOKEN=$(dotenv_render_value "$worker_api_token")

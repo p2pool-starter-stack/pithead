@@ -86,7 +86,10 @@ The stack's defaults:
   channel without a dashboard password is a validation error, on a published onion it additionally
   requires Tor client authorization, and every mutation is audited host-side. Low-risk operational
   settings commit directly; every other reference setting commits behind a typed confirmation in
-  the dashboard. Dashboard authentication is the access-control perimeter. Typed `APPLY` and payout
+  the dashboard. Dashboard authentication is the access-control perimeter. The dashboard app on host
+  loopback port 8000 answers only requests that Caddy forwards: Caddy adds a header carrying a
+  generated secret to each one, and the app refuses (403) a request without it or with a `Host` other
+  than its own loopback address. Only `/api/health` answers without the header. Typed `APPLY` and payout
   suffixes protect against mistakes, not a compromised dashboard process, which can write both its
   request and its confirmation. A node-endpoint change carries a second, non-cosmetic gate: the host
   probes the staged endpoint and refuses one it cannot reach, so a dashboard cannot park a chain on

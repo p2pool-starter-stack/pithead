@@ -194,14 +194,9 @@ check_release_verification() {
     fi
 }
 
-# Tari chain verdict (#2464), read from the dashboard: the node's gRPC has no host-side client, and
-# the dashboard already weighs the signals (tip unchanged 30 min, 0 peers 10 min, behind the public
-# explorer fetched over Tor). The container healthcheck stays process liveness on purpose, and a READY
-# P2Pool merge-mine channel is no proof either. Prints "level<TAB>reasons — next: advice", or nothing
-# when the dashboard has no verdict (not running, Tari off, or the loop has not run yet).
 tari_chain_verdict() {
     command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
-    curl -fsS --max-time 5 "http://127.0.0.1:8000/api/state" 2>/dev/null |
+    dashboard_state 5 |
         jq -r '.tari.health // empty | [.level, ((.reasons | join("; ")) + " — next: " + .advice)] | @tsv' 2>/dev/null || true
 }
 
@@ -234,13 +229,9 @@ tari_chain_status_line() {
     return 0
 }
 
-# Monero chain verdict (#2499), the dashboard's peers-and-tip reading of monerod (0 outgoing peers
-# for 10 min, or no new height for 30) from /api/state .monero.health. Same shape as the Tari one:
-# "level<TAB>reasons — next: advice", nothing when there is no verdict (dashboard not answering, a
-# remote node whose peers are not visible, or the loop has not run yet).
 monero_chain_verdict() {
     command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
-    curl -fsS --max-time 5 "http://127.0.0.1:8000/api/state" 2>/dev/null |
+    dashboard_state 5 |
         jq -r '.monero.health // empty | select(.level == "green" or .level == "red") | [.level, ((.reasons | join("; ")) + " — next: " + .advice)] | @tsv' 2>/dev/null || true
 }
 

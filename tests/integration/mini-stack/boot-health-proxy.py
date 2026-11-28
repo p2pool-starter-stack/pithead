@@ -211,6 +211,25 @@ elif mode == "rotated":
         time.sleep(0.1)
     else:
         raise AssertionError(seen)
+elif mode == "direct":
+
+    def direct(path, headers):
+        req = urllib.request.Request(f"http://{host}:8000{path}", headers=headers)
+        try:
+            response = opener.open(req, timeout=5)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
+            return response.status
+
+    local = {"Host": "127.0.0.1:8000"}
+    secret = {"X-Pithead-Proxy-Secret": os.environ["DASHBOARD_PROXY_SECRET"]}
+    require(direct("/api/state", local) == 403)
+    require(direct("/api/state", {**local, "X-Auth-User": "admin"}) == 403)
+    require(direct("/api/auth/check", local) == 403)
+    require(direct("/api/state", {"Host": "panel.example:8080", **secret}) == 403)
+    require(direct("/api/health", local) == 200)
+    require(direct("/api/state", {**local, **secret}) == 200)
 elif mode == "unlocked":
     status, body = request(PROBE, headers={"X-Pithead-Boot-Probe": CAPABILITY})
     require(status == 200 and b"<html" in body.lower(), (status, body[:200]))
