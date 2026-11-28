@@ -245,6 +245,18 @@ assert_contains "with no lan class the gate is the loopback and reply complement
     'oifname != "lo" ct state != { established, related } counter comment "would_drop"'
 assert_not_contains "the gate never names a lan class the role did not render" "$EAU_NOLAN" 'ip daddr !='
 assert_not_contains "with no lan class the ungated rule already counts IPv6, so no IPv6 rule is added" "$EAU_NOLAN" "meta nfproto ipv6"
+printf 'appliance\tupdate fetch\tallow\tallow\thost\tnone\tnone\tallowlisted tcp 443\nappliance\ttime sync\tallow\tallow\thost\tnone\tnone\tallowlisted tcp 80\n' >>"$EAU/map-nolan.tsv"
+printf 'appliance\tsync\tallow\tallow\thost\tnone\tnone\tchoice:sync tcp 18080,18189\nappliance\txvb\tallow\tallow\thost\tnone\tnone\tchoice:xvb tcp 4247\n' >>"$EAU/map-nolan.tsv"
+EAU_CLS=$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-nolan.tsv" "" "sync")
+assert_contains "host-route rows with an audit match render an allowlisted class, ports merged" "$EAU_CLS" \
+    'oifname != "lo" ct state != { established, related } tcp dport { 443, 80 } counter comment "allowlisted"'
+assert_contains "an enabled operator choice renders its own choice class" "$EAU_CLS" \
+    'tcp dport { 18080, 18189 } counter comment "choice"'
+assert_not_contains "a choice the operator did not make is not labelled, so its traffic stays outside" "$EAU_CLS" "4247"
+assert_not_contains "no choice enabled renders no choice class" \
+    "$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-nolan.tsv" "" "")" 'comment "choice"'
+assert_eq "classes add counters only: still no terminal verdict anywhere" \
+    "$(printf '%s\n' "$EAU_CLS" | grep -Ec '(^|[[:space:]])(accept|drop|reject)([[:space:]]|$)')" "0"
 EAU_RIG=$(run_sourced "$EAU" render_host_egress_audit_nft rig "$EAU/map-lan.tsv")
 assert_contains "the rig role renders from its own rows" "$EAU_RIG" 'counter comment "lan"'
 EAU_RIGN=$(run_sourced "$EAU" render_host_egress_audit_nft rig "$EAU/map-nolan.tsv")
@@ -300,7 +312,7 @@ assert_not_contains "the unloadable state path never leaks a shell redirection e
 echo "== counters: the view reports per-rule counters and the would_drop total (#4195) =="
 EAU_C=$(eau_run host_egress_audit_counters)
 assert_eq "the counters JSON names every counter and would_drop sums the v4 and IPv6 rules" "$EAU_C" \
-    '{"counters":[{"packets":7,"bytes":700},{"packets":42,"bytes":3780},{"packets":13,"bytes":1170}],"would_drop":55}'
+    '{"counters":[{"packets":7,"bytes":700},{"packets":42,"bytes":3780},{"packets":13,"bytes":1170}],"would_drop":55,"allowlisted":0,"choice":0,"outside":55}'
 EAU_A=$(
     EAU_NFT_TABLE_RC=1 eau_run host_egress_audit_counters 2>/dev/null
     printf 'rc=%s' "$?"
@@ -327,7 +339,7 @@ eau_status() {
 }
 out=$(eau_status egress_status)
 assert_eq "the verdict stays the first stdout line" "$(printf '%s\n' "$out" | head -n1)" "absent"
-assert_contains "and the audit line follows it" "$out" "host-audit: present (would_drop 55 packets)"
+assert_contains "and the audit line follows it" "$out" "host-audit: present (outside the allowlist 55 packets)"
 assert_eq "the dashboard file keeps rc/verdict and gains host_audit counters" \
     "$(jq -c '[.rc, .verdict, .host_audit.verdict, (.host_audit.counters | length), .host_audit.counters[1].packets]' "$EAU/ctl/results/egress-status.json")" \
     '[1,"absent","present",3,42]'
@@ -340,13 +352,19 @@ assert_contains "doctor shows the would_drop counter when the table is loaded" "
 out=$(EAU_NFT_TABLE_RC=1 eau_status check_host_egress_audit 2>&1)
 assert_contains "doctor warns when the table is not loaded" "$out" "log-only host egress audit table is not loaded"
 
+eau_set() {
+    jq -n --argjson w "$1" --argjson a "$2" --argjson c "$3" \
+        '{nftables: [{rule: {comment: "would_drop", expr: [{counter: {packets: $w, bytes: 0}}]}},
+        {rule: {comment: "allowlisted", expr: [{counter: {packets: $a, bytes: 0}}]}},
+        {rule: {comment: "choice", expr: [{counter: {packets: $c, bytes: 0}}]}}]}' >"$EAU/json"
+}
 echo "== egress-status: the watchdog compares would_drop across consecutive checks (#4385) =="
 eau_wd() { jq -c "$1" "$EAU/ctl/results/egress-status.json"; }
 rm -f "$EAU/ctl/results/.egress-audit-prev"
 cp "$EAU/json" "$EAU/json.base"
 eau_status egress_status >/dev/null
 assert_eq "a first check has no baseline, so it is clean, never a leak" "$(eau_wd .host_audit.watchdog)" '"clean"'
-assert_eq "and it records the counter as the baseline" "$(cat "$EAU/ctl/results/.egress-audit-prev")" "55 "
+assert_eq "and it records the counter as the baseline" "$(cat "$EAU/ctl/results/.egress-audit-prev")" "55 - 0 0"
 out=$(eau_status egress_status)
 assert_contains "an unchanged counter stays clean" "$out" "watchdog=clean (rise 0 since the last check)"
 cp "$EAU/counter-rising.json" "$EAU/json"
@@ -365,11 +383,24 @@ assert_eq "and the first-seen time clears with it" "$(eau_wd .host_audit.first_s
 cp "$EAU/json.base" "$EAU/json"
 out=$(eau_status egress_status)
 assert_contains "a counter that fell (the table was reloaded) is a new baseline, not a leak" "$out" "watchdog=clean"
-assert_eq "and the lower count becomes the baseline" "$(cat "$EAU/ctl/results/.egress-audit-prev")" "55 "
+assert_eq "and the lower count becomes the baseline" "$(cat "$EAU/ctl/results/.egress-audit-prev")" "55 - 0 0"
 printf '08 0900\n' >"$EAU/ctl/results/.egress-audit-prev"
 assert_contains "a zero-padded baseline is read as decimal, never as an octal error" \
     "$(eau_status egress_status)" "watchdog=leaking (rise 47 since the last check)"
 assert_eq "and its zero-padded first-seen time stays valid JSON" "$(eau_wd .host_audit.first_seen)" "900"
+eau_set 100 20 0
+eau_status egress_status >/dev/null
+eau_set 110 30 0
+out=$(eau_status egress_status)
+assert_contains "a rise only in allowlisted flows is allowlisted, never a leak" "$out" "watchdog=allowlisted (rise 0"
+eau_set 120 30 10
+assert_contains "a rise only in an operator's chosen clearnet path is operator-choice, never a leak" \
+    "$(eau_status egress_status)" "watchdog=operator-choice (rise 0"
+eau_set 140 34 10
+assert_contains "a rise beyond the allowlisted and chosen flows is a leak, by the outside share only" \
+    "$(eau_status egress_status)" "watchdog=leaking (rise 16 since the last check)"
+assert_eq "the status file keeps the allowlisted, choice and outside counts" \
+    "$(eau_wd '[.host_audit.allowlisted, .host_audit.choice, .host_audit.outside]')" '[34,10,96]'
 EAU_NFT_TABLE_RC=1 eau_status egress_status >/dev/null
 assert_eq "an absent audit table is not-observed, never clean" "$(eau_wd .host_audit.watchdog)" '"not-observed"'
 SUDO_DENY=1 eau_status egress_status >/dev/null

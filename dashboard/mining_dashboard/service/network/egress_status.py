@@ -16,6 +16,8 @@ _LABELS = {
 }
 
 WATCHDOG_CLEAN, WATCHDOG_LEAKING, WATCHDOG_NOT_OBSERVED = "clean", "leaking", "not-observed"
+WATCHDOG_ALLOWLISTED, WATCHDOG_CHOICE = "allowlisted", "operator-choice"
+WATCHDOG_BENIGN = (WATCHDOG_CLEAN, WATCHDOG_ALLOWLISTED, WATCHDOG_CHOICE)
 
 
 def _fresh_status(path, now) -> dict | None:
@@ -60,6 +62,9 @@ def host_audit_state(path=None, now=None):
         return {**_UNMONITORED, "counters": []}
     if not isinstance(counters, list):
         return {**_UNMONITORED, "counters": []}
+    outside = audit.get("outside")
+    if type(outside) is not int or not 0 <= outside <= would_drop:
+        outside = would_drop
     return {
         "loaded": True,
         "would_drop": would_drop,
@@ -68,7 +73,7 @@ def host_audit_state(path=None, now=None):
             for c in counters[:_MAX_COUNTERS]
             if isinstance(c, dict) and type(c.get("packets")) is int and type(c.get("bytes")) is int
         ],
-        "host_violations": would_drop,
+        "host_violations": outside,
         "unmonitored": False,
     }
 
@@ -81,7 +86,7 @@ def watchdog_verdict(path=None, now=None):
     status = _fresh_status(path, now)
     audit = status.get("host_audit") if status else None
     verdict = audit.get("watchdog") if isinstance(audit, dict) else None
-    return verdict if verdict in (WATCHDOG_CLEAN, WATCHDOG_LEAKING) else WATCHDOG_NOT_OBSERVED
+    return verdict if verdict in (*WATCHDOG_BENIGN, WATCHDOG_LEAKING) else WATCHDOG_NOT_OBSERVED
 
 
 def live_watchdog_verdict():

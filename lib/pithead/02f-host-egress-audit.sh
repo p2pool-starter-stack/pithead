@@ -12,15 +12,36 @@ host_egress_audit_role() {
     printf '%s\n' appliance
 }
 
+host_egress_audit_choices() {
+    local c=""
+    [ "$(env_get MONERO_CLEARNET_SYNC 2>/dev/null)" = true ] || [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" = true ] && c="sync"
+    tor_egress_choice_active p2pool && c="$c p2pool"
+    tor_egress_choice_active xvb && c="$c xvb"
+    printf '%s\n' "$c"
+}
+
 render_host_egress_audit_nft() {
     local role="${1:-}" map="${2:-data/egress-map.tsv}" nets="${3:-$HOST_EGRESS_AUDIT_LAN_SET}"
+    local choices="${4-$(host_egress_audit_choices)}"
     case "$role" in appliance | rig) ;; *) return 1 ;; esac
     [ -r "$map" ] || return 1
-    awk -v role="$role" -v nets="$nets" -v table="$HOST_EGRESS_AUDIT_NFT_TABLE" -v prefix="$HOST_EGRESS_AUDIT_LOG_PREFIX" '
+    awk -v role="$role" -v nets="$nets" -v table="$HOST_EGRESS_AUDIT_NFT_TABLE" -v prefix="$HOST_EGRESS_AUDIT_LOG_PREFIX" -v choices="$choices" '
         BEGIN { FS = "\t"; lan = 0 }
         NR == 1 { next }
         NF < 7 { next }
         $1 == role && $5 == "lan" { lan = 1 }
+        $1 == role && NF >= 8 && $8 != "-" {
+            split($8, a, " ")
+            if (a[2] != "tcp" || a[3] == "") next
+            label = a[1]
+            if (label ~ /^choice:/) {
+                key = substr(label, 8)
+                if (index(" " choices " ", " " key " ") == 0) next
+                label = "choice"
+            } else if (label != "allowlisted") next
+            gsub(/,/, ", ", a[3])
+            ports[label] = (ports[label] == "" ? a[3] : ports[label] ", " a[3])
+        }
         END {
             set = ""
             n = split(nets, parts, " ")
@@ -36,6 +57,13 @@ render_host_egress_audit_nft() {
             print "    oifname \"lo\" counter comment \"loopback\""
             print "    ct state established,related counter comment \"reply\""
             if (lan && set != "") print "    ip daddr { " set " } counter comment \"lan\""
+            split("allowlisted choice", labels, " ")
+            for (i = 1; i <= 2; i++) {
+                l = labels[i]
+                if (ports[l] == "") continue
+                print "    " gate " tcp dport { " ports[l] " } counter comment \"" l "\""
+                if (lan && set != "") print "    " v6 " tcp dport { " ports[l] " } counter comment \"" l "\""
+            }
             print "    " gate " counter comment \"would_drop\""
             if (lan && set != "") print "    " v6 " counter comment \"would_drop\""
             print "    " gate " limit rate 30/second log prefix \"" prefix "\""
@@ -88,5 +116,9 @@ host_egress_audit_counters() {
     jq -c 'def counters: [.nftables[]? | select(has("rule")) | (.rule.expr[]? | select(has("counter")) | .counter | {packets, bytes})];
         def wd: [.nftables[]? | select(has("rule")) | .rule | select(.comment == "would_drop")
             | .expr[]? | select(has("counter")) | .counter.packets] | add // 0;
-        {counters: counters, would_drop: wd}' <<<"$out"
+        def by($c): [.nftables[]? | select(has("rule")) | .rule | select(.comment == $c)
+            | .expr[]? | select(has("counter")) | .counter.packets] | add // 0;
+        by("allowlisted") as $a | by("choice") as $o
+        | {counters: counters, would_drop: wd, allowlisted: $a, choice: $o,
+           outside: ([wd - $a - $o, 0] | max)}' <<<"$out"
 }

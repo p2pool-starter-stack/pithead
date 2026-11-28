@@ -10,6 +10,8 @@ from mining_dashboard.service.network.egress_status import (
     ENFORCED,
     MISSING,
     UNVERIFIED,
+    WATCHDOG_ALLOWLISTED,
+    WATCHDOG_CHOICE,
     WATCHDOG_CLEAN,
     WATCHDOG_LEAKING,
     WATCHDOG_NOT_OBSERVED,
@@ -179,6 +181,8 @@ def _audit(watchdog, checked_at=NOW - 60):
     [
         ("clean", WATCHDOG_CLEAN),
         ("leaking", WATCHDOG_LEAKING),
+        ("allowlisted", WATCHDOG_ALLOWLISTED),
+        ("operator-choice", WATCHDOG_CHOICE),
         ("not-observed", WATCHDOG_NOT_OBSERVED),
         ("bogus", WATCHDOG_NOT_OBSERVED),
         (None, WATCHDOG_NOT_OBSERVED),

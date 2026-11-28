@@ -48,6 +48,14 @@ def test_loaded_with_violations(tmp_path):
     }
 
 
+@pytest.mark.parametrize(
+    ("outside", "violations"), [(2, 2), (0, 0), (9, 7), (-1, 7), (True, 7), ("2", 7), (None, 7)]
+)
+def test_violations_are_the_flows_outside_the_allowlist(tmp_path, outside, violations):
+    body = {**_present(7), "outside": outside}
+    assert host_audit_state(_write(tmp_path, body), now=NOW)["host_violations"] == violations
+
+
 def test_loaded_and_clean(tmp_path):
     state = host_audit_state(_write(tmp_path, _present(0)), now=NOW)
     assert state["loaded"] is True

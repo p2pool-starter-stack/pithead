@@ -1,6 +1,10 @@
 # ruff: noqa: F403, F405
+import pytest
+
 from mining_dashboard.service.network.egress_status import (
     ENFORCED,
+    WATCHDOG_ALLOWLISTED,
+    WATCHDOG_CHOICE,
     WATCHDOG_CLEAN,
     WATCHDOG_LEAKING,
     WATCHDOG_NOT_OBSERVED,
@@ -80,6 +84,16 @@ class TestEgressWatchdogEdges:
         assert key == EVT
         assert "stopped" in text
         assert _ev(svc, watchdog=WATCHDOG_CLEAN) == []
+
+    @pytest.mark.parametrize("benign", [WATCHDOG_ALLOWLISTED, WATCHDOG_CHOICE])
+    def test_allowlisted_and_chosen_flows_never_alert_and_clear_a_leak(self, benign):
+        svc = _svc()
+        assert _ev(svc, watchdog=WATCHDOG_CLEAN) == []
+        assert _ev(svc, watchdog=benign) == []
+        assert _ev(svc, watchdog=benign) == []
+        assert _keys(_ev(svc, watchdog=WATCHDOG_LEAKING)) == [EVT]
+        ((key, text),) = _ev(svc, watchdog=benign)
+        assert key == EVT and "stopped" in text
 
     def test_a_dashboard_starting_on_a_leak_alerts_at_once(self):
         assert _keys(_ev(_svc(), watchdog=WATCHDOG_LEAKING)) == [EVT]

@@ -1,7 +1,7 @@
 from mining_dashboard.service.network.egress_status import (
     MISSING,
     UNVERIFIED,
-    WATCHDOG_CLEAN,
+    WATCHDOG_BENIGN,
     WATCHDOG_LEAKING,
 )
 
@@ -35,7 +35,7 @@ class EgressFirewallEdgesMixin:
         if verdict is None:
             self._prev_watchdog_leaking = False
             return []
-        if verdict not in (WATCHDOG_CLEAN, WATCHDOG_LEAKING):
+        if verdict not in (*WATCHDOG_BENIGN, WATCHDOG_LEAKING):
             return []
         leaking = verdict == WATCHDOG_LEAKING
         if leaking == self._prev_watchdog_leaking:
