@@ -46,7 +46,8 @@ egress_status() {
         { read -r prev_wd first_seen <"$state_file"; } 2>/dev/null || true
         case "$prev_wd" in '' | *[!0-9]*) prev_wd=$wd ;; esac
         case "$first_seen" in *[!0-9]*) first_seen= ;; esac
-        delta=$((wd - prev_wd))
+        [ -z "$first_seen" ] || first_seen=$((10#$first_seen))
+        delta=$((10#$wd - 10#$prev_wd))
         if [ "$delta" -gt 0 ]; then
             watchdog=leaking
             first_seen=${first_seen:-$now}

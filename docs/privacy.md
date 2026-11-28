@@ -105,7 +105,7 @@ table, an unreadable table, or a counter that is not a number). A `leaking` verd
 began. The first check after install records the baseline and reads `clean`; a counter that falls,
 because the table was reloaded, starts a new baseline. `./pithead egress-status` and `doctor` print the
 verdict. The dashboard sends one `clearnet_exposed` alert when the verdict turns `leaking` and one when
-a later check reads `clean`, which is a full check interval without a rise. `not-observed` and a check
+a later check reads `clean`, a check interval without a rise. `not-observed` and a check
 older than six minutes keep the last verdict and send nothing. Opting out of the firewall turns the
 watchdog alert off too.
 

@@ -50,7 +50,7 @@ class EgressFirewallEdgesMixin:
             )
         else:
             text = (
-                "\U0001f7e2 \U0001f9f1 Non-Tor egress stopped — the host audit counter has not "
-                "risen for a full check interval."
+                "\U0001f7e2 \U0001f9f1 Non-Tor egress stopped — the host audit counter did not rise "
+                "since the last check."
             )
         return [(self.EVT_CLEARNET_EXPOSED, self._fmt(text))]

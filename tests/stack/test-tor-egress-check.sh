@@ -365,6 +365,11 @@ assert_eq "and the first-seen time clears with it" "$(eau_wd .host_audit.first_s
 cp "$EAU/json.base" "$EAU/json"
 out=$(eau_status egress_status)
 assert_contains "a counter that fell (the table was reloaded) is a new baseline, not a leak" "$out" "watchdog=clean"
+assert_eq "and the lower count becomes the baseline" "$(cat "$EAU/ctl/results/.egress-audit-prev")" "55 "
+printf '08 0900\n' >"$EAU/ctl/results/.egress-audit-prev"
+assert_contains "a zero-padded baseline is read as decimal, never as an octal error" \
+    "$(eau_status egress_status)" "watchdog=leaking (rise 47 since the last check)"
+assert_eq "and its zero-padded first-seen time stays valid JSON" "$(eau_wd .host_audit.first_seen)" "900"
 EAU_NFT_TABLE_RC=1 eau_status egress_status >/dev/null
 assert_eq "an absent audit table is not-observed, never clean" "$(eau_wd .host_audit.watchdog)" '"not-observed"'
 SUDO_DENY=1 eau_status egress_status >/dev/null

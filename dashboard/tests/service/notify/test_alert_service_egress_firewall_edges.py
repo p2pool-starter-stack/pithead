@@ -5,7 +5,7 @@ from mining_dashboard.service.network.egress_status import (
     WATCHDOG_LEAKING,
     WATCHDOG_NOT_OBSERVED,
 )
-from tests.service.notify._alert_service_support import *
+from tests.service.notify._alert_service_support import *  # noqa: F403
 
 EVT = AlertService.EVT_CLEARNET_EXPOSED
 
