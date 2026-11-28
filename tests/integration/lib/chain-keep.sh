@@ -26,11 +26,6 @@
 # Two more conditions guard the comparison itself. The running node must be what RESTORE_DIR renders
 # (chain_baseline_current), and tor must keep its container through the deploy: an up that
 # recreated tor without a node in it would leave that node on dead Tor connections (#972).
-#
-# Out of scope: harness phases that drive pithead from the e2e checkout themselves (--lifecycle's
-# restart, pool-flip apply and backup round trip; --subnet; a scenario's apply) recreate or restart
-# the nodes on purpose. The restore proof records that as such, and a job that runs them still
-# needs bench-ci's node guard; `targeted` runs --lifecycle.
 
 CHAIN_SERVICES="monerod tari"
 CHAIN_KEPT=""   # what the deploy left running from the baseline
@@ -132,6 +127,39 @@ chain_keep_verdict() { # <baseline-fp> <branch-fp> <baseline-image> <branch-imag
     if [ -z "$why" ]; then echo keep; else echo "recreate $why"; fi
 }
 
+chain_read_unchanged() {
+    local now svc verdict tor
+    now="$(chain_snapshot)" || return 1
+    tor="$(chain_snap_get "$CHAIN_BEFORE" tor 2) $(chain_snap_get "$CHAIN_BEFORE" tor 3)"
+    for svc in $CHAIN_SERVICES tor; do
+        [ -n "$(chain_snap_get "$CHAIN_BEFORE" "$svc" 2)" ] || return 1
+        [ "$(chain_snap_get "$CHAIN_BEFORE" "$svc" 2) $(chain_snap_get "$CHAIN_BEFORE" "$svc" 3)" = \
+            "$(chain_snap_get "$now" "$svc" 2) $(chain_snap_get "$now" "$svc" 3)" ] || return 1
+        verdict="$(chain_keep_verdict "$(chain_fingerprint "$RESTORE_DIR" "$svc")" \
+            "$(chain_fingerprint "$E2E_DIR" "$svc")" \
+            "$(chain_snap_get "$CHAIN_BEFORE" "$svc" 4)" "$(chain_image_of "$E2E_DIR" "$svc")" \
+            "$tor" "$(chain_snap_get "$now" tor 2) $(chain_snap_get "$now" tor 3)" \
+            "$(chain_baseline_current "$svc")")"
+        [ "$verdict" = keep ] || return 1
+    done
+}
+
+chain_read_restore_prepare() {
+    chain_read_unchanged || {
+        warn "chain: late difference before restore under the read guard; refusing destructive fallback"
+        return 1
+    }
+    CHAIN_MID="$(chain_snapshot)" || return 1
+}
+
+chain_read_restore_proof() {
+    chain_read_unchanged || {
+        warn "chain: restore changed a protected container"
+        # shellcheck disable=SC2034
+        RESTORE_PROOF_FAILED=1
+    }
+}
+
 # Deploy the branch with the running chain services held out of the up, then recreate the ones
 # whose definition, mounted files or image differ from the baseline's. Sets CHAIN_KEPT.
 deploy_keeping_chain() {
@@ -145,6 +173,21 @@ deploy_keeping_chain() {
     if [ "${ROTATE_FIXTURE_REQUIRED:-0}" = 1 ]; then bootstrap_rotate_onion_fixture || return 1; fi
     for svc in $CHAIN_SERVICES; do [ -z "$(chain_snap_get "$CHAIN_BEFORE" "$svc" 2)" ] || held="$held $svc"; done
     held="${held# }"
+    if [ "${CI_CHAIN_SAFE_READ:-0}" = 1 ]; then
+        [ "$held" = "$CHAIN_SERVICES" ] && [ -n "$(chain_snap_get "$CHAIN_BEFORE" tor 2)" ] || return 1
+        for svc in $CHAIN_SERVICES tor; do
+            [ "$(chain_baseline_current "$svc")" = yes ] || return 1
+            [ "$(chain_snap_get "$CHAIN_BEFORE" "$svc" 4)" = "$(chain_image_of "$RESTORE_DIR" "$svc")" ] || return 1
+        done
+        chain_read_unchanged || return 1
+        on_bench "cd '$E2E_DIR' && CI_CHAIN_SAFE_READ=1 PITHEAD_KEEP_RUNNING='$held tor' ./pithead upgrade" || return 1
+        chain_read_unchanged || {
+            warn "chain: late difference under the read guard; refusing recreate"
+            return 1
+        }
+        CHAIN_KEPT="$held"
+        return 0
+    fi
     [ -n "$held" ] || {
         on_bench "cd '$E2E_DIR' && ./pithead upgrade"
         return
@@ -189,6 +232,10 @@ deploy_keeping_chain() {
 #     subnet, and Compose cannot move an attached bridge (scenarios.sh), so the baseline's up would
 #     ask for its static addresses on the wrong one. Only then is the baseline's own `down` run.
 chain_restore_prepare() {
+    [ "${CI_CHAIN_SAFE_READ:-0}" != 1 ] || {
+        chain_read_restore_prepare || exit 1
+        return 0
+    }
     local out line
     CHAIN_MID="$(chain_snapshot)" || CHAIN_MID=unreadable
     out="$(
@@ -258,8 +305,18 @@ chain_restore_proof() {
     while IFS= read -r line; do
         case "$line" in
         untouched\ *) ok "restore proof: ${line#* } is the same container, never restarted, as before the deploy" ;;
-        restarted\ *) ok "restore proof: ${line#* } is the same container as before the deploy, restarted in place" ;;
-        recreated\ *) step "restore proof: ${line#* } was recreated during this run (the branch changed it, or a phase did)" ;;
+        restarted\ *)
+            if [ "${MODE:-}" = chain-safe ] && case " $CHAIN_KEPT " in *" ${line#* } "*) true ;; *) false ;; esac then
+                warn "restore proof: ${line#* } restarted during a chain-safe run"
+                rc=1
+            else ok "restore proof: ${line#* } is the same container as before the deploy, restarted in place"; fi
+            ;;
+        recreated\ *)
+            if [ "${MODE:-}" = chain-safe ] && case " $CHAIN_KEPT " in *" ${line#* } "*) true ;; *) false ;; esac then
+                warn "restore proof: ${line#* } was recreated during a chain-safe run"
+                rc=1
+            else step "restore proof: ${line#* } was recreated during this run (the branch changed it, or a phase did)"; fi
+            ;;
         broken\ *)
             warn "restore proof: ${line#* } was kept through the deploy and the harness, and the RESTORE recreated or restarted it."
             warn "  Not a credential mismatch: the chain-node keep failed (#2639). A restart policy, tor auto-heal or the"

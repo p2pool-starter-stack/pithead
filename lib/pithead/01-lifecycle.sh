@@ -170,8 +170,8 @@ scope_keep_running() { # <compose up flags and services...>
         return 1
     }
     for svc in $PITHEAD_KEEP_RUNNING; do
-        container_is_running "$svc" || {
-            warn "PITHEAD_KEEP_RUNNING names '$svc', which is not running — refusing to leave it down."
+        container_is_running "$svc" && { [ "${CI_CHAIN_SAFE_READ:-0}" != 1 ] || [[ " ${services[*]} " == *" $svc "* ]]; } || {
+            warn "PITHEAD_KEEP_RUNNING names '$svc', which is not running (or is inactive in the rendered stack) — refusing to leave it down."
             return 1
         }
     done

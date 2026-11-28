@@ -41,7 +41,7 @@ E2E_DIR="${E2E_DIR:-/srv/code/pithead-e2e}"
 MINER_XMRIG_CONFIG="${MINER_XMRIG_CONFIG:-/opt/rigforge/data/worker/xmrig/build/config.json}"
 MINER_E2E_BACKUP_DIR="${MINER_E2E_BACKUP_DIR:-/opt/rigforge/data/e2e-backups}"
 GIT_REMOTE_URL="${GIT_REMOTE_URL:-https://github.com/p2pool-starter-stack/pithead.git}"
-MODE="targeted" # targeted (default, lean) | check | matrix (full sweep, opt-in)
+MODE="targeted"
 WORKERS=1
 BORROW_MINER=1
 SKIP_PREFLIGHT=0
@@ -82,8 +82,9 @@ USAGE:
   tests/integration/e2e.sh <branch> [options]
 
 OPTIONS:
-  --mode <m>        targeted | check | matrix   (default: targeted)
+  --mode <m>        targeted | chain-safe | check | matrix   (default: targeted)
                       targeted — one canonical scenario, lifecycle, auth and RigForge.
+                      chain-safe — deploy, check live state, restore; no node-touching phases.
                       check — readiness/current-state reads. matrix — all destructive phases.
   --scenario <name> with --mode matrix, run only this existing scenario plus the matrix-only phases
   --harness-arg <f> run this run.sh phase instead of the mode's (repeatable; incl. --fault-injection-ssh; --sweep = every scenario)
@@ -163,7 +164,7 @@ done
     usage
     die "A <branch> is required."
 }
-case "$MODE" in check | targeted | matrix) ;; *) die "--mode must be check|targeted|matrix (got '$MODE')." ;; esac
+case "$MODE" in check | targeted | chain-safe | matrix) ;; *) die "--mode must be check|targeted|chain-safe|matrix (got '$MODE')." ;; esac
 [ -z "$SCENARIO" ] || [ "$MODE" = matrix ] || die "--scenario is only supported with --mode matrix."
 [[ -z "$SCENARIO" || "$SCENARIO" =~ ^[a-z0-9-]+$ ]] || die "--scenario contains unsupported characters: $SCENARIO" && validate_harness_args
 [[ -z "$RIGFORGE_BOOTSTRAP_VERSION" || "$RIGFORGE_BOOTSTRAP_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "RIGFORGE_BOOTSTRAP_VERSION must be a vX.Y.Z tag."
@@ -266,8 +267,10 @@ restore_all() {
         step "$RESTORE_DIR is a source checkout — restoring with 'pithead upgrade' so ITS images are rebuilt, not the branch's reused (#272)"
         restore_cmd="./pithead upgrade"
     fi
+    [ "${CI_CHAIN_SAFE_READ:-0}" != 1 ] || restore_cmd="CI_CHAIN_SAFE_READ=1 PITHEAD_KEEP_RUNNING='monerod tari tor' ./pithead upgrade"
     wallet_fixture_restore || exit 1 # an uncertain import must never let the baseline wallet start
     if on_bench "cd '$RESTORE_DIR' && { $restore_cmd; }"; then
+        [ "${CI_CHAIN_SAFE_READ:-0}" != 1 ] || chain_read_restore_proof
         # A scenario can recreate a test-checkout container after the branch deploy.
         if ! recreate_test_checkout_containers; then
             warn "baseline recreation of test-checkout containers failed in $RESTORE_DIR"
@@ -602,12 +605,12 @@ run_harness() {
     # from (#454) — pointing it at the undeployed e2e tree would grade the wrong stack.
     [ "$MODE" = "check" ] && target_dir="$RESTORE_DIR"
     case "$MODE" in
-    check) phases="--check" ;;
+    check | chain-safe) phases="--check" ;;
     targeted) phases="${TARGETED_SCENARIO_ARGS---scenario local-pruned-main-secure-tari}${HARNESS_PHASE_ARGS:- --auth-fail-closed --lifecycle --svc-restart}" ;;
     matrix) phases="${SCENARIO:+--scenario $(quote_arg "$SCENARIO")}${HARNESS_PHASE_ARGS:- --safety-backup --lifecycle --reset-dashboard --fault-injection --auth-fail-closed --svc-restart --hardening --subnet}" ;;
     esac
     [ "${#REMOTE_NODE_ARGS[@]}" -eq 0 ] || printf -v remote_args ' %q' "${REMOTE_NODE_ARGS[@]}"
-    if [ "$BORROW_MINER" = "1" ] && [ "$MODE" != "check" ]; then
+    if [ "$BORROW_MINER" = "1" ] && [ "$MODE" != "check" ] && [ "$MODE" != "chain-safe" ]; then
         rig_supply
         [ -n "$RIG_NAME" ] || die "Borrowed rig NAME unavailable from $RIGFORGE_CONFIG."
         [ -n "${HARNESS_PHASE_ARGS:-}" ] || phases="$phases --rigforge --rigforge-control"
@@ -661,7 +664,7 @@ main() {
     provision
     # --check is a read-only assessment of the LIVE stack: no backup, no borrowed miner, no deploy.
     if [ "$MODE" != "check" ]; then
-        backup_stack
+        [ "${CI_CHAIN_SAFE_READ:-0}" = 1 ] || backup_stack
         wallet_fixture_capture
         borrow_miner
         deploy_branch

@@ -10,8 +10,10 @@ validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS, HARNE
     ROTATE_FIXTURE_ATTESTATION=""
     ROTATE_FIXTURE_REQUIRED=0
     HARNESS_SCENARIO_ARGS=""
+    [ "$MODE" != chain-safe ] || [ "${KEEP:-0}" != 1 ] || die "--keep is not supported with --mode chain-safe."
+    [ "${CI_CHAIN_SAFE_READ:-0}" != 1 ] || [ "$MODE" = chain-safe ] || die "A chain-safe read lease requires --mode chain-safe."
     [ "${#HARNESS_ARGS[@]}" -eq 0 ] && return 0
-    [ "$MODE" != "check" ] || die "--harness-arg is not supported with --mode check."
+    [ "$MODE" != "check" ] && [ "$MODE" != "chain-safe" ] || die "--harness-arg is not supported with --mode $MODE."
     local i=0 arg next
     while [ "$i" -lt "${#HARNESS_ARGS[@]}" ]; do
         arg="${HARNESS_ARGS[$i]}"
