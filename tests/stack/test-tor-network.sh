@@ -614,6 +614,8 @@ assert_contains "doctor FAILs when p2pool isn't on Tor — stale image (#273)" \
     "$(dr273 'p2pool --host 172.28.0.26 --rpc-port 18081 --mini')" "STALE p2pool image"
 assert_contains "doctor OK when p2pool IS routed over Tor (#273)" \
     "$(dr273 'p2pool --host 172.28.0.26 --mini --socks5 172.28.0.25:9050 --socks5-proxy-type tor')" "routes outbound sidechain P2P via Tor"
+assert_contains "doctor reads the daemon, not the PID 1 wrapper shell (#4159)" \
+    "$(P2POOL_PID1='/bin/bash /usr/local/bin/entrypoint.sh --mini' dr273 'p2pool --mini --socks5 172.28.0.25:9050')" "routes outbound sidechain P2P via Tor"
 assert_contains "doctor reads PID 1 of an image without the proc link (#4159)" \
     "$(P2POOL_NO_PROC_LINK=1 dr273 'p2pool --host 172.28.0.26 --rpc-port 18081 --mini')" "STALE p2pool image"
 

@@ -52,18 +52,22 @@ _exec_quiet() {
         ln -sfn "/proc/$$" "/tmp/$_qr_name.proc" 2>/dev/null || :
         exec "$@"
     }
+    _qr_pid='' _qr_stop=''
+    trap '_qr_stop=1; [ -z "$_qr_pid" ] || kill -TERM "$_qr_pid" 2>/dev/null' TERM INT
     _quiet_repeats "$_qr_pat" "$_qr_name" <"$_qr_fifo" &
     _qr_filter=$!
     "$@" >"$_qr_fifo" 2>&1 &
     _qr_pid=$!
     ln -sfn "/proc/$_qr_pid" "/tmp/$_qr_name.proc" 2>/dev/null || :
-    trap 'kill -TERM "$_qr_pid" 2>/dev/null' TERM INT
+    [ -z "$_qr_stop" ] || kill -TERM "$_qr_pid" 2>/dev/null || :
     while :; do
         _qr_rc=0
         wait "$_qr_pid" || _qr_rc=$?
         if [ "$_qr_rc" -le 128 ] || ! kill -0 "$_qr_pid" 2>/dev/null; then break; fi
     done
-    wait "$_qr_filter" || :
+    while kill -0 "$_qr_filter" 2>/dev/null; do
+        wait "$_qr_filter" || :
+    done
     exit "$_qr_rc"
 }
 

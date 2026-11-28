@@ -78,7 +78,7 @@ for svc in p2pool xmrig-proxy; do
     PATH="$RL_BIN:$PATH" "$rl_sh" "$ROOT/build/$svc/entrypoint.sh" >/dev/null 2>&1 &
     rl_pid=$!
     for _ in $(seq 1 50); do
-        [ -s "$RL_BIN/pidfile" ] && break
+        [ -s "$RL_BIN/pidfile" ] && [ -L "/tmp/$svc.proc" ] && break
         sleep 0.1
     done
     rl_same=no
