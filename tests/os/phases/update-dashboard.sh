@@ -155,7 +155,7 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
         printf '%s' "$out" | grep -q "no usable release tag"; then
         ok "leg 4: a tainted release tag is refused by name"
     else
-        bad "leg 4: a tainted release tag was not refused (got: $(printf '%s' "$out" | cut -c1-200))"
+        bad "leg 4: a tainted release tag was not refused (got: $(printf '%s' "$out" | os_redact_addr | cut -c1-200))"
     fi
     printf '{"tag_name":"%s","html_url":"http://bench.invalid/rel","assets":[{"name":"pithead-os-%s.raucb","size":%s}]}' \
         "$tag" "$tag" "$size" >"$srv/releases-latest.json"
@@ -165,7 +165,7 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
         printf '%s' "$out" | grep -q "stale or frozen"; then
         ok "leg 4: a channel that has not advanced is reported stale"
     else
-        bad "leg 4: a frozen channel was not flagged (got: $(printf '%s' "$out" | cut -c1-200))"
+        bad "leg 4: a frozen channel was not flagged (got: $(printf '%s' "$out" | os_redact_addr | cut -c1-200))"
     fi
     {
         printf '{"tag_name":"%s","assets":[{"name":"pithead-os-%s.raucb","size":%s}],"pad":"' "$tag" "$tag" "$size"
@@ -178,7 +178,7 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
         printf '%s' "$out" | grep -q "size cap"; then
         ok "leg 4: a listing over the size cap is refused"
     else
-        bad "leg 4: an oversized listing was not refused (got: $(printf '%s' "$out" | cut -c1-120))"
+        bad "leg 4: an oversized listing was not refused (got: $(printf '%s' "$out" | os_redact_addr | cut -c1-120))"
     fi
     printf '{"tag_name":"%s","html_url":"http://bench.invalid/rel","assets":[{"name":"pithead-os-%s.raucb","size":%s}]}' \
         "$tag" "$tag" "$size" >"$srv/releases-latest.json"
@@ -188,7 +188,7 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
         [ "$(printf '%s' "$out" | jq -r '.version')" = "$tag" ]; then
         ok "leg 4: the channel recovers after the hostile listings"
     else
-        bad "leg 4: the check did not recover (got: $(printf '%s' "$out" | cut -c1-200))"
+        bad "leg 4: the check did not recover (got: $(printf '%s' "$out" | os_redact_addr | cut -c1-200))"
         _leg4_srv_stop
         return
     fi

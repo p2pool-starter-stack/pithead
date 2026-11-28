@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 
 rollback_blocking_check() {
     local json="$1" path="$2" needle="$3"
@@ -8,7 +10,7 @@ rollback_blocking_check() {
         return 1
     fi
     if ! printf '%s' "$json" | jq -e --arg n "$needle" "$path.blocking | any(type == \"string\" and contains(\$n))" >/dev/null 2>&1; then
-        printf 'blocking does not name "%s": %s' "$needle" "$(printf '%s' "$json" | jq -c "$path.blocking" | cut -c1-200)"
+        printf 'blocking does not name "%s": %s' "$needle" "$(printf '%s' "$json" | jq -c "$path.blocking" | os_redact_addr | cut -c1-200)"
         return 1
     fi
 }
@@ -34,16 +36,16 @@ rollback_evidence() {
     local dest="$1"
     {
         echo "== verdict"
-        _ssh "cat /data/pithead/data/control/results/os-update-state.json" 2>&1
+        _ssh "cat /data/pithead/data/control/results/os-update-state.json" 2>&1 | os_redact_addr_lines
         echo "== in-flight"
-        _ssh "cat /data/pithead/data/os-update/in-flight.json" 2>&1
+        _ssh "cat /data/pithead/data/os-update/in-flight.json" 2>&1 | os_redact_addr_lines
         echo "== grubenv"
-        _ssh "grub-editenv /boot/efi/grub/grubenv list" 2>&1
+        _ssh "grub-editenv /boot/efi/grub/grubenv list" 2>&1 | os_redact_addr_lines
         echo "== doctor"
-        _ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json" 2>&1
+        _ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json" 2>&1 | os_redact_addr_lines
         echo "== pithead-boot journal (previous boot)"
-        _ssh "journalctl -u pithead-boot -b -1 -o short-iso --no-pager" 2>&1
+        _ssh "journalctl -u pithead-boot -b -1 -o short-iso --no-pager" 2>&1 | os_redact_addr_lines
         echo "== pithead-boot journal (this boot)"
-        _ssh "journalctl -u pithead-boot -b 0 -o short-iso --no-pager" 2>&1
+        _ssh "journalctl -u pithead-boot -b 0 -o short-iso --no-pager" 2>&1 | os_redact_addr_lines
     } >"$dest" 2>&1 || true
 }
