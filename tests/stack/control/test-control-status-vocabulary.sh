@@ -61,7 +61,7 @@ echo "dialed \$*" >>"$DI/dials.log"
 exit 7
 STUB
 chmod +x "$DI/bin/curl"
-di_run() { # <intent-json>
+di_run() {
     printf '%s\n' "$1" >"$DI/req.json"
     PATH="$DI/bin:$PATH" CONTROL_WA_BUDGET=0 CONTROL_WU_BUDGET=0 PITHEAD_CONFIG_FILE="$DI/config.json" \
         run_sourced_e "$SANDBOX" control_process_request "$DI/req.json" "$DI" >/dev/null 2>&1
