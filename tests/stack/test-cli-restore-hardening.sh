@@ -131,6 +131,51 @@ assert_eq "restored Caddyfile is world-readable" "$(file_mode "$BK/Caddyfile")" 
 assert_eq "restored config belongs to the invoking operator" "$(file_uid "$BK/config.json")" "$(id -u)"
 assert_eq "restored onion key is owner-only" "$(file_mode "$BK/data/tor/hs_ed25519_secret_key")" 600
 assert_eq "restored database is owner-only" "$(file_mode "$BK/data/dashboard/dashboard.db")" 600
+assert_eq "successful restore leaves no copies of the fixed files" "$(find "$BK" -maxdepth 1 -name '*.restore-old.*')" ""
+jq '.dashboard.energy.cost_per_kwh = 0.456' "$BK/config.json" >"$CR/pre-config" && cp "$CR/pre-config" "$BK/config.json"
+printf 'PRE_RESTORE_MARK=1\n' >>"$BK/.env"
+printf 'CADDY-PRE-RESTORE\n' >"$BK/Caddyfile"
+cp "$BK/.env" "$CR/pre-env"
+mkdir "$CR/fail-bin"
+printf '#!/usr/bin/env bash\n[ "${!#}" != "$FAIL_COPY_DEST" ] || exit 1\nexec /bin/cp "$@"\n' >"$CR/fail-bin/cp"
+chmod +x "$CR/fail-bin/cp"
+out="$(cd "$BK" && FAIL_COPY_DEST="$BK/data/dashboard/" PATH="$CR/fail-bin:$BK/bin:$PATH" ./pithead restore -y "$CR_ARCHIVE" 2>&1)"
+assert_rc "restore reports a failed data copy" "$?" 1
+assert_contains "failed data copy names the dashboard directory" "$out" "committing $BK/data/dashboard"
+assert_eq "failed data copy puts the live config back" "$(cat "$BK/config.json")" "$(cat "$CR/pre-config")"
+assert_eq "failed data copy puts the live env back" "$(cat "$BK/.env")" "$(cat "$CR/pre-env")"
+assert_eq "failed data copy puts the live Caddyfile back" "$(cat "$BK/Caddyfile")" CADDY-PRE-RESTORE
+assert_eq "rolled-back config stays owner-only" "$(file_mode "$BK/config.json")" 600
+assert_eq "failed data copy leaves no copies of the fixed files" "$(find "$BK" -maxdepth 1 -name '*.restore-old.*')" ""
+printf '#!/usr/bin/env bash\n[ "${!#}" != "$FAIL_MV_DEST" ] || exit 1\nexec /bin/mv "$@"\n' >"$CR/fail-bin/mv"
+chmod +x "$CR/fail-bin/mv"
+out="$(cd "$BK" && FAIL_COPY_DEST="$BK/data/dashboard/" FAIL_MV_DEST="$BK/.env" PATH="$CR/fail-bin:$BK/bin:$PATH" ./pithead restore -y "$CR_ARCHIVE" 2>&1)"
+assert_rc "failed put-back keeps the failed restore's exit code" "$?" 1
+assert_contains "failed put-back keeps the data copy error" "$out" "committing $BK/data/dashboard"
+assert_contains "failed put-back names the .restore-old copies" "$out" "kept beside their original names as .restore-old copies"
+assert_eq "failed put-back keeps the previous env beside its name" "$(cat "$BK"/.env.restore-old.*)" "$(cat "$CR/pre-env")"
+assert_eq "failed put-back still puts the live config back" "$(cat "$BK/config.json")" "$(cat "$CR/pre-config")"
+assert_eq "failed put-back still puts the live Caddyfile back" "$(cat "$BK/Caddyfile")" CADDY-PRE-RESTORE
+mv "$BK"/.env.restore-old.* "$BK/.env"
+rm -f "$CR/fail-bin/mv"
+
+printf 'EXISTING-ENV\n' >"$BK/.env"
+printf 'EXISTING-CADDY\n' >"$BK/Caddyfile"
+rm -f "$BK/config.json"
+cr_archive "$CR/archive-no-config.tar.gz"
+mkdir "$CR/fail-bin2"
+printf '#!/usr/bin/env bash\n[ "${!#}" != "$FAIL_COPY_DEST" ] || exit 1\nexec /bin/cp "$@"\n' >"$CR/fail-bin2/cp"
+chmod +x "$CR/fail-bin2/cp"
+out="$(cd "$BK" && FAIL_COPY_DEST="$BK/data/dashboard/" PATH="$CR/fail-bin2:$BK/bin:$PATH" ./pithead restore -y "$CR_ARCHIVE" 2>&1)"
+assert_rc "failed data copy with missing config.json exits 1" "$?" 1
+assert_not_contains "missing config.json is not restored on failure" "$(test -f "$BK/config.json" && echo yes)" yes
+assert_eq "existing .env survives put-back" "$(cat "$BK/.env")" EXISTING-ENV
+assert_eq "existing Caddyfile survives put-back" "$(cat "$BK/Caddyfile")" EXISTING-CADDY
+assert_eq "rollback of added file leaves no .restore-old copy" "$(find "$BK" -maxdepth 1 -name 'config.json.restore-old.*')" ""
+rm -f "$CR/fail-bin2/cp"
+
+cp "$CR/pre-config" "$BK/config.json"
+chmod 644 "$BK/config.json"
 
 # Generated files in a backup are compatibility inputs, never runtime policy. A valid config plus
 # stale .env/Caddyfile must land the normal writers' output, while opaque generated identity and
