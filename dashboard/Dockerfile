@@ -31,7 +31,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iproute2 \
     libpcre2-8-0 \
     libsqlite3-0 \
-    libzstd1 \
     libssl3t64 \
     libzstd1 \
     openssl \
