@@ -38,12 +38,20 @@ phase_provision_lan_guard() { # <phase-rc>
         "$unexercised" "LAN guard: could not snapshot the guest's config.json"
         return 0
     }
-    if ! _ssh 'set -eu
+    local apply_out apply_rc=0
+    # shellcheck disable=SC2016
+    apply_out=$(_ssh 'set -eu
 cd /data/pithead
 jq -c ".monero.rpc_lan_access = true | .monero.zmq_lan_access = true | .tari.grpc_lan_access = true" config.json >config.json.lan-test
 mv config.json.lan-test config.json
-./pithead apply -y' >/dev/null 2>&1; then
-        bad "LAN guard: ./pithead apply -y did not accept the three LAN switches"
+rc=0
+./pithead apply -y >lan-guard-apply.log 2>&1 || rc=$?
+[ "$rc" -eq 0 ] || { tail -n 60 lan-guard-apply.log; exit "$rc"; }' 2>&1) || apply_rc=$?
+    if [ "$apply_rc" -ne 0 ]; then
+        bad "LAN guard: ./pithead apply -y did not accept the three LAN switches (exit $apply_rc)"
+        local shown
+        shown=$(printf '%s' "$apply_out" | os_redact_addr) || shown="(redaction failed; output withheld)"
+        printf '  LAN guard apply output (last 60 lines):\n%s\n' "$shown" >&2
         approval_restore_pending || bad "LAN guard: cleanup after a failed apply also failed"
         return 0
     fi

@@ -59,7 +59,7 @@ class _Session:
         self._response = _Response(status, {"ok": True} if payload is None else payload)
         self.calls = []
 
-    def get(self, url, headers=None, timeout=None):
+    def get(self, url, headers=None, timeout=None, allow_redirects=True):
         self.calls.append(url)
         return _Get(self._response)
 

@@ -129,6 +129,7 @@ os_pkg_run="$(
     confirm() { return 0; }
     gh() { :; }
     run() { printf '%s\n' "$*"; }
+    require_gated_commit() { :; }
     publish 2>/dev/null
 )"
 assert_contains "publish attaches the package list to the GitHub Release" "$os_pkg_run" \
@@ -143,6 +144,7 @@ os_pkg_err="$(
     set +eu
     WORKDIR="$os_pkg_dir/empty" DRY_RUN=0 TAG=v9.9.9 STACK_VERSION=9.9.9 GIT_COMMIT=abc BUILD_DATE=now
     mkdir -p "$WORKDIR"
+    require_gated_commit() { :; }
     publish 2>&1 >/dev/null
 )"
 assert_eq "publish stops when no package list was recorded" "$?" "1"

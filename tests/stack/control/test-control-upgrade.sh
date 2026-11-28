@@ -745,6 +745,7 @@ upgrade_intent "$UUPG" "v9.9.9"
 usign >/dev/null
 assert_eq "signed bundle with a valid signature upgrades" "$(jq -r '.status' "$UPGRESULTS/$UUPG.json" 2>/dev/null)" "upgraded"
 assert_eq "signature fetched over Tor SOCKS" "$(grep -c -- '--socks5-hostname 10.9.0.25:9050.*pithead\.tar\.gz\.sig' "$UPG/curl.log")" "1"
+assert_eq "both downloads pin https for the request and redirects" "$(grep -c -- '--proto =https --proto-redir =https.*releases/download' "$UPG/curl.log")" "2"
 assert_contains "bundle verified against the existing key, no Rekor" \
     "$(cat "$UPG/cosign.log")" "verify-blob --key cosign.pub --signature"
 # Bad signature: FAIL CLOSED — nothing extracted, the install untouched. The red test for the
