@@ -111,9 +111,9 @@ kept in `data/control/results/.egress-audit-prev`, and writes the watchdog verdi
 | `not-observed` | No audit table, an unreadable table, or a counter that is not a number. |
 
 The map's `audit` column names the destination port of each host-route row (`allowlisted tcp 443`,
-`choice:sync tcp 18080,18189`); a choice is counted as chosen only while its config switch is on, so with
-the switch off the same traffic reads `leaking`. The match is by port, so a leak over 443 reads
-`allowlisted`; #4154 narrows it with resolved addresses. A `leaking` verdict also carries `watchdog_delta`,
+`choice:monero tcp 18080`); a choice is counted as chosen only while its own config switch is on (Monero and Tari have one each), so with
+the switch off the same traffic reads `leaking`. The match is by port, so a leak over port 443 or 80
+reads `allowlisted`; #4154 narrows it with resolved addresses. A `leaking` verdict also carries `watchdog_delta`,
 the rise in `outside`, and `first_seen`, the check time at which the rise began. The first check after install
 records the baseline and reads `clean`; a counter that falls, because the table was reloaded, starts a new
 baseline. `./pithead egress-status` and `doctor` print the verdict. The dashboard sends one `clearnet_exposed`

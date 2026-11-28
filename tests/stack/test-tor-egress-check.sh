@@ -245,16 +245,14 @@ assert_contains "with no lan class the gate is the loopback and reply complement
     'oifname != "lo" ct state != { established, related } counter comment "would_drop"'
 assert_not_contains "the gate never names a lan class the role did not render" "$EAU_NOLAN" 'ip daddr !='
 assert_not_contains "with no lan class the ungated rule already counts IPv6, so no IPv6 rule is added" "$EAU_NOLAN" "meta nfproto ipv6"
-printf 'appliance\tupdate fetch\tallow\tallow\thost\tnone\tnone\tallowlisted tcp 443\nappliance\ttime sync\tallow\tallow\thost\tnone\tnone\tallowlisted tcp 80\n' >>"$EAU/map-nolan.tsv"
-printf 'appliance\tsync\tallow\tallow\thost\tnone\tnone\tchoice:sync tcp 18080,18189\nappliance\txvb\tallow\tallow\thost\tnone\tnone\tchoice:xvb tcp 4247\n' >>"$EAU/map-nolan.tsv"
-EAU_CLS=$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-nolan.tsv" "" "sync")
-assert_contains "host-route rows with an audit match render an allowlisted class, ports merged" "$EAU_CLS" \
-    'oifname != "lo" ct state != { established, related } tcp dport { 443, 80 } counter comment "allowlisted"'
-assert_contains "an enabled operator choice renders its own choice class" "$EAU_CLS" \
-    'tcp dport { 18080, 18189 } counter comment "choice"'
+printf 'appliance\tupdate fetch\tallow\tallow\thost\tnone\tnone\tallowlisted tcp 443\nappliance\ttime sync\tallow\tallow\thost\tnone\tnone\tallowlisted tcp 80\nappliance\tmonero\tallow\tallow\thost\tnone\tnone\tchoice:monero tcp 18080\nappliance\ttari\tallow\tallow\thost\tnone\tnone\tchoice:tari tcp 18189\nappliance\tpull\tbuild\tbuild\thost\tnone\tnone\tallowlisted tcp 443\nappliance\txvb\tallow\tallow\thost\tnone\tnone\tchoice:xvb tcp 4247\n' >>"$EAU/map-nolan.tsv"
+EAU_CLS=$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-nolan.tsv" "" "monero")
+assert_contains "host-route rows with an audit match render an allowlisted class, ports merged" "$EAU_CLS" 'oifname != "lo" ct state != { established, related } tcp dport { 443, 80 } counter comment "allowlisted"'
+assert_contains "an enabled operator choice renders its own choice class" "$EAU_CLS" 'tcp dport { 18080 } counter comment "choice"'
+assert_not_contains "a choice's switch is its own: Tari's port is not labelled while only Monero's is on" "$EAU_CLS" "18189"
+assert_not_contains "a malformed port cell renders nothing, never raw text into the nft ruleset" "$(printf 'role\tdestination\ttoday\ttarget\troute\tenforcer\ttest\taudit\nappliance\tx\tallow\tallow\thost\tnone\tnone\tallowlisted tcp 443;flush\n' >"$EAU/map-bad.tsv"; run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-bad.tsv" "" "")" "flush"
 assert_not_contains "a choice the operator did not make is not labelled, so its traffic stays outside" "$EAU_CLS" "4247"
-assert_not_contains "no choice enabled renders no choice class" \
-    "$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-nolan.tsv" "" "")" 'comment "choice"'
+assert_not_contains "no choice enabled renders no choice class" "$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-nolan.tsv" "" "")" 'comment "choice"'
 assert_eq "classes add counters only: still no terminal verdict anywhere" \
     "$(printf '%s\n' "$EAU_CLS" | grep -Ec '(^|[[:space:]])(accept|drop|reject)([[:space:]]|$)')" "0"
 EAU_RIG=$(run_sourced "$EAU" render_host_egress_audit_nft rig "$EAU/map-lan.tsv")
@@ -352,60 +350,6 @@ assert_contains "doctor shows the would_drop counter when the table is loaded" "
 out=$(EAU_NFT_TABLE_RC=1 eau_status check_host_egress_audit 2>&1)
 assert_contains "doctor warns when the table is not loaded" "$out" "log-only host egress audit table is not loaded"
 
-eau_set() {
-    jq -n --argjson w "$1" --argjson a "$2" --argjson c "$3" \
-        '{nftables: [{rule: {comment: "would_drop", expr: [{counter: {packets: $w, bytes: 0}}]}},
-        {rule: {comment: "allowlisted", expr: [{counter: {packets: $a, bytes: 0}}]}},
-        {rule: {comment: "choice", expr: [{counter: {packets: $c, bytes: 0}}]}}]}' >"$EAU/json"
-}
-echo "== egress-status: the watchdog compares would_drop across consecutive checks (#4385) =="
-eau_wd() { jq -c "$1" "$EAU/ctl/results/egress-status.json"; }
-rm -f "$EAU/ctl/results/.egress-audit-prev"
-cp "$EAU/json" "$EAU/json.base"
-eau_status egress_status >/dev/null
-assert_eq "a first check has no baseline, so it is clean, never a leak" "$(eau_wd .host_audit.watchdog)" '"clean"'
-assert_eq "and it records the counter as the baseline" "$(cat "$EAU/ctl/results/.egress-audit-prev")" "55 - 0 0"
-out=$(eau_status egress_status)
-assert_contains "an unchanged counter stays clean" "$out" "watchdog=clean (rise 0 since the last check)"
-cp "$EAU/counter-rising.json" "$EAU/json"
-out=$(eau_status egress_status)
-assert_contains "a rising counter is non-Tor egress seen, with the rise" "$out" "watchdog=leaking (rise 25 since the last check)"
-assert_eq "the status file carries the verdict, the rise, the count and the time first seen" \
-    "$(eau_wd '[.host_audit.watchdog, .host_audit.watchdog_delta, .host_audit.would_drop, .host_audit.first_seen == .checked_at]')" \
-    '["leaking",25,80,true]'
-assert_contains "doctor shows the watchdog verdict" "$(eau_status check_host_egress_audit 2>&1)" "(watchdog leaking)"
-printf '55 1000\n' >"$EAU/ctl/results/.egress-audit-prev"
-eau_status egress_status >/dev/null
-assert_eq "a leak that keeps rising keeps the time it was first seen" "$(eau_wd .host_audit.first_seen)" "1000"
-out=$(eau_status egress_status)
-assert_contains "a counter that stopped rising for a full interval clears" "$out" "watchdog=clean (rise 0"
-assert_eq "and the first-seen time clears with it" "$(eau_wd .host_audit.first_seen)" "null"
-cp "$EAU/json.base" "$EAU/json"
-out=$(eau_status egress_status)
-assert_contains "a counter that fell (the table was reloaded) is a new baseline, not a leak" "$out" "watchdog=clean"
-assert_eq "and the lower count becomes the baseline" "$(cat "$EAU/ctl/results/.egress-audit-prev")" "55 - 0 0"
-printf '08 0900\n' >"$EAU/ctl/results/.egress-audit-prev"
-assert_contains "a zero-padded baseline is read as decimal, never as an octal error" \
-    "$(eau_status egress_status)" "watchdog=leaking (rise 47 since the last check)"
-assert_eq "and its zero-padded first-seen time stays valid JSON" "$(eau_wd .host_audit.first_seen)" "900"
-eau_set 100 20 0
-eau_status egress_status >/dev/null
-eau_set 110 30 0
-out=$(eau_status egress_status)
-assert_contains "a rise only in allowlisted flows is allowlisted, never a leak" "$out" "watchdog=allowlisted (rise 0"
-eau_set 120 30 10
-assert_contains "a rise only in an operator's chosen clearnet path is operator-choice, never a leak" \
-    "$(eau_status egress_status)" "watchdog=operator-choice (rise 0"
-eau_set 140 34 10
-assert_contains "a rise beyond the allowlisted and chosen flows is a leak, by the outside share only" \
-    "$(eau_status egress_status)" "watchdog=leaking (rise 16 since the last check)"
-assert_eq "the status file keeps the allowlisted, choice and outside counts" \
-    "$(eau_wd '[.host_audit.allowlisted, .host_audit.choice, .host_audit.outside]')" '[34,10,96]'
-EAU_NFT_TABLE_RC=1 eau_status egress_status >/dev/null
-assert_eq "an absent audit table is not-observed, never clean" "$(eau_wd .host_audit.watchdog)" '"not-observed"'
-SUDO_DENY=1 eau_status egress_status >/dev/null
-assert_eq "an unreadable audit table is not-observed too" "$(eau_wd .host_audit.watchdog)" '"not-observed"'
-
 echo "== boot verdict: the KVM leg's judgement, fixture-tested so the boot phase cannot pass on noise (#4195) =="
 . "$ROOT/tests/os/host-egress-audit-boot-verdict.sh"
 assert_eq "the would_drop counter is read out of the live table text" \
@@ -452,3 +396,5 @@ vfixture "loopback counted into would_drop" active "$EAU_OK_TABLE" 10 42 0 3 210
 vfixture "a loopback probe that never reached lo" active "$EAU_OK_TABLE" 10 42 0 2 2 4
 vfixture "an unreadable loopback leg" active "$EAU_OK_TABLE" 10 42 0 "" "" ""
 vfixture "a failed test flow" active "$EAU_OK_TABLE" 10 42 1 3 5 210
+# shellcheck source=tests/stack/test-egress-watchdog.sh
+source "$ROOT/tests/stack/test-egress-watchdog.sh"

@@ -14,7 +14,8 @@ host_egress_audit_role() {
 
 host_egress_audit_choices() {
     local c=""
-    [ "$(env_get MONERO_CLEARNET_SYNC 2>/dev/null)" = true ] || [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" = true ] && c="sync"
+    [ "$(env_get MONERO_CLEARNET_SYNC 2>/dev/null)" = true ] && c="monero"
+    [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" = true ] && c="$c tari"
     tor_egress_choice_active p2pool && c="$c p2pool"
     tor_egress_choice_active xvb && c="$c xvb"
     printf '%s\n' "$c"
@@ -32,15 +33,19 @@ render_host_egress_audit_nft() {
         $1 == role && $5 == "lan" { lan = 1 }
         $1 == role && NF >= 8 && $8 != "-" {
             split($8, a, " ")
-            if (a[2] != "tcp" || a[3] == "") next
+            if (a[2] != "tcp" || a[3] !~ /^[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*$/) next
             label = a[1]
             if (label ~ /^choice:/) {
                 key = substr(label, 8)
                 if (index(" " choices " ", " " key " ") == 0) next
                 label = "choice"
             } else if (label != "allowlisted") next
-            gsub(/,/, ", ", a[3])
-            ports[label] = (ports[label] == "" ? a[3] : ports[label] ", " a[3])
+            m = split(a[3], ps, ",")
+            for (k = 1; k <= m; k++) {
+                if (index("," seen[label] ",", "," ps[k] ",") > 0) continue
+                seen[label] = seen[label] "," ps[k]
+                ports[label] = (ports[label] == "" ? ps[k] : ports[label] ", " ps[k])
+            }
         }
         END {
             set = ""

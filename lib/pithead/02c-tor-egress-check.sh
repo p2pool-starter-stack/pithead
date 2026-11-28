@@ -16,7 +16,7 @@ EGRESS_AUDIT_STATE_FILE=".egress-audit-prev"
 
 egress_status() {
     local rc=0 dir tmp verdict arc=0 audit_state=absent audit_json='' audit_cj wd now
-    local state_file state_tmp prev_wd='' first_seen='' prev_al='' prev_ch='' al ch al_v
+    local state_file state_tmp prev_wd='' first_seen='' prev_al='' prev_ch='' al='' ch='' al_v
     local delta=0 d_al=0 d_ch=0 watchdog=not-observed
     tor_egress_enforced || rc=$?
     case "$rc" in

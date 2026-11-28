@@ -45,7 +45,7 @@ em_audit="$(awk -F '\t' '
     NR == 1 || NF != 8 || $8 == "-" { next }
     {
         n = split($8, a, " ")
-        if (n != 3 || a[2] != "tcp" || a[1] !~ /^(allowlisted|choice:(sync|p2pool|xvb))$/ || a[3] !~ /^[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*$/) print "line " NR " audit \"" $8 "\" is outside the fixed form"
+        if (n != 3 || a[2] != "tcp" || a[1] !~ /^(allowlisted|choice:(monero|tari|p2pool|xvb))$/ || a[3] !~ /^[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*$/) print "line " NR " audit \"" $8 "\" is outside the fixed form"
         if ($5 != "host") print "line " NR " has an audit match but route " $5 ": only host-route rows are counted by the host table"
     }
 ' "$EGRESS_MAP" 2>/dev/null)"
