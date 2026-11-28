@@ -304,7 +304,6 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
-
     cat >"$outdir/caddy.container" <<EOF
 [Unit]
 Description=pithead caddy
