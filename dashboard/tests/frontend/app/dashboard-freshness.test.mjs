@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { initDashboard } from '../../../mining_dashboard/web/static/dashboard.js';
 import {
-    GUARD_KEY, RELOAD_GUARD_MS, UPDATED_MESSAGE,
+    GUARD_KEY, RELOAD_GUARD_MS, STALE_MESSAGE, UPDATED_MESSAGE,
 } from '../../../mining_dashboard/web/static/app/freshness.mjs';
 import { aborted, httpError, makeEnv, ok, unauthorized } from '../helpers/dashboardenv.mjs';
 
@@ -103,6 +103,7 @@ test('an expired session (401) reloads once through the freshness hook, and a la
     await d.firstLoad;
     await new Promise(setImmediate);
     assert.equal(t.reloads.length, 1);
+    assert.equal(t.last().reloading, STALE_MESSAGE);
     assert.equal(t.last().connected, true);
     await d.tick();
     await new Promise(setImmediate);
