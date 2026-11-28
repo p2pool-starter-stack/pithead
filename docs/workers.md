@@ -440,7 +440,7 @@ answered with it.
 | **Dead stick** — the machine is gone or off | The row goes offline and stops answering. No fault is raised by the dead stick alone; a replacement booted from a copy counts as a clone only while the original's last answer is still inside the window. | Adopt the replacement; remove the dead entry once the replacement is live. |
 
 A clone shares the token, so rotating the token on one rig (the Remove rig action, tracked in
-#4016) reaches only the copy that answers the rotation; the other copy keeps the old token until it
+issue #4016) reaches only the copy that answers the rotation; the other copy keeps the old token until it
 is re-keyed, which is why the fault stays up until one copy is re-keyed. The fault state is held in
 memory: a dashboard restart forgets it and raises it again within the window if both copies still
 answer. A stick whose DHCP address changes can raise the fault for up to one window while the old
