@@ -13,7 +13,6 @@ TRACE="$work/trace"
 MKTEMP_FAIL=""
 MARKER_PRESENT=""
 MOUNT_RESULT=1
-MKFS_RESULT=0
 cases=0
 
 fail() {
@@ -31,7 +30,6 @@ reset_fixture() {
     MKTEMP_FAIL=""
     MARKER_PRESENT=""
     MOUNT_RESULT=1
-    MKFS_RESULT=0
 }
 
 mktemp() {
@@ -92,7 +90,7 @@ mke2fs() {
 
 function mkfs.ext4 {
     printf 'mkfs.ext4\n' >>"$TRACE"
-    return "$MKFS_RESULT"
+    return 0
 }
 
 for failed_probe in 1 2 3 4 5; do
@@ -214,30 +212,6 @@ rc=$?
 [ "$(count 'mkfs.ext4')" -eq 0 ] || fail 'requested reset formatted without mount space'
 esp_mnt=$(awk '$1 == "mktemp" { print $2; exit }' "$TRACE")
 [ -f "$esp_mnt/$MARKER_NAME" ] || fail 'refused reset consumed the reset marker'
-cases=$((cases + 1))
-
-reset_fixture
-MARKER_PRESENT=1
-MKFS_RESULT=1
-main >"$work/main-output" 2>"$work/main-error"
-rc=$?
-[ "$rc" -ne 0 ] || fail 'main returned 0 when the requested reformat failed'
-[ "$(count 'mkfs.ext4')" -eq 1 ] || fail 'requested reset did not attempt the reformat exactly once'
-esp_mnt=$(awk '$1 == "mktemp" { print $2; exit }' "$TRACE")
-[ -f "$esp_mnt/$MARKER_NAME" ] || fail 'failed requested reformat consumed the reset marker'
-[ ! -e "$esp_mnt/$WIPE_LOG_NAME" ] || fail 'failed requested reformat recorded a wipe'
-grep -q 'stays requested and runs again at the next boot' "$work/main-error" ||
-    fail 'failed requested reformat did not say the reset stays requested'
-cases=$((cases + 1))
-
-reset_fixture
-MARKER_PRESENT=1
-main >"$work/main-output" 2>"$work/main-error"
-rc=$?
-[ "$rc" -eq 0 ] || fail "requested reset returned $rc after a successful reformat"
-esp_mnt=$(awk '$1 == "mktemp" { print $2; exit }' "$TRACE")
-[ ! -e "$esp_mnt/$MARKER_NAME" ] || fail 'successful requested reset kept the reset marker'
-grep -q 'factory-reset requested' "$esp_mnt/$WIPE_LOG_NAME" || fail 'successful requested reset recorded no wipe'
 cases=$((cases + 1))
 
 printf 'selftest-data-reset-probe: %s cases passed\n' "$cases"

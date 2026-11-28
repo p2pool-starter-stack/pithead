@@ -220,11 +220,10 @@ main() {
         log "factory-reset requested — wiping $data_part"
         if reformat_data "$data_part"; then
             record_wipe "${marker:+$esp_mnt}" "factory-reset requested"
-            [ -z "$marker" ] || rm -f "$marker" 2>/dev/null || true
         else
-            rc=$?
-            log "factory reset did not complete — it stays requested and runs again at the next boot"
+            [ "$?" -ne 2 ] || rc=2
         fi
+        [ "$rc" -eq 2 ] || [ -z "$marker" ] || rm -f "$marker" 2>/dev/null || true
         ;;
     reformat-wedged)
         log "$data_part could not be mounted after every repair — reinitializing it so the box can recover"

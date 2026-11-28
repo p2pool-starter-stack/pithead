@@ -344,7 +344,6 @@ doctor() {
     fi
 
     check_data_wipe_note
-    check_reset_requested
 
     # --- Summary ---
     echo ""

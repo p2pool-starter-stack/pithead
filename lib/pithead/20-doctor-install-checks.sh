@@ -295,14 +295,6 @@ check_appliance_cert() {
     fi
 }
 
-check_reset_requested() {
-    is_appliance || return 0
-    [ -e "$PRESEED_DIR/pithead-reset" ] || return 0
-    echo ""
-    echo "Factory reset:"
-    dr_warn "A factory reset is still requested: the next boot erases /data. If the machine already rebooted for it, the reset did not complete; the pithead-data-reset service journal may say why."
-}
-
 check_stratum_tls_keypair() {
     [ "$(normalize_bool "$(env_get PROXY_STRATUM_TLS)")" = true ] || return 0
     local dir f missing=""

@@ -711,11 +711,6 @@ failure in the `pithead-data-reset` service journal. An unavailable read-only pr
 does not authorize further repairs or erasure. A reformat also requires its mount
 directory to be allocated before formatting starts.
 
-If a factory reset you asked for cannot finish reformatting the data area, the reset
-stays requested: the `pithead-data-reset` service journal records the failure, the
-reset runs again at the next boot, and
-`cd /data/pithead && ./pithead doctor` warns until it has run.
-
 ## Recovering from a backup
 
 Fresh flash, restore, done — if the machine is gone (dead disk, stolen, dropped), a backup
