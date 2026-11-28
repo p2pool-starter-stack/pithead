@@ -99,6 +99,21 @@ class TestEarningsVsActual:
         s = build_earnings_vs_actual(_metrics(p2pool_30d=8000.0), e, [], now=self.NOW)
         assert s["xmr"]["partial"] is True
 
+    def test_pct_stays_a_raw_ratio_on_a_partial_ledger(self, _metrics):
+        e = _summary_earnings(
+            coeff_day=1e-8,
+            confirmed={"enabled": True, "xmr_30d": 0.01, "partial": {"30d": True}},
+        )
+        s = build_earnings_vs_actual(_metrics(p2pool_30d=8000.0), e, [], now=self.NOW)
+        assert s["xmr"]["partial"] is True
+        assert s["xmr"]["pct"] == round(0.01 / (1e-8 * 8000.0 * 30) * 100)
+        e = _summary_earnings(
+            coeff_day=1e-8,
+            confirmed={"enabled": True, "xmr_30d": 0.01, "partial": {"30d": False}},
+        )
+        s = build_earnings_vs_actual(_metrics(p2pool_30d=8000.0), e, [], now=self.NOW)
+        assert s["xmr"]["pct"] == round(0.01 / (1e-8 * 8000.0 * 30) * 100)
+
     def test_tari_compares_block_counts_over_30d(self, _metrics):
         # Expected blocks = 30d-average hashrate × 30 days ÷ aux difficulty; actual = the
         # confirmed payout count (solo merge-mining: a payout IS a found block), XTM alongside.

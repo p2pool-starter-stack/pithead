@@ -14,7 +14,12 @@ from mining_dashboard.config.config import (
     TELEGRAM_ENABLED,
     TOR_SOCKS_PROXY,
 )
-from mining_dashboard.helper.http import bounded_get
+from mining_dashboard.helper.http import (
+    PROXY_PURPOSE_NOTIFY,
+    bounded_get,
+    purpose_proxy_map,
+    refuse_direct_public,
+)
 from mining_dashboard.service.metrics import build_metrics
 from mining_dashboard.service.network.egress import egress_posture_from_config
 from mining_dashboard.service.notify.telegram_formatters import (
@@ -185,9 +190,7 @@ class TelegramCommandBot:
         self.host_label = host_label
         self._api_base = api_base.rstrip("/")
         self.long_poll = long_poll
-        # Route getUpdates + replies over the bridge Tor SOCKS proxy, so polling Telegram never
-        # exposes the host IP (same discipline as the notifier / Healthchecks pinger).
-        self._proxies = {"http": tor_proxy, "https": tor_proxy} if tor_proxy else None
+        self._proxies = purpose_proxy_map(tor_proxy, PROXY_PURPOSE_NOTIFY)
         if enabled is None:
             enabled = bool(TELEGRAM_ENABLED and TELEGRAM_COMMANDS_ENABLED)
         self.enabled = bool(enabled and self._token and self.chat_id)
@@ -362,6 +365,7 @@ class TelegramCommandBot:
         url = f"{self._api_base}/bot{self._token}/sendMessage"
         payload = {"chat_id": self.chat_id, "text": text, "disable_web_page_preview": True}
         try:
+            refuse_direct_public(url, self._proxies)
             resp = requests.post(url, json=payload, timeout=10, proxies=self._proxies)
             resp.raise_for_status()
         except Exception as exc:

@@ -176,7 +176,8 @@ def test_explorer_tip_parses_the_text_explorer_json(monkeypatch):
 
     monkeypatch.setattr(th, "bounded_get", fake_get)
     assert th._explorer_tip("https://textexplore.tari.com/?json") == 350958
-    assert seen["proxies"]["https"] == th.TOR_SOCKS_PROXY  # never a clearnet call
+    expected = th.TOR_SOCKS_PROXY.replace("://", "://health:isolate@", 1)
+    assert seen["proxies"] == {"http": expected, "https": expected}
 
 
 @pytest.mark.parametrize("body", [{}, {"tipInfo": None}, "not json"])
@@ -297,3 +298,13 @@ def test_the_verdict_carries_this_cycles_peer_reading():
     assert mon.observe(SYNCED, 0, 0)["connections"] == 0
     assert mon.observe(SYNCED, None, MIN)["connections"] is None
     assert mon.observe({"reachable": False}, None, 2 * MIN)["connections"] is None
+
+
+def test_explorer_failure_logs_no_credential(monkeypatch, caplog):
+    def boom(url, **kw):
+        raise ValueError(f"via {kw['proxies']['https']}")
+
+    monkeypatch.setattr(th, "bounded_get", boom)
+    with caplog.at_level("INFO"):
+        assert th._explorer_tip("u") is None
+    assert "isolate@" not in caplog.text

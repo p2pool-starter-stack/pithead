@@ -11,6 +11,30 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
+### Added
+
+- The **Stack Topology & Egress** panel shows the host's own traffic: a scope pill, host-OS nodes for time sync, OS and release fetches and image pulls, a warning when the host audit counted flows outside the allowlist, and a not-observed notice when the audit table is not loaded. `GET /api/system/egress-audit` and `egress_audit` in `/api/state` expose the counters (#4415, #4416, #4417).
+- With `tor.auto_heal`, a Tor stuck at 95% bootstrap with no circuit and an up guard (a relay refusing circuit creation) is cured by a guard rotation (`DROPGUARDS`) on the NEWNYM budget instead of a refresh that keeps the guards, and the heal never restarts Tor after one (#4121).
+
+### Fixed
+
+- The dashboard's **Earnings — Expected vs Actual** card no longer compares this stack's expected
+  income with the whole wallet's payouts in silence. The payout side is now stated on the card as
+  wallet-wide (every stack or rig paying your configured address counts), a percent computed while
+  the payout history on record is shorter than the window reads as "at least N%", and a percent
+  withheld past 999% is explained in visible text — other stacks paying to the same address, or
+  this box idle or unrecorded for most of the window — instead of blaming an idle miner in a
+  tooltip (#4228).
+- The egress panel no longer calls Caddy firewalled. Caddy runs on the host network, so the
+  container egress fence never covered it; its per-service posture now says so, like the
+  host-networked dashboard's already did (#4197).
+
+### Security
+
+- The appliance rootfs builds Docker Compose and Cosign with Go 1.27.4, which Cosign v3.1.4 requires
+  and which carries the CVE-2026-97054 standard-library fix first shipped in Go 1.26.11 (#4265,
+  #4316), and builds Compose v5.7.2, whose containerd v2.4.2 clears CVE-2026-95839 (#4291).
+
 ## [2.0.4] - 2026-11-24
 
 Pithead 2.0.4 is a patch release after 2.0.3. It bakes RigForge 1.19.0 into the appliance image

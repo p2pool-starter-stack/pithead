@@ -49,40 +49,33 @@ function ExpectedVsActualCard({ summary, onView }) {
   if (!xmr.available && !tari.available && !xvb.enabled) return null;
   const partialMark = (row, text) => (row.partial ? text + " *" : text);
   const anyPartial = (xmr.enabled && xmr.partial) || (tari.enabled && tari.partial);
+  const withheld = xmr.available && xmr.enabled && xmr.pct === null;
   const rows = [];
-  // The server withholds pct past 999%: a near-zero expectation (a box idle for most of the
-  // window) turns the ratio into a five-digit figure that reads as a bug. Once available and
-  // enabled both hold, a null pct means exactly that — the tooltip owns the explanation.
-  const pctNote =
-    xmr.available && xmr.enabled && xmr.pct === null
-      ? " No percentage shown: the expected figure is near zero for this window — the miner " +
-        "was idle or unrecorded for most of it, so a ratio against it would be noise."
-      : "";
+  const pctText = xmr.pct === null ? "" : ` (${xmr.partial ? "at least " : ""}${xmr.pct}%)`;
   rows.push({
     label: xmr.includes_xvb ? "Monero + XvB (30d)" : "Monero (30d)",
     expected: xmr.available ? formatXmr(xmr.expected_30d) : "—",
     actual: !xmr.enabled
       ? configLink(onView)
-      : partialMark(xmr, formatXmr(xmr.actual_30d) + (xmr.pct !== null ? ` (${xmr.pct}%)` : "")),
+      : partialMark(xmr, formatXmr(xmr.actual_30d) + pctText),
     dim: !xmr.enabled,
-    title:
-      (xmr.includes_xvb
-        ? "Confirmed on-chain payouts over the trailing 30 days vs the P2Pool linear expectation " +
-          "at your 30-day average hashrate PLUS XvB's estimate for your tier — combined " +
-          "on both sides, because an XvB win pays out through ordinary payouts that cannot be " +
-          "told apart from P2Pool payouts. " +
-          (xmr.xvb_realization_pct !== null
-            ? `The XvB share is tempered to this wallet's measured win payouts — ` +
-              `${xmr.xvb_realization_pct}% of XvB's published face value over the last ` +
-              `${xmr.xvb_wins_measured} wins. `
-            : "The XvB share is XvB's published face-value estimate — an upper bound: it prices " +
-              "every bonus hash at full block reward and assumes every won round runs to " +
-              "completion. ") +
-          "Payouts swing with luck; a sustained gap is the signal worth checking, not one window."
-        : "Confirmed on-chain payouts over the trailing 30 days vs the linear expectation at " +
-          "your 30-day average P2Pool hashrate. Any XvB win payouts land in the actual too — " +
-          "they cannot be told apart from P2Pool payouts. Payouts swing with luck; a sustained " +
-          "gap is the signal worth checking, not one window.") + pctNote,
+    title: xmr.includes_xvb
+      ? "Confirmed on-chain payouts over the trailing 30 days vs the P2Pool linear expectation " +
+        "at your 30-day average hashrate PLUS XvB's estimate for your tier — combined " +
+        "on both sides, because an XvB win pays out through ordinary payouts that cannot be " +
+        "told apart from P2Pool payouts. " +
+        (xmr.xvb_realization_pct !== null
+          ? `The XvB share is tempered to this wallet's measured win payouts — ` +
+            `${xmr.xvb_realization_pct}% of XvB's published face value over the last ` +
+            `${xmr.xvb_wins_measured} wins. `
+          : "The XvB share is XvB's published face-value estimate — an upper bound: it prices " +
+            "every bonus hash at full block reward and assumes every won round runs to " +
+            "completion. ") +
+        "Payouts swing with luck; a sustained gap is the signal worth checking, not one window."
+      : "Confirmed on-chain payouts over the trailing 30 days vs the linear expectation at " +
+        "your 30-day average P2Pool hashrate. Any XvB win payouts land in the actual too — " +
+        "they cannot be told apart from P2Pool payouts. Payouts swing with luck; a sustained " +
+        "gap is the signal worth checking, not one window.",
   });
   rows.push({
     label: "Tari (30d)",
@@ -146,6 +139,16 @@ function ExpectedVsActualCard({ summary, onView }) {
                 )}
             </tbody>
         </table>
+        ${
+          xmr.enabled || tari.enabled
+            ? html`<p class="text-muted text-xs">Payouts counted in Actual are wallet-wide: every confirmed payout to your configured address counts, whichever stack or rig earned it — Expected covers only this stack.</p>`
+            : null
+        }
+        ${
+          withheld
+            ? html`<p class="text-muted text-xs">No percentage shown: this wallet received far more than this stack's expected payout — typically other stacks or rigs pay to the same address, or this stack was idle or unrecorded for most of the window.</p>`
+            : null
+        }
         ${
           anyPartial
             ? html`<p class="text-muted text-xs">* covers only the payout history on record, not the window's full span.</p>`
