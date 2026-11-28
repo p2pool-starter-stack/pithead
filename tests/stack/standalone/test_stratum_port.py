@@ -177,6 +177,7 @@ class OccupiedStratumProofTest(unittest.TestCase):
         error = None
         with (
             patch("sys.argv", ["occupied-stratum.py", "443"]),
+            patch.dict("os.environ", {"DASHBOARD_PROXY_SECRET": "test-secret"}),
             patch("urllib.request.urlopen", side_effect=respond),
             patch("time.monotonic", side_effect=lambda: clock[0]),
             patch("time.sleep", side_effect=sleep),
