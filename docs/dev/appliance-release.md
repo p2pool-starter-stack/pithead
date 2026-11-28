@@ -41,24 +41,24 @@ that is not the tagged one. Resolve it with
 `gh api repos/<owner>/<repo>/commits/<tag> --jq .sha`. The Go builder is pinned by digest at [1.27.4](https://go.dev/doc/devel/release#go1.27.0) to clear
 [CVE-2026-111943](https://github.com/p2pool-starter-stack/pithead/issues/3585)
 and [CVE-2026-97054](https://github.com/p2pool-starter-stack/pithead/issues/4265)
-in both binaries' standard library. Cosign v3.1.4 declares `go 1.27`, so the builder is a Go 1.27 image.
+in both binaries' standard library. Cosign v3.1.5 declares `go 1.27`, so the builder is a Go 1.27 image.
 
 The rootfs install list names `apt`, `gzip`, `libpcre2-8-0`, `libsqlite3-0`, `perl-base` and
 `zlib1g` only to pull the distro's security build past the digest-pinned base
 (#1438, #2104, #3923); `xxd` stays out because the rootfs has no consumer (#1380).
 
-Compose builds at v5.7.2, whose containerd v2.4.2 clears
+Compose builds at v5.8.0, whose containerd v2.4.2 clears
 [CVE-2026-95839](https://github.com/p2pool-starter-stack/pithead/issues/4291).
 `COMPOSE_GO_RAISES` raises x/net to v0.62.0 for
-[CVE-2026-78661](https://github.com/p2pool-starter-stack/pithead/issues/3931); Compose v5.7.2 already
+[CVE-2026-78661](https://github.com/p2pool-starter-stack/pithead/issues/3931); Compose v5.8.0 already
 selects x/mod v0.41.0 and grpc v1.85.0. `COSIGN_GO_RAISES` raises only x/net
-to v0.62.0: Cosign v3.1.4 already selects x/mod v0.41.0, grpc v1.84.0,
+to v0.62.0: Cosign v3.1.5 already selects x/mod v0.42.0, grpc v1.84.0,
 klauspost/compress v1.20.1 (past the fix for
 [CVE-2026-63209](https://github.com/p2pool-starter-stack/pithead/issues/3585))
-and go-jose/v4 v4.1.6 (the fix for
+and go-jose/v4 v4.1.9 (the fix for
 [CVE-2026-116587](https://github.com/p2pool-starter-stack/pithead/issues/3761)),
 and a raise below a selected version would downgrade it.
-Compose already selects compress v1.19.2 from its pinned upstream source.
+Compose already selects compress v1.20.0 from its pinned upstream source.
 The build asserts the compiled Go version of both binaries and Cosign's
 compiled compress and go-jose versions before copying them into the rootfs.
 
