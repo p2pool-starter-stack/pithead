@@ -401,7 +401,8 @@ check_host_egress_audit() {
     cj=$(host_egress_audit_counters) || arc=$?
     case "$arc" in
     0)
-        watchdog=$(jq -r '.host_audit.watchdog // empty' "$(env_get CONTROL_DIR 2>/dev/null)/results/egress-status.json" 2>/dev/null) || true; [ "$watchdog" != leaking ] || dr=dr_warn
+        watchdog=$(jq -r '.host_audit.watchdog // empty' "$(env_get CONTROL_DIR 2>/dev/null)/results/egress-status.json" 2>/dev/null) || watchdog=
+        [ "$watchdog" != leaking ] || dr=dr_warn
         $dr "Log-only host egress audit (inet $HOST_EGRESS_AUDIT_NFT_TABLE) is loaded — would_drop counter at $(printf '%s' "$cj" | jq -r '.would_drop // "unknown"' 2>/dev/null) flows (watchdog ${watchdog:-not-observed}); the table drops nothing."
         ;;
     1)

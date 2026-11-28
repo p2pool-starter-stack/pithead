@@ -71,7 +71,10 @@ egress_status() {
         audit_json=$(printf '%s' "$audit_cj" | jq -c --arg w "$watchdog" --argjson d "$delta" \
             --argjson f "${first_seen:-null}" \
             '. + {verdict: "present", watchdog: $w, watchdog_delta: $d, first_seen: $f}') || audit_json=
-        [ -n "$audit_json" ] || { audit_state=unreadable; watchdog=not-observed; }
+        [ -n "$audit_json" ] || {
+            audit_state=unreadable
+            watchdog=not-observed
+        }
     fi
     [ -n "$audit_json" ] ||
         audit_json="{\"verdict\":\"$audit_state\",\"counters\":[],\"would_drop\":null,\"watchdog\":\"not-observed\"}"

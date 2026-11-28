@@ -70,3 +70,7 @@ assert_eq "donation chosen while XvB stays off renders donation alone" \
 printf 'DONATION_ENABLED=true\nDONATION_TOR_ENABLED=true\n' >"$EAU/.env"
 assert_eq "a donation that stays on Tor is no choice" "$(run_sourced "$EAU" host_egress_audit_choices)" ""
 rm -f "$EAU/.env"
+assert_not_contains "a malformed port cell renders nothing, never raw text into the nft ruleset" "$(
+    printf 'role\tdestination\ttoday\ttarget\troute\tenforcer\ttest\taudit\nappliance\tx\tallow\tallow\thost\tnone\tnone\tallowlisted tcp 443;flush\n' >"$EAU/map-bad.tsv"
+    run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-bad.tsv" "" ""
+)" "flush"

@@ -250,7 +250,6 @@ EAU_CLS=$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-no
 assert_contains "host-route rows with an audit match render an allowlisted class, ports merged" "$EAU_CLS" 'oifname != "lo" ct state != { established, related } tcp dport { 443, 80 } counter comment "allowlisted"'
 assert_contains "an enabled operator choice renders its own choice class" "$EAU_CLS" 'tcp dport { 18080 } counter comment "choice"'
 assert_not_contains "a choice's switch is its own: Tari's port is not labelled while only Monero's is on" "$EAU_CLS" "18189"
-assert_not_contains "a malformed port cell renders nothing, never raw text into the nft ruleset" "$(printf 'role\tdestination\ttoday\ttarget\troute\tenforcer\ttest\taudit\nappliance\tx\tallow\tallow\thost\tnone\tnone\tallowlisted tcp 443;flush\n' >"$EAU/map-bad.tsv"; run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-bad.tsv" "" "")" "flush"
 assert_not_contains "a choice the operator did not make is not labelled, so its traffic stays outside" "$EAU_CLS" "4247"
 assert_not_contains "no choice enabled renders no choice class" "$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-nolan.tsv" "" "")" 'comment "choice"'
 assert_eq "classes add counters only: still no terminal verdict anywhere" \
@@ -396,5 +395,5 @@ vfixture "loopback counted into would_drop" active "$EAU_OK_TABLE" 10 42 0 3 210
 vfixture "a loopback probe that never reached lo" active "$EAU_OK_TABLE" 10 42 0 2 2 4
 vfixture "an unreadable loopback leg" active "$EAU_OK_TABLE" 10 42 0 "" "" ""
 vfixture "a failed test flow" active "$EAU_OK_TABLE" 10 42 1 3 5 210
-# shellcheck source=tests/stack/test-egress-watchdog.sh
-source "$ROOT/tests/stack/test-egress-watchdog.sh"
+# shellcheck source=tests/stack/firewall/egress-watchdog.sh
+source "$ROOT/tests/stack/firewall/egress-watchdog.sh"
