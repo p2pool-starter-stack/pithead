@@ -2,7 +2,7 @@
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 _worker_apply() { # <worker> <changes-json>  -> echoes the dashboard result JSON
     local body
-    body="$(printf '%s' "$2" | jq -ce --arg w "$1" 'if type == "object" then {worker:$w,changes:.} else error("changes") end')" || return 1
+    body="$(printf '%s' "$2" | jq -ce --arg w "$1" 'if type == "object" then {worker:$w,changes:.} + (if has("pools") then {confirm:"APPLY"} else {} end) else error("changes") end')" || return 1
     printf '%s' "$body" | rx "curl -fsS --max-time 60 -X POST -H 'Content-Type: application/json' -H 'X-Pithead-Control: 1' --data-binary @- http://127.0.0.1:8000/api/control/worker-apply" --stdin 2>/dev/null
 }
 
