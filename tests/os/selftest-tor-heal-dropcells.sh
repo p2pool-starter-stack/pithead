@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Pure harness controls: no containers, guests or network service.
 set -euo pipefail
 export TMPDIR="${TMPDIR:-${RUNNER_TEMP:-/tmp}}"
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
