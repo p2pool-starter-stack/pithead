@@ -38,12 +38,14 @@ render_host_egress_audit_nft() {
             label = a[1]
             if (label ~ /^choice:/) {
                 key = substr(label, 8)
-                if (index(" " choices " ", " " key " ") == 0) next
+                if (key == "" || index(" " choices " ", " " key " ") == 0) next
                 label = "choice"
             } else if (label != "allowlisted") next
             m = split(a[3], ps, ",")
+            other = (label == "choice" ? "allowlisted" : "choice")
             for (k = 1; k <= m; k++) {
                 if (index("," seen[label] ",", "," ps[k] ",") > 0) continue
+                if (index("," seen[other] ",", "," ps[k] ",") > 0) continue
                 seen[label] = seen[label] "," ps[k]
                 ports[label] = (ports[label] == "" ? ps[k] : ports[label] ", " ps[k])
             }
@@ -83,7 +85,11 @@ render_host_egress_audit_nft() {
 apply_host_egress_audit() {
     [ "$OS_TYPE" = "Linux" ] || return 0
     command -v nft >/dev/null 2>&1 || return 0
-    local map="${1:-data/egress-map.tsv}" role out state
+    local map="${1:-}" role out state
+    if [ -z "$map" ]; then
+        map="data/egress-map.tsv"
+        [ -r "$map" ] || map="/usr/share/pithead/egress-map.tsv"
+    fi
     role=$(host_egress_audit_role)
     out=$(render_host_egress_audit_nft "$role" "$map") || {
         warn "egress-audit:render-failed — could not render the log-only host egress audit table from $map; the audit view is not loaded."

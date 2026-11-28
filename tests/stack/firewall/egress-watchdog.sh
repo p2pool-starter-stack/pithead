@@ -74,6 +74,25 @@ assert_not_contains "a malformed port cell renders nothing, never raw text into 
     printf 'role\tdestination\ttoday\ttarget\troute\tenforcer\ttest\taudit\nappliance\tx\tallow\tallow\thost\tnone\tnone\tallowlisted tcp 443;flush\n' >"$EAU/map-bad.tsv"
     run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-bad.tsv" "" ""
 )" "flush"
+assert_not_contains "a choice cell with an empty key renders nothing, so a crafted row never relabels traffic as operator-chosen" "$(
+    printf 'role\tdestination\ttoday\ttarget\troute\tenforcer\ttest\taudit\nappliance\tx\tallow\tallow\thost\tnone\tnone\tchoice: tcp 4247\n' >"$EAU/map-emptykey.tsv"
+    run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-emptykey.tsv" "" "donation"
+)" "4247"
+assert_eq "a port both allowlisted and chosen renders in one class only, so outside is never double-subtracted" "$(
+    printf 'role\tdestination\ttoday\ttarget\troute\tenforcer\ttest\taudit\nappliance\ttls\tallow\tallow\thost\tnone\tnone\tallowlisted tcp 443\nappliance\txvb\tallow\tallow\thost\tnone\tnone\tchoice:xvb tcp 443,9001\n' >"$EAU/map-both.tsv"
+    run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-both.tsv" "" "xvb" | grep -c 'dport { 443 }'
+)" "1"
+out=$(EAU_NFT_CAPTURE=1 eau_run apply_host_egress_audit 2>&1)
+assert_contains "with no repo map the default render asks for the baked map, the same fallback the boot unit uses" \
+    "$out" "/usr/share/pithead/egress-map.tsv"
+eau_set 160 34 10
+eau_status egress_status >/dev/null
+jq '.checked_at -= 400' "$EAU/ctl/results/egress-status.json" >"$EAU/ctl/results/egress-status.stale" &&
+    mv "$EAU/ctl/results/egress-status.stale" "$EAU/ctl/results/egress-status.json"
+assert_contains "a verdict file past the dashboard's freshness window reads not-observed to doctor too" \
+    "$(eau_status check_host_egress_audit 2>&1)" "(watchdog not-observed)"
+assert_not_contains "a stale leaking verdict never warns from doctor" \
+    "$(eau_status check_host_egress_audit 2>&1)" "watchdog leaking"
 
 echo "== boot verdict: the KVM leg's watchdog judgement, fixture-tested so the boot phase cannot pass on noise (#4385) =="
 # shellcheck source=tests/os/host-egress-watchdog-boot-verdict.sh
@@ -103,3 +122,22 @@ assert_contains "a leaking verdict with no counted rise is a boot failure" \
     "$(host_egress_watchdog_boot_verdict "$EW_ALLOW_OK" 'host-audit: present watchdog=leaking (rise 0 since the last check)')" "no packet rise"
 assert_contains "no verdict at all on a booted appliance is a boot failure" \
     "$(host_egress_watchdog_boot_verdict 'absent' "$EW_PROBE_OK")" "printed no watchdog verdict"
+
+echo "== no .env: the check runs where setup never ran — a booting appliance, a DIY tree before setup (#4385) =="
+EW_NOENV="$EAU/noenv"
+mkdir -p "$EW_NOENV"
+ew_noenv=$(
+    cd "$EW_NOENV" || exit
+    export PATH="$EAU/bin:$PATH"
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    tor_egress_enforced() { return 1; }
+    egress_status 2>&1
+)
+assert_contains "the watchdog verdict prints without a .env — the boot phase drives the shipped verb" \
+    "$ew_noenv" "watchdog=clean"
+assert_eq "with no CONTROL_DIR the status file lands under PWD, writable on a booting appliance" \
+    "$([ -f "$EW_NOENV/data/control/results/egress-status.json" ] && echo written)" "written"
+assert_contains "and the same file the check just wrote reads back with the verdict" \
+    "$(jq -r '.host_audit.watchdog' "$EW_NOENV/data/control/results/egress-status.json")" "clean"
