@@ -9,6 +9,8 @@ from mining_dashboard.helper.http import bounded_read
 
 logger = logging.getLogger("DockerControl")
 
+LOCK_WAIT_SECONDS = 30
+
 
 class DockerControl:
     """
@@ -90,7 +92,13 @@ class DockerControl:
         try:
             # Every dashboard start/stop routes here. The CLI takes the same inode before config
             # writes and compose; both sides therefore acquire lock→engine and never nest the lock.
-            lock = await self._acquire_lock()
+            lock = await asyncio.wait_for(self._acquire_lock(), LOCK_WAIT_SECONDS)
+        except TimeoutError:
+            logger.warning(
+                f"Container {container} {action} skipped: pithead lock still held after "
+                f"{LOCK_WAIT_SECONDS}s; retrying next cycle."
+            )
+            return False
         except OSError as e:
             logger.error(f"Container {container} {action} refused: pithead lock unavailable: {e}")
             return False
