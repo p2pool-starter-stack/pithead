@@ -64,11 +64,12 @@ ensure_owner() {
 # owned by the uid its container runs as. ensure_owner is conditional, so a routine apply stays
 # sudo-free once ownership is correct; the first run after the non-root switch migrates the data.
 ensure_directories() {
-    local d created=()
+    local d
     for d in "$MONERO_DIR" "$TARI_DIR" "$P2POOL_DIR" "$TOR_DATA_DIR" "$DASHBOARD_DIR" "$PROXY_TLS_DIR"; do
-        [ -d "$d" ] || { mkdir -p "$d" && created+=("$d"); }
+        [ -d "$d" ] || mkdir -p "$d"
     done
-    mkdir -p "$P2POOL_DIR/stats"
+    # shellcheck disable=SC2174
+    mkdir -p -m 755 "$P2POOL_DIR/stats"
     ensure_owner "$TOR_DATA_DIR" 100 101
     ensure_owner "$MONERO_DIR" "$APP_UID" "$APP_GID"
     ensure_owner "$TARI_DIR" "$APP_UID" "$APP_GID"
@@ -77,7 +78,6 @@ ensure_directories() {
     ensure_owner "$PROXY_TLS_DIR" "$APP_UID" "$APP_GID"
     prepare_control_dirs    # #33: spool dirs exist + requests/ writable by the dashboard uid
     ensure_stratum_tls_cert # #261: keypair exists before compose mounts $PROXY_TLS_DIR
-    [ "${#created[@]}" -gt 0 ] && sudo chmod -R 755 "$P2POOL_DIR/stats"
     return 0
 }
 

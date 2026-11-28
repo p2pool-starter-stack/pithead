@@ -21,6 +21,7 @@ class TestTariPayoutSync:
         svc = DataService(sm, MagicMock(), MagicMock())
         svc.tari_wallet_client = MagicMock()
         svc.tari_wallet_client.scan = AsyncMock()
+        svc.tari_wallet_client.payout_addresses = AsyncMock(return_value=(["fixture-wallet"], True))
         svc.alert_service.payout_confirmed_alert = AsyncMock(return_value="sent")
         return svc, sm
 
