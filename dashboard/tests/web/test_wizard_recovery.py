@@ -69,16 +69,20 @@ def test_populated_legacy_workers_replace_an_empty_canonical_default_and_drop_un
     prepared, changes = prepare_config(
         {
             "dashboard": {
-                "workers": [{"name": "shed", "host": "rig.local", "api_token": "drop-me"}]
+                "workers": [
+                    {"name": "shed", "host": "rig.local", "api_token": "keep-me", "bogus": 1}
+                ]
             },
             "workers": {"list": []},
         },
         REFERENCE,
     )
-    assert prepared["workers"]["list"] == [{"name": "shed", "host": "rig.local"}]
+    assert prepared["workers"]["list"] == [
+        {"name": "shed", "host": "rig.local", "api_token": "keep-me"}
+    ]
     assert changes == [
         "dashboard.workers → workers.list",
-        "workers.list[].api_token removed",
+        "workers.list[].bogus removed",
     ]
 
 
@@ -316,3 +320,9 @@ async def test_valid_install_marker_still_reports_installing(client, spool):
     spool.joinpath("installing").write_text("1")
     await _auth(client)
     assert (await _state(client))["stage"] == "installing"
+
+
+def test_spool_read_tolerates_a_truncated_multibyte_character(tmp_path):
+    (tmp_path / "error.txt").write_bytes(b"\x94 failed after the dash")
+    assert wizard._spool_read("error.txt", str(tmp_path)).endswith("failed after the dash")
+    assert wizard._spool_read("absent.txt", str(tmp_path)) is None

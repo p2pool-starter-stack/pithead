@@ -54,6 +54,19 @@ user = "$auth"
 EOF
 }
 
+rig_share_hashrate_wait() {
+    local token deadline=$(($(date +%s) + ${1:-120})) hs=""
+    token=$(_ssh "jq -r '.ACCESS_TOKEN // \"\"' /data/rigforge/config.json" | tr -d '\r')
+    [[ "$token" =~ ^[0-9a-f]{32}$ ]] || return 1
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        hs=$(_ssh "curl -fsS -m 5 -H \"Authorization: Bearer $token\" http://127.0.0.1:8081/1/summary" 2>/dev/null |
+            jq -r '(.hashrate.total[0] // 0) | tostring' 2>/dev/null)
+        awk -v v="${hs:-0}" 'BEGIN { exit !(v > 0) }' && return 0
+        sleep 15
+    done
+    return 1
+}
+
 _rig_share_counters() {
     jq -er --arg coordinator "$coord_worker" '
         [.workers[] | select(.name == "kvm-rig-share")] as $rig |
@@ -174,7 +187,10 @@ _rig_share_arm() {
         return 1
     }
     ok "share leg $arm: miner config contains exactly the requested pool (#3425)"
-    _rig_share_window "$arm" "$baseline"
+    _rig_share_window "$arm" "$baseline" || {
+        ip="$coord_ip" rig_failure_evidence
+        return 1
+    }
 }
 
 _rig_share_power_cut() {
@@ -257,6 +273,11 @@ rig_share_leg() {
     _rig_share_hosts_install ||
         _rig_share_abort "share leg: could not install the coordinator hostname fixture" || return 1
     _rig_share_arm address "$coord_ip:3333" || _rig_share_abort "share leg: address arm failed (#3425)" || return 1
+    if rig_share_hashrate_wait; then
+        ok "share leg: the rig's sister feed reports a live hashrate (M11 floor, #3996)"
+    else
+        bad "share leg: the rig's sister feed never reported a nonzero hashrate within 120s (M11 floor, #3996)"
+    fi
     _rig_share_arm hostname "$coord_name:3333" || _rig_share_abort "share leg: hostname arm failed (#3425)" || return 1
     _rig_share_arm return "$coord_ip:3333" || _rig_share_abort "share leg: return arm failed (#3425)" || return 1
     _rig_share_hosts_restore || _rig_share_abort "share leg: hosts fixture restoration failed (#3425)" || return 1
@@ -266,6 +287,11 @@ rig_share_leg() {
     local dash_user="$coord_user" dash_pass="$coord_pass"
     ip="$coord_ip"
     miner_backup_trial kvm-rig-share || miner_rc=$?
+    case "$miner_rc" in
+    0) rig_failure_evidence_probe ;;
+    77) ;;
+    *) rig_failure_evidence ;;
+    esac
     ip="$rig_ip"
     if [ "$miner_rc" != 0 ] && [ "$miner_rc" != 77 ]; then
         bad "connected rig cannot mask local miner backup recovery (#3375)"

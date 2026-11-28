@@ -93,6 +93,9 @@ MATRIX:
                          in .env and assert `pithead up` REFUSES to start (the live counterpart
                          to the tier-1 compose-config check), then restore the exact token and
                          recover. DESTRUCTIVE-then-restored; works in both ssh and local mode.
+  --svc-restart          local-only: enable control, restart xmrig-proxy through the control spool,
+                         assert applied + healthy + a moved container start time + the audit entry,
+                         the cooldown refusal and the allowlist refusal (#4062). DESTRUCTIVE-then-restored.
   --hardening            local-only: rootfs write refusal, control path-unit apply/refusal, Tor recovery.
                          DESTRUCTIVE-then-restored; enables then disables control (#377/#33/#424).
   --rotate-onion         rotate an isolated onion fixture; prove reachability, retirement and restore (#2345).
@@ -101,6 +104,9 @@ MATRIX:
                          reads it. Non-destructive; self-skips if no rigforge rig is connected.
   --rigforge-control     run the real RigForge control, reversible-write, and upgrade legs.
                          DESTRUCTIVE-then-restored; local mode and an opted-in real rig required.
+  --failover-view        move the borrowed rig to a second pool the harness serves and back; assert the
+                         Workers row, Workers Alive, Total Hashrate and the paused banner follow each
+                         transition (#4074). DESTRUCTIVE-then-restored; needs --rig-name and a reserved rig.
   --rig-host <h>         the borrowed rig's LAN host/IP for control dials — needed to inject a
                          workers.list[] descriptor when the box's baseline lacks one (#513/#514/#506).
   --rig-name <name>      exact borrowed rig NAME from its protected RigForge config.

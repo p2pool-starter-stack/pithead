@@ -225,6 +225,21 @@ out="$(RUNNING_CONTAINERS="monerod" CURL_RC=7 PATH="$DRBIN:$PATH" run_sourced "$
 assert_contains "monerod sync: RPC silent -> info skip" "$out" "did not answer"
 out="$(RUNNING_CONTAINERS="" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_monerod_synchronized 2>&1)"
 assert_eq "monerod sync: no container -> silent skip" "$out" ""
+mkdir -p "$SANDBOX/authbin"
+cat >"$SANDBOX/authbin/curl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${0%/*}/args.log"
+cat >>"${0%/*}/stdin.log"
+printf '%s' "${CURL_BODY:-}"
+EOF
+chmod +x "$SANDBOX/authbin/curl"
+printf 'MONERO_NODE_USERNAME=op\nMONERO_NODE_PASSWORD=pw-S3cret\n' >"$SANDBOX/.env"
+RUNNING_CONTAINERS="monerod" CURL_BODY='{"status":"OK","synchronized":true}' PATH="$SANDBOX/authbin:$DRBIN:$PATH" \
+    run_sourced "$SANDBOX" check_monerod_synchronized </dev/null >/dev/null 2>&1
+assert_contains "monerod sync: both node probes ran" "$(cat "$SANDBOX/authbin/args.log")" "/json_rpc"
+assert_not_contains "monerod sync: the node login is not in curl's arguments" "$(cat "$SANDBOX/authbin/args.log")" "pw-S3cret"
+assert_eq "monerod sync: both node probes read the login on standard input" "$(grep -c '^user = "op:pw-S3cret"$' "$SANDBOX/authbin/stdin.log")" "2"
+rm -rf "$SANDBOX/authbin" "$SANDBOX/.env"
 
 echo "== unit: clock_sync_status (mining is time-sensitive) =="
 # doctor's NTP check classifies timedatectl's NTPSynchronized: yes→synced, no→unsynced, else unknown.

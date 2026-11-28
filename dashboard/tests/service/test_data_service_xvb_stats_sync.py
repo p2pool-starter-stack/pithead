@@ -34,6 +34,22 @@ class TestXvbStatsSync:
         for key in ("avg_1h", "avg_24h", "last_update"):
             assert after[key] == before[key]
 
+    async def test_a_fail_count_without_averages_only_raises_the_stored_count(self):
+        svc, sm = self._svc_with_real_storage()
+        try:
+            good = {"avg_1h": 1000.0, "avg_24h": 900.0, "fail_count": 1}
+            svc.xvb_client.get_stats.return_value = good
+            await svc._sync_xvb_stats()
+            fetched_at = sm.get_xvb_stats()["last_update"]
+            for seen, stored in ((5, 5), (0, 5), (4, 5), (6, 6)):
+                svc.xvb_client.get_stats.return_value = {"fail_count": seen}
+                await svc._sync_xvb_stats()
+                stats = sm.get_xvb_stats()
+                assert (stats["fail_count"], stats["avg_1h"]) == (stored, 1000.0)
+                assert stats["last_update"] == fetched_at
+        finally:
+            sm.close()
+
     def _svc_with_real_storage(self):
         from mining_dashboard.service.storage_service import StateManager
 

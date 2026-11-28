@@ -77,13 +77,35 @@ test("staged reboot requires exact confirmation and Later erases it", async ({ p
   expect(actions).toEqual([]);
 });
 
-test("a host refusal never offers installation or reboot", async ({ page, ui }) => {
-  await page.route("**/api/control/os-update", (route) => route.fulfill({ status: 403 }));
+const STALE = "Pithead restarted or the page is out of date. Reloading…";
+
+test("a refused action on a stale tab reloads the page once the dashboard answers", async ({
+  page,
+  ui,
+}) => {
+  let states = 0;
+  await page.route("**/api/control/os-update", (route) => route.fulfill({ status: 401 }));
+  await page.route("**/api/state?**", (route) =>
+    ++states === 1 ? route.fulfill({ status: 503 }) : route.fulfill({ json: ui.state }),
+  );
   await mount(ui);
   await page.getByRole("button", { name: "OS updates", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "System update" });
   await dialog.getByRole("button", { name: "Check now" }).click();
-  await expect(dialog.getByText("HTTP 403")).toBeVisible();
+  await expect(dialog.getByText(STALE)).toBeVisible();
+  await page.waitForEvent("load", { timeout: 15000 });
+  expect(states).toBeGreaterThanOrEqual(2);
+  expect(await page.evaluate(() => sessionStorage.getItem("pitheadAutoReloadAt"))).not.toBeNull();
+});
+
+test("a host refusal never offers installation or reboot", async ({ page, ui }) => {
+  await page.route("**/api/control/os-update", (route) => route.fulfill({ status: 403 }));
+  await page.route("**/api/state?**", (route) => route.fulfill({ status: 503 }));
+  await mount(ui);
+  await page.getByRole("button", { name: "OS updates", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "System update" });
+  await dialog.getByRole("button", { name: "Check now" }).click();
+  await expect(dialog.getByText(STALE)).toBeVisible();
   await expect(dialog.getByRole("button", { name: /Install|Reboot|Retry/ })).toHaveCount(0);
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await expect(dialog).toHaveCount(0);

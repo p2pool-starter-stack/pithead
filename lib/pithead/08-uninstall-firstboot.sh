@@ -91,7 +91,7 @@ stack_uninstall() {
     # clear — is fixed under ./data (33-render-env.sh), not a *_DIR key in .env.
     local secret_file="$checkout_dir/data/tari-wallet-secret.env"
 
-    local kept_list derived_list unit
+    local kept_list derived_list unit down_out
     kept_list=$(printf '%s\n' "${kept_dirs[@]}" | sort -u | tr '\n' ' ')
     derived_list=$(printf '%s\n' "${derived_dirs[@]}" "$secret_file" | sort -u | tr '\n' ' ')
 
@@ -110,29 +110,24 @@ stack_uninstall() {
     local project
     project=$(compose_project_name) || return 1
     mutation_lock_acquire uninstall
-    remove_tor_egress_firewall 2>/dev/null || true
     remove_tor_egress_boot_unit
     for unit in remove_egress_check_units remove_lan_guard_check_units; do "$unit" || units_left=1; done
-    docker compose down --remove-orphans -v 2>/dev/null ||
-        warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm ${project}_caddy_data ${project}_wallet_data ${project}_tari_wallet_db"
+    if down_out=$(docker compose down --remove-orphans -v 2>&1); then
+        remove_deactivated_profile_containers
+    else
+        printf '%s\n' "$down_out" >&2
+        warn "compose down failed with the error above — continuing with cleanup. Once the stack is stopped, remove the volumes with: docker volume rm ${project}_caddy_data ${project}_wallet_data ${project}_tari_wallet_db"
+    fi
+    remove_tor_egress_when_idle ||
+        warn "A stack container is still active or could not be checked, so the Tor-only egress rules stay for now, but their boot unit is already removed and nothing re-applies them after a reboot. Run '$0 down' before rebooting."
     lan_guard_teardown uninstall && { remove_lan_guard_boot_unit || error "uninstall stopped: $LAN_GUARD_BOOT_UNIT or $LAN_GUARD_HOLD_UNIT could not be removed; retry."; }
-    local volumes labels vol
-    volumes=$(docker volume ls -q) || error "Could not list Docker volumes; uninstall stopped before removing .env. Retry when the engine is available."
-    for vol in tari_wallet_db tari_wallet_data; do
-        printf '%s\n' "$volumes" | grep -Fx "${project}_$vol" >/dev/null || continue
-        labels=$(docker volume inspect "${project}_$vol" --format '{{index .Labels "com.docker.compose.project"}}/{{index .Labels "com.docker.compose.volume"}}') ||
-            error "Could not inspect ${project}_$vol; uninstall stopped before removing .env. Retry when the engine is available."
-        if [ "$labels" = "$project/$vol" ]; then
-            docker volume rm "${project}_$vol" >/dev/null ||
-                error "Could not remove ${project}_$vol; uninstall stopped before removing .env. Retry when the volume is available."
-        fi
-    done
+    remove_tari_wallet_volumes
     docker compose config --images 2>/dev/null | sort -u | while read -r img; do
         [ -n "$img" ] && docker rmi "$img" >/dev/null 2>&1 || true
     done
     # Removes only THIS checkout's pithead-control units (the ownership check inside).
     # stderr kept: the drain's timeout warning is the message for a request still in flight.
-    CONTROL_DIR="$control_dir" DASHBOARD_CONTROL_ENABLED=false TOR_AUTO_HEAL=false provision_control_runner || true
+    CONTROL_DIR="$control_dir" provision_control_runner remove || true
     # The view-key secret goes first: nothing after it may leave a 0600 key behind.
     rm -f "$secret_file"
     rm -f .env Caddyfile build/tari/config.toml .pithead-first-run-done

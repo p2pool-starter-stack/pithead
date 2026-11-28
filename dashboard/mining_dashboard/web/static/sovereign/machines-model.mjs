@@ -6,10 +6,16 @@ export const SORTS = {
   hashrate: "Hashrate",
 };
 
+export function rigRate(worker) {
+  return (
+    [worker?.telemetry_h60, worker?.h60, worker?.h15].map(Number).find((rate) => rate > 0) ?? 0
+  );
+}
+
 export function rigView(worker) {
   const online = worker?.status === "online";
-  const hashrate = Number(worker?.h60);
-  const reporting = online && Number.isFinite(hashrate) && hashrate > 0;
+  const hashrate = rigRate(worker);
+  const reporting = online && hashrate > 0;
   const behind = worker?.rigforge_update?.available === true;
   const status = !online ? "Offline" : behind ? "Behind" : "Mining";
   const note = online

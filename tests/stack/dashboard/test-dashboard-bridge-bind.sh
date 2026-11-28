@@ -58,7 +58,7 @@ for gateway_host in "" dashboard.example; do
                 generate_caddyfile >/dev/null 2>&1
             cat Caddyfile
         )"
-        gateway_lan_binds=$(printf '%s\n' "$caddy_gateway" | awk '/^    bind / && $0 != "    bind 10.77.42.1"' | sort -u)
+        gateway_lan_binds=$(printf '%s\n' "$caddy_gateway" | awk '/^    bind / && $0 != "    bind 10.77.42.1" && $0 != "    bind 127.0.0.1"' | sort -u)
         assert_eq "LAN binds exclude the configured gateway without bridge discovery" \
             "$gateway_lan_binds" "    bind 192.168.1.10 fd00::1 127.0.0.1 ::1"
         assert_not_contains "LAN sites exclude the configured gateway" \

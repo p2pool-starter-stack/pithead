@@ -23,6 +23,7 @@ Env contract (set by ``pithead firstboot-wizard``):
 """
 
 import asyncio
+import contextlib
 import hmac
 import json
 import math
@@ -100,10 +101,9 @@ def handoff_dir() -> str:
 def _spool_read(name: str, directory: str | None = None) -> str | None:
     """Blocking on purpose: single-operator page, tiny local files."""
     path = os.path.join(directory or spool_dir(), name)
-    if not os.path.exists(path):
-        return None
-    with open(path) as f:
+    with contextlib.suppress(FileNotFoundError), open(path, errors="replace") as f:
         return f.read().strip()
+    return None
 
 
 def _spool_json(name: str) -> dict:

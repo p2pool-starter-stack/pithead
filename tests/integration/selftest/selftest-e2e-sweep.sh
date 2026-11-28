@@ -92,11 +92,11 @@ assert_eq "matrix backup-only launches without its scenario sweep" \
 
 echo "== nothing else changes =="
 assert_eq "targeted without the token still pins its scenario and runs its preset" \
-    "$(phases_of targeted 0 '')" "--scenario local-pruned-main-secure-tari --auth-fail-closed --lifecycle --no-mining-asserts"
+    "$(phases_of targeted 0 '')" "--scenario local-pruned-main-secure-tari --auth-fail-closed --lifecycle --svc-restart --no-mining-asserts"
 assert_eq "a hand-picked targeted phase still keeps the preset's scenario" \
     "$(phases_of targeted 0 '' --hardening)" "--scenario local-pruned-main-secure-tari --hardening --no-mining-asserts"
 assert_eq "--mode matrix still means the sweep plus the destructive phases" \
-    "$(phases_of matrix 0 '')" " --safety-backup --lifecycle --reset-dashboard --fault-injection --auth-fail-closed --hardening --subnet --no-mining-asserts"
+    "$(phases_of matrix 0 '')" " --safety-backup --lifecycle --reset-dashboard --fault-injection --auth-fail-closed --svc-restart --hardening --subnet --no-mining-asserts"
 
 echo "== a single scenario contradicts the sweep and is refused before any bench work =="
 assert_contains "--harness-arg --scenario with the token" \

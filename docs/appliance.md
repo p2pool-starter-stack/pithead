@@ -449,7 +449,7 @@ client key. Without a console, reinstall with **Fresh start, keep the blockchain
 
 ## What the machine does on its own
 
-Two things the appliance sets for itself, that a machine you installed the stack on yourself
+Three things the appliance sets for itself, that a machine you installed the stack on yourself
 would not:
 
 - **It resets itself if it hangs.** The image arms the hardware watchdog built into the
@@ -461,6 +461,12 @@ would not:
   node, the wallet and any built-in miner are never scheduled onto a CPU that has clocked itself
   down. This applies whether or not you mine on the machine — a dedicated appliance has no other
   workload to save power for. On hardware with no frequency scaling the step is skipped.
+- **It keeps its logs across reboots.** The system journal writes to the data partition, under a
+  200 MB cap, instead of to memory: a reboot — the usual first move in an incident — does not
+  erase the machine's own recent history, so what the stack, the node and the dashboard were
+  saying before the reboot is still there to be read or bundled afterwards, as far back as the
+  cap reaches. A rig is the deliberate exception: its journal stays volatile, because its system
+  may be the stick it runs from and nothing on a rig is worth wearing that stick out to keep.
 
 ## Updates
 
@@ -512,7 +518,16 @@ and returning to the previous version. If the certificate still does not match a
 the machine keeps the new version and notes the gap in its boot log and with the update's
 recorded outcome: the mismatch is about this machine's addresses, not the update, and
 running `cd /data/pithead && ./pithead apply` at the console mints the certificate — that command now does so
-even when the configuration is unchanged. The machine refuses images that are unsigned, built for
+even when the configuration is unchanged. A second thing the machine will not trade its return to the
+previous version for: when the checks that fail are all this machine's network — Tor not reaching the
+network, and only the checks that hang off that connection failing with it — the new copy is not what
+broke, and the old copy meets the same fault, because the broken state lives on the data partition the
+two copies share. The machine then keeps the new version, keeps serving the dashboard, and names the
+network fault in the boot log and in the update's recorded outcome, exactly as it names a held-back
+check. Mining stays down until the network recovers; nothing else does. A genuinely broken copy still
+goes back: a bad render, a container crash-looping (a chain node that keeps restarting counts even while Tor is stuck), or a
+dashboard that never answers all spend the return to the previous version as before.
+The machine refuses images that are unsigned, built for
 different hardware, or older than what it runs. The dashboard has no downgrade override.
 At the console, `cd /data/pithead && ./pithead os-update BUNDLE --allow-downgrade` installs
 an older signed image, but never one below the `/data` migration floor. It also refuses an update
@@ -566,7 +581,7 @@ boots:
   rig comes back with the same role, the same `rig.json` and the same access token,
   starts mining again, and a coordinator that had adopted the rig keeps reading it
   with no adopting to redo. No leg has run that pass on an adopted coordinated rig
-  yet: manual QA row M13 is the proof still owed (#3961).
+  yet: manual QA row M13 is the proof still owed (#3995).
 - **Running from its USB stick:** re-flash the stick with the newer image. Re-flashing
   replaces the whole stick, data included, so the rig comes back with a fresh setup
   and a new token, and the coordinator adopts it again. Delivering image updates to
@@ -605,7 +620,11 @@ rig mining at a pool as a worker, or a Pithead coordinator. Two choices:
 
 - **Keep it** closes the page and starts the machine exactly as it was. Nothing changes,
   and the same holds for a page you never touch or a machine switched off part way: the
-  saved settings are replaced only when you accept new ones.
+  saved settings are replaced only when you accept new ones, and the machine comes back to
+  the release it was already running. The exception is an update from the dashboard that
+  has not finished committing: switching off with the page open falls back to the previous
+  release, exactly as it would have with the page never opened. An update installed with
+  `pithead os-update` leaves no such record, so opening the page on its first boot commits it.
 - **Set up again** opens the form filled in with the saved answers and the secrets left
   out: a stratum password, and for a coordinator the dashboard login and node credentials,
   are typed again. Accept the form and the machine provisions itself with the new answers.

@@ -1,4 +1,5 @@
 import asyncio
+import sqlite3
 from types import SimpleNamespace
 
 import pytest
@@ -47,3 +48,36 @@ def _fast_control_result_poll(monkeypatch):
     monkeypatch.setattr(
         "mining_dashboard.service.control_service.asyncio", SimpleNamespace(sleep=yield_poll)
     )
+
+
+@pytest.fixture
+def full_disk(monkeypatch):
+    def make(store, statements=("INSERT", "UPDATE", "DELETE", "CREATE"), message=None):
+        if isinstance(statements, str):
+            statements = (statements,)
+        inner = store._conn
+
+        class FullDiskConnection:
+            def execute(self, sql, *args, **kwargs):
+                if sql.lstrip().upper().startswith(tuple(statements)):
+                    if message:
+                        raise sqlite3.DatabaseError(message)
+                    raise sqlite3.OperationalError("database or disk is full")
+                return inner.execute(sql, *args, **kwargs)
+
+            def cursor(self):
+                return inner.cursor()
+
+            def close(self):
+                return inner.close()
+
+            def __enter__(self):
+                inner.__enter__()
+                return self
+
+            def __exit__(self, *exc):
+                return inner.__exit__(*exc)
+
+        monkeypatch.setattr(store, "_conn", FullDiskConnection())
+
+    return make

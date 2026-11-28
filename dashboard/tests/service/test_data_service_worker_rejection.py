@@ -1,4 +1,5 @@
 # ruff: noqa: F403, F405
+from mining_dashboard.collector import pools as pools_collector
 from tests.service._data_service_support import *  # noqa: F403
 
 
@@ -146,3 +147,250 @@ class TestWorkerRejection:
                 now[0] = time
                 await svc._apply_worker_rejection(False, svc.tari_health.update(False))
                 assert svc.workers_rejected is rejected
+
+
+class TestMiningGuardRejection:
+    def _svc(self):
+        sm = MagicMock()
+        sm.load_snapshot.return_value = None
+        svc = DataService(sm, MagicMock(), MagicMock())
+        svc.docker_control = MagicMock()
+        svc.docker_control.stop = AsyncMock(return_value=True)
+        svc.docker_control.start = AsyncMock(return_value=True)
+        svc.monero_health.healthy = svc.tari_health.healthy = True
+        return svc
+
+    @staticmethod
+    def _p2p(**kw):
+        return {"p2p": {"uptime": 900, "out_peers": 2, "in_peers": 0, "zmq_active": 3, **kw}}
+
+    async def _cycle(self, svc, p2pool=None, health=None, sync=None, containers=None, signals=None):
+        monero_sync = {"health": health or {"level": "green"}, **(sync or {})}
+        with (
+            patch.object(ds_mod, "get_container_health", AsyncMock(return_value=containers or {})),
+            patch.object(
+                pools_collector,
+                "get_p2pool_log_signals",
+                AsyncMock(return_value=signals or {"lag": 0, "monerod_unsynced": False}),
+            ),
+        ):
+            await svc._update_mining_guard(monero_sync, p2pool or self._p2p())
+        await svc._apply_worker_rejection(False, False)
+
+    @staticmethod
+    def _clock(svc):
+        now = [0]
+        svc.mining_guard._clock = lambda: now[0]
+        return now
+
+    async def _hold_past_grace(self, svc, **kwargs):
+        now = self._clock(svc)
+        await self._cycle(svc, **kwargs)
+        now[0] = 10_000
+        await self._cycle(svc, **kwargs)
+        return now
+
+    async def test_healthy_node_never_rejects(self):
+        svc = self._svc()
+        await self._cycle(svc)
+        assert svc.workers_rejected is False
+        svc.docker_control.stop.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "kwargs,needle",
+        [
+            (
+                {"health": {"level": "red", "reasons": ["0 outgoing peers for 10 min"]}},
+                "0 outgoing peers",
+            ),
+            ({"health": {"peers_out": 0}}, "0 outgoing peers"),
+            ({"sync": {"synchronized": False}}, "not synchronized"),
+            ({"p2pool": {"p2p": {"uptime": 9, "out_peers": 0, "in_peers": 0}}}, "no sidechain"),
+            ({"p2pool": {"p2p": {"uptime": 9, "out_peers": 1, "zmq_active": 900}}}, "ZMQ"),
+            (
+                {
+                    "health": {"advance_age_sec": 900},
+                    "signals": {"lag": 480, "monerod_unsynced": False},
+                },
+                "480 blocks behind",
+            ),
+            (
+                {"signals": {"lag": 0, "monerod_unsynced": True}},
+                "P2Pool reports monerod is not synchronized",
+            ),
+            (
+                {"containers": {"p2pool": {"running": False, "restarting": False, "health": None}}},
+                "P2Pool container is not running",
+            ),
+            (
+                {
+                    "containers": {
+                        "tor": {"running": True, "restarting": False, "health": "starting"}
+                    }
+                },
+                "Tor container is starting",
+            ),
+        ],
+    )
+    async def test_invalid_work_stops_the_proxy_and_names_the_trigger(self, kwargs, needle, caplog):
+        caplog.set_level("INFO", logger="DataService")
+        svc = self._svc()
+        await self._hold_past_grace(svc, **kwargs)
+        assert svc.workers_rejected is True
+        svc.docker_control.stop.assert_awaited_once_with(ds_mod.REJECT_WORKERS_CONTAINER)
+        assert needle in svc.mining_guard.pause["reason"]
+        stop_lines = [
+            r.getMessage() for r in caplog.records if "Mining work is not valid" in r.getMessage()
+        ]
+        assert len(stop_lines) == 1 and needle in stop_lines[0]
+
+    async def test_isolation_inside_grace_does_not_stop_the_proxy(self):
+        svc = self._svc()
+        isolated = {"p2p": {"uptime": 9, "out_peers": 0, "in_peers": 0}}
+        await self._cycle(svc, p2pool=isolated)
+        assert svc.workers_rejected is False
+        svc.docker_control.stop.assert_not_called()
+
+    async def test_default_config_tor_failure_stops_the_proxy(self):
+        svc = self._svc()
+        assert svc.tor_healer.enabled is False
+        tor = {"tor": {"running": True, "restarting": False, "health": "unhealthy"}}
+        await self._hold_past_grace(svc, containers=tor)
+        assert svc.workers_rejected is True
+
+    async def test_readmits_only_after_every_trigger_clears_and_recovers(self):
+        svc = self._svc()
+        zmq_stale = {"p2p": {"uptime": 9, "out_peers": 1, "zmq_active": 900}}
+        now = await self._hold_past_grace(svc, p2pool=zmq_stale)
+        assert svc.workers_rejected is True
+        for at in (10_010, 10_069):
+            now[0] = at
+            await self._cycle(svc)
+            assert svc.workers_rejected is True
+        now[0] = 10_070
+        await self._cycle(svc)
+        assert svc.workers_rejected is False
+        svc.docker_control.start.assert_awaited_once_with(ds_mod.REJECT_WORKERS_CONTAINER)
+
+    async def test_a_relapse_inside_grace_blocks_readmission(self):
+        svc = self._svc()
+        svc.workers_rejected = True
+        isolated = {"p2p": {"uptime": 9, "out_peers": 0, "in_peers": 0}}
+        await self._cycle(svc, p2pool=isolated)
+        assert svc.workers_rejected is True
+        svc.docker_control.start.assert_not_called()
+
+    async def test_restart_mid_pause_does_not_readmit_onto_a_peerless_node(self):
+        svc = self._svc()
+        svc.workers_rejected = True
+        await self._cycle(svc, health={"level": "unknown", "peers_out": 0})
+        assert svc.workers_rejected is True
+        svc.docker_control.start.assert_not_called()
+
+    async def test_a_failed_read_keeps_the_pause_instead_of_clearing_it(self):
+        svc = self._svc()
+        down = {"p2pool": {"running": False, "restarting": False, "health": None}}
+        now = await self._hold_past_grace(svc, containers=down)
+        assert svc.workers_rejected is True
+        for at in (10_100, 10_500):
+            now[0] = at
+            await self._cycle(svc, containers={})
+            assert svc.workers_rejected is True
+        svc.docker_control.start.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "monero_down,tari_down,needle",
+        [
+            (True, False, "Monero node unreachable past the debounce"),
+            (False, True, "Tari node unreachable past the debounce"),
+        ],
+    )
+    async def test_debounce_trigger_is_named(self, monero_down, tari_down, needle, caplog):
+        caplog.set_level("INFO", logger="DataService")
+        svc = self._svc()
+        with patch.object(ds_mod, "TARI_REQUIRED", True):
+            await svc._apply_worker_rejection(monero_down, tari_down)
+        assert needle in caplog.text
+
+    async def test_stop_line_carries_guard_and_debounce_reasons(self, caplog):
+        caplog.set_level("INFO", logger="DataService")
+        svc = self._svc()
+        down = {"tor": {"running": True, "restarting": False, "health": "unhealthy"}}
+        await self._hold_past_grace(svc, containers=down)
+        svc.workers_rejected = False
+        await svc._apply_worker_rejection(True, False)
+        line = [m for m in caplog.messages if "Mining work is not valid" in m][-1]
+        assert "Tor container is unhealthy; Monero node unreachable past the debounce" in line
+
+    async def test_readmission_line_has_elapsed_seconds(self, caplog):
+        caplog.set_level("INFO", logger="DataService")
+        svc = self._svc()
+        with patch.object(ds_mod.time, "monotonic", side_effect=[100.0, 142.0]):
+            await svc._apply_worker_rejection(True, False)
+            await svc._apply_worker_rejection(False, False)
+        assert svc.workers_rejected is False
+        assert "to readmit workers, 42s after it was stopped" in caplog.text
+
+    async def test_readmission_after_restart_says_the_stop_predates_the_process(self, caplog):
+        caplog.set_level("INFO", logger="DataService")
+        svc = self._svc()
+        svc.workers_rejected = True
+        await svc._apply_worker_rejection(False, False)
+        assert "after a stop that predates this dashboard process" in caplog.text
+
+    async def test_blocked_readmission_logs_once_per_change(self, caplog):
+        caplog.set_level("INFO", logger="DataService")
+        svc = self._svc()
+        svc.workers_rejected = True
+        svc.monero_health.healthy = False
+        for _ in range(3):
+            await svc._apply_worker_rejection(False, False)
+        svc.tari_health.healthy = False
+        with patch.object(ds_mod, "TARI_REQUIRED", True):
+            await svc._apply_worker_rejection(False, False)
+        lines = [m for m in caplog.messages if "stays stopped" in m]
+        assert len(lines) == 2
+        assert "Monero node not yet confirmed healthy" in lines[0]
+        assert "Tari node not yet confirmed healthy" in lines[1]
+
+    async def test_blocked_readmission_names_guard_triggers(self, caplog):
+        caplog.set_level("INFO", logger="DataService")
+        svc = self._svc()
+        svc.workers_rejected = True
+        isolated = {"p2p": {"uptime": 9, "out_peers": 0, "in_peers": 0}}
+        await self._cycle(svc, p2pool=isolated)
+        assert "guard triggers still holding or recovering: p2pool_peers" in caplog.text
+
+    async def test_failed_stop_and_start_each_log_once_across_retries(self, caplog):
+        caplog.set_level("INFO", logger="DataService")
+        svc = self._svc()
+        svc.docker_control.stop.return_value = False
+        for _ in range(3):
+            await svc._apply_worker_rejection(True, False)
+        assert caplog.text.count("Mining work is not valid") == 1
+        svc.docker_control.stop.return_value = True
+        await svc._apply_worker_rejection(True, False)
+        svc.docker_control.start.return_value = False
+        for _ in range(3):
+            await svc._apply_worker_rejection(False, False)
+        assert caplog.text.count("Readmitting workers failed") == 1
+
+    async def test_stop_line_names_trigger_still_inside_its_grace(self, caplog):
+        caplog.set_level("INFO", logger="DataService")
+        svc = self._svc()
+        isolated = {"p2p": {"uptime": 9, "out_peers": 0, "in_peers": 0}}
+        await self._cycle(svc, p2pool=isolated)
+        await svc._apply_worker_rejection(True, False)
+        assert "also holding inside its grace: p2pool_peers" in caplog.text
+
+    async def test_persisted_stop_names_the_holding_triggers_once(self, caplog):
+        caplog.set_level("INFO", logger="DataService")
+        svc = self._svc()
+        svc.workers_rejected = True
+        for _ in range(3):
+            await svc._apply_worker_rejection(True, False)
+        lines = [m for m in caplog.messages if "already stopped when this dashboard started" in m]
+        assert len(lines) == 1
+        assert "persisted workers_rejected" in lines[0]
+        assert "Monero node unreachable past the debounce" in lines[0]
+        svc.docker_control.stop.assert_not_called()

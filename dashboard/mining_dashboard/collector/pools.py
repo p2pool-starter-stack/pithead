@@ -1,6 +1,9 @@
 import json
 import os
+import re
+import time
 
+from mining_dashboard.collector.logs import fetch_docker_logs
 from mining_dashboard.config.config import (
     NETWORK_STATS_PATH,
     P2P_STATS_PATH,
@@ -8,6 +11,12 @@ from mining_dashboard.config.config import (
     SECOND_PER_BLOCK_MAIN,
     STRATUM_STATS_PATH,
     TARI_STATS_PATH,
+)
+
+_UNSYNCED = "monerod is not synchronized"
+UNSYNCED_LOOKBACK_SEC = 30
+_AHEAD_RE = re.compile(
+    r"peer (\S+) is ahead on mainchain \(height (\d{1,20}), your height (\d{1,20})\)"
 )
 
 # Last-good parse per stats-file path, mirroring how `_merge_proxy_summary` keeps the last-good
@@ -169,3 +178,21 @@ def get_tari_stats():
             "difficulty": t.get("difficulty", 0),
         }
     return {"active": False}
+
+
+async def get_p2pool_log_signals(window_sec=120):
+    now = time.time()
+    lines = await fetch_docker_logs("p2pool", tail=500, since=now - window_sec)
+    # p2pool repeats it every second while waiting, so only a recent line means still unsynced.
+    recent = await fetch_docker_logs("p2pool", tail=500, since=now - UNSYNCED_LOOKBACK_SEC)
+    if any(batch and batch[0].startswith("Error") for batch in (lines, recent)):
+        return None
+    lags = {}
+    for match in map(_AHEAD_RE.search, lines):
+        if match:
+            lag = int(match[2]) - int(match[3])
+            lags[match[1]] = max(lag, lags.get(match[1], 0))
+    return {
+        "lag": sorted(lags.values())[-2] if len(lags) >= 2 else 0,
+        "monerod_unsynced": any(_UNSYNCED in line for line in recent),
+    }

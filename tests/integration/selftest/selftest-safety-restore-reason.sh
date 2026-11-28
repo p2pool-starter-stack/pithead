@@ -28,8 +28,12 @@ source "$HERE/lib/run-safety.sh"
 
 _restore_reason() {
     (
-        OUT_DIR="$(mktemp -d)" && trap 'rm -rf "$OUT_DIR"' EXIT
-        SAFETY_ARCHIVE="$OUT_DIR/a.tar.gz" SAFETY_RESTORE_FAILED=0 SAFETY_RESTORE_FAIL_REASON=""
+        _reason_td="$(mktemp -d)" || exit 1
+        trap 'cd / && rm -rf "$_reason_td"' EXIT
+        cd "$_reason_td" || exit 1
+        OUT_DIR=results
+        mkdir -p "$OUT_DIR" || exit 1
+        SAFETY_ARCHIVE="$_reason_td/a.tar.gz" SAFETY_RESTORE_FAILED=0 SAFETY_RESTORE_FAIL_REASON=""
         _diagnostic_mode="${6:-normal}"
         redact() {
             [ "$_diagnostic_mode" != redactor-fail ] || return 1
@@ -84,11 +88,15 @@ _restore_reason() {
 
 echo "== safety_restore_exact names which check failed, not a generic verdict (#2062, #2362) =="
 
-assert_eq "restore failure is named" "$(_restore_reason 1 0 0 match match)" "pithead restore failed"
-assert_eq "redactor failure preserves the restore failure" "$(_restore_reason 1 0 0 match match redactor-fail)" "pithead restore failed"
+assert_eq "restore failure is named with its rc and retained log (#3641)" \
+    "$(_restore_reason 1 0 0 match match)" "pithead restore returned non-zero (rc 1); see results/safety-restore.log"
+assert_eq "redactor failure preserves the restore failure" \
+    "$(_restore_reason 1 0 0 match match redactor-fail)" "pithead restore returned non-zero (rc 1); see results/safety-restore.log"
 assert_eq "redactor failure cannot fail a successful restore" "$(_restore_reason 0 0 0 match match redactor-fail)" ""
-assert_eq "restore output retains only its final 64 KiB" "$(_restore_reason 1 0 0 match match long)" "pithead restore failed"
-assert_eq "startup failure is named" "$(_restore_reason 0 1 0 match match)" "stack did not come back up"
+assert_eq "restore output retains only its final 64 KiB" "$(_restore_reason 1 0 0 match match long)" "pithead restore returned non-zero (rc 1); see results/safety-restore.log"
+assert_eq "startup failure is named with its rc and retained log (#3641)" \
+    "$(_restore_reason 0 1 0 match match)" \
+    "stack did not come back up (rc 1); see results/safety-restore/up.log"
 assert_eq "health failure is named" "$(_restore_reason 0 0 1 match match)" "pithead status did not become healthy within 240s"
 assert_eq "a healthy restore leaves no reason" "$(_restore_reason 0 0 0 match match)" ""
 assert_eq "a config drift is named, distinctly from restore/secrets" \

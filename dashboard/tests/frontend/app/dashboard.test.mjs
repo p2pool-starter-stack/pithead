@@ -16,51 +16,8 @@ import assert from 'node:assert/strict';
 import {
     FETCH_TIMEOUT_MS, initDashboard, loadSeries, REFRESH_MS, windowFromUrl,
 } from '../../../mining_dashboard/web/static/dashboard.js';
+import { aborted, httpError, makeEnv, ok } from '../helpers/dashboardenv.mjs';
 import { SERIES_KEYS } from '../../../mining_dashboard/web/static/app/logic.mjs';
-
-// --- fakes ------------------------------------------------------------------------------------
-
-// Build an injectable environment. `responses` is a queue of response factories, one per expected
-// fetch — a test that polls more than it queued fails loudly instead of hanging.
-function makeEnv({ href = 'http://pithead.test/', stored = {}, responses = [] } = {}) {
-    const fetches = []; // { url, opts } per fetch, in order
-    const paints = []; // the full props object of every render, in order
-    const urls = []; // history.replaceState rewrites, in order
-    const doc = {
-        title: '',
-        documentElement: {
-            attrs: {},
-            setAttribute(name, value) { this.attrs[name] = value; },
-        },
-        getElementById: () => null,
-    };
-    let interval = null;
-    const env = {
-        doc,
-        href,
-        storage: {
-            getItem: (k) => (k in stored ? stored[k] : null),
-            setItem: (k, v) => { stored[k] = String(v); },
-        },
-        fetchFn: (url, opts) => {
-            fetches.push({ url, opts });
-            assert.ok(responses.length > 0, `unexpected fetch: ${url}`);
-            return responses.shift()(url, opts);
-        },
-        replaceUrl: (u) => urls.push(u),
-        schedule: (fn, ms) => { interval = { fn, ms }; },
-        renderApp: (props) => paints.push(props),
-    };
-    return {
-        env, fetches, paints, urls, doc, stored,
-        interval: () => interval,
-        last: () => paints[paints.length - 1],
-    };
-}
-
-const ok = (body) => () => Promise.resolve({ ok: true, json: async () => body });
-const httpError = (status) => () => Promise.resolve({ ok: false, status });
-const aborted = () => () => Promise.reject(new DOMException('signal timed out', 'TimeoutError'));
 
 // A poll that hangs like a dropped Tor circuit: never settles on its own; the test fires the
 // abort the same way AbortSignal.timeout eventually would.
@@ -205,6 +162,7 @@ test('poll failure: disconnected banner state, last snapshot kept, recovery on n
     await d.tick(); // the next 30s tick reaches the server again
     assert.equal(t.last().connected, true);
     assert.equal(t.last().state.page_title, 'back');
+    assert.equal(t.reloads.length, 1);
 });
 
 test('poll failure: a non-2xx response counts as disconnected', async () => {

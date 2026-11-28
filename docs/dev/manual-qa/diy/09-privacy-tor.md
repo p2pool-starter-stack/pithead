@@ -169,7 +169,7 @@ Per #3118:
 - The last command of the block prints `250 OK` twice. The stack loses its circuits, as in the real outage.
 - Within about 20 minutes, one alert says Tor's circuit history is saturated.
 - The Monero card's advice names `./pithead tor-recover check` as well as restarting monerod.
-- With `tor.auto_heal` on (the appliance default), the heal's last step resets Tor through tor-recover within about an hour, and an alert says that it did and why.
+- With `tor.auto_heal` on (the appliance default), the heal's third step resets Tor through tor-recover within about an hour, and an alert says that it did and why.
 - After that reset, `$T/state.backup.<timestamp>` exists and still holds the two `1000` lines, and the new `$T/state` lacks them.
 - The P2Pool onion address is unchanged.
 - Tor is healthy again; monerod regains outgoing peers and its height catches up.

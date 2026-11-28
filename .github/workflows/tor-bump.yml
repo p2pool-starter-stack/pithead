@@ -1,0 +1,112 @@
+name: Tor pin bump
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    name: Open a PR when Alpine carries a newer tor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: develop
+          persist-credentials: false
+      - name: Detect a newer tor in the Alpine repository
+        id: detect
+        run: bash scripts/watch/tor-bump.sh detect >>"$GITHUB_OUTPUT"
+      - name: Push the bump and open its PR
+        if: steps.detect.outputs.stale == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT: ${{ steps.detect.outputs.current }}
+          LATEST: ${{ steps.detect.outputs.latest }}
+          BRANCH: ${{ steps.detect.outputs.branch }}
+        run: |
+          set -Eeuo pipefail
+          branch="bot/tor-${LATEST}"
+          state="$(gh pr list --state all --head "$branch" --json state \
+            --jq 'map(.state) | if index("OPEN") then "OPEN" elif length > 0 then .[0] else "none" end')"
+          if [ "$state" = OPEN ]; then
+            echo "PR for ${LATEST} is already open"
+            exit 0
+          fi
+          if [ "$state" != none ]; then
+            echo "PR for ${LATEST} is ${state}; not reopening it"
+            exit 0
+          fi
+          pre=no
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            pre=yes
+            git fetch origin "$branch"
+            git checkout -B "$branch" FETCH_HEAD
+          else
+            git checkout -B "$branch"
+          fi
+          bash scripts/watch/tor-bump.sh apply "$LATEST"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add build/tor/Dockerfile
+          committed=no
+          if ! git diff --cached --quiet; then
+            git commit -m "build/tor: bump the Tor pin to ${LATEST}"
+            committed=yes
+          fi
+          if [ "$pre" = no ] && [ "$committed" = no ]; then
+            echo "the pin or the index moved during this run; nothing to propose"
+            exit 0
+          fi
+          gh auth setup-git
+          if [ "$committed" = yes ]; then
+            git push origin "$branch"
+          fi
+          cat >pr-body.md <<EOF
+          ## What's the problem
+
+          Alpine v${BRANCH} now carries tor ${LATEST}; \`build/tor/Dockerfile\` pins ${CURRENT}. When Alpine drops the pinned package the image build fails loudly (#4125), so the pin has to move.
+
+          ## How I fixed it
+
+          Automated bump of \`ARG TOR_VERSION\` only, opened by the daily watcher from #4158 (\`.github/workflows/tor-bump.yml\` running \`scripts/watch/tor-bump.sh\`).
+
+          ## Here is the proof
+
+          Pending: the \`tier4-kvm\` \`tor-heal\` phase must be green at this head before merge, as \`docs/dev/releasing.md\` requires for a Tor pin bump — it is the live proof of Tor's state-file behaviour. Tiers 1 to 3 run from the first push to this branch; a PR opened with the Actions token triggers no \`pull_request\` checks of its own.
+          EOF
+          gh pr create --base develop --head "$branch" --label dependencies \
+            --title "build/tor: bump the Tor pin to ${LATEST}" --body-file pr-body.md
+      - name: Close bump PRs this run supersedes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STALE: ${{ steps.detect.outputs.stale }}
+          LATEST: ${{ steps.detect.outputs.latest }}
+        run: |
+          set -Eeuo pipefail
+          want=""
+          if [ "$STALE" = true ]; then
+            want="bot/tor-${LATEST}"
+          fi
+          rows="$(gh pr list --state open --limit 200 --json number,headRefName,author |
+            bash scripts/watch/tor-bump.sh superseded "$want")"
+          keep="$(printf '%s\n' "$rows" | awk -F'\t' '$3 == "keep" { print $2; exit }')"
+          if [ -n "$keep" ]; then
+            reason="Superseded by ${keep}, which carries the Alpine tor this run considers newest (#4158)."
+          elif [ "$STALE" = true ]; then
+            reason="The daily tor bump run wants ${LATEST} and has no open PR for it (a closed one is taken as declined), so this bump PR no longer tracks Alpine (#4158)."
+          else
+            reason="The pin already matches what Alpine carries; this bump PR is no longer needed (#4158)."
+          fi
+          while IFS=$'\t' read -r number _head flag; do
+            if [ "$flag" = close ]; then
+              gh pr close "$number" --comment "$reason"
+            fi
+          done <<< "$rows"

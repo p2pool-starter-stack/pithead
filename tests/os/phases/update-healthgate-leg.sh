@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 # leg 5 — a container whose OWN healthcheck fails must hold the gate (#2383, manual battery M9).
 # Split from phases/update.sh (file-budget ratchet): called from phase_update right after
@@ -60,7 +62,7 @@ _update_healthgate_leg_body() {
     if [ "$(printf '%s' "$out" | jq -r '.status')" = "installed" ]; then
         ok "leg 5: fault bundle installed into the spare slot through the dashboard action"
     else
-        bad "leg 5: the dashboard could not check, download, verify and install the fault bundle (got: $(printf '%s' "$out" | cut -c1-200))"
+        bad "leg 5: the dashboard could not check, download, verify and install the fault bundle (got: $(printf '%s' "$out" | os_redact_addr | cut -c1-200))"
         return
     fi
     fserial_mark=$(wc -c <"$SERIAL") || {
@@ -94,6 +96,7 @@ _update_healthgate_leg_body() {
         ok "leg 5: FALLBACK — the unhealthy dashboard held the gate and the guest fell back to v2"
     else
         bad "leg 5: expected the guest back on v2 after the fault boot's gate refusal, got '${fmarker:-none}' (30 min bound)"
+        return
     fi
     if tail -c "+$((fserial_mark + 1))" "$SERIAL" | grep -F 'Pithead is still starting (' | grep -F 'of about 16 minutes). Leave it powered on: if an update never becomes healthy, the machine goes back to the previous version by itself.' >/dev/null; then
         ok "leg 5: the fault boot's serial console reports health-gate progress and automatic update fallback"
@@ -123,6 +126,23 @@ _update_healthgate_leg_body() {
     else
         bad "leg 5: the served banner module has no 'Blocked by:' cause"
     fi
+    local xjournal fjournal rdeadline=$(($(date +%s) + 1200))
+    xjournal=$(_ssh "journalctl -u pithead-boot -b -1 2>/dev/null" 2>/dev/null)
+    if grep -qF 'dashboard schema hold armed' <<<"$xjournal" && ! grep -qF 'dashboard schema hold released' <<<"$xjournal"; then
+        ok "leg 5: the failed candidate boot armed the dashboard schema hold and never released it"
+    else
+        bad "leg 5: the failed candidate boot's journal does not show the dashboard schema hold armed and left unreleased"
+    fi
+    while [ "$(date +%s)" -lt "$rdeadline" ]; do
+        _ssh "journalctl -u pithead-boot -b 0 2>/dev/null | grep -F 'dashboard schema hold released' >/dev/null" && break
+        sleep 15
+    done
+    fjournal=$(_ssh "journalctl -u pithead-boot -b 0 2>/dev/null" 2>/dev/null)
+    if grep -qF 'dashboard schema hold armed' <<<"$fjournal" && grep -qF 'dashboard schema hold released' <<<"$fjournal"; then
+        ok "leg 5: the fallback boot armed the dashboard schema hold and released it once its own gate committed"
+    else
+        bad "leg 5: the fallback boot's journal has no schema hold arm and release lines (20 min bound) — the hold never ran to completion on the surviving boot"
+    fi
 }
 
 phase_update_healthgate_leg() {
@@ -133,4 +153,5 @@ phase_update_healthgate_leg() {
         info "leg 5 failure evidence (boot journal, verdict, grubenv, doctor) kept at $SERIAL.leg5-evidence"
         bash scripts/sanitize-test-log.sh --lines 200 "$SERIAL.leg5-evidence"
     fi
+    phase_update_wedged_tor_legs
 }

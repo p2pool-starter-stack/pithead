@@ -6,7 +6,7 @@ and asserts the stack behaves (issue
 
 ```
 run.sh          entry point — connects (SSH or --local) and runs the matrix (+ --lifecycle,
-                --fault-injection, --image-upgrade, --xvb-routing-smoke)
+                --fault-injection, --failover-view, --image-upgrade, --xvb-routing-smoke)
 scenarios.sh    the declarative config matrix (data, not code)
 lib.sh          shared helpers: target I/O, assertions, readiness waiters, redaction
 lib/            sourced live-runner modules (incl. the live-gates.sh upgrade/XvB gates and
@@ -44,7 +44,7 @@ wiring — is in [`docs/dev/integration-testing.md`](../../docs/dev/integration-
 
 ## Fake stratum endpoint
 
-`fakes/fake_stratum.py` serves JSON lines over TCP using the P2Pool login and submit
+`fakes/fake_donation_stratum.py` serves JSON lines over TCP using the P2Pool login and submit
 response shapes recorded in `fakes/contract/v1/PROVENANCE`. The job values are synthetic;
 real xmrig-proxy compatibility remains unverified until the stub-only donation routing
 phase runs in tier 4. It does not verify proof of work or mine to a project endpoint.
@@ -55,7 +55,7 @@ pool user. Each login has a separate record. `fixture_metadata` contains `url` a
 `coin` supplied by the fixture, not fields observed in the stratum protocol. Assert the
 actual `url`, `user`, `pass`, `coin` and per-pool `socks5` at the controller configuration
 boundary instead. `test_stratum_pool_contract.py` covers both route orders and Tor
-choices there; `test_fake_stratum.py` separately proves traversal using
+choices there; `test_fake_donation_stratum.py` separately proves traversal using
 `FakeSocks.connected` and the login received by the stratum fake.
 
 `mode="accept"` acknowledges submissions and increments `accepted`; `mode="reject"`
@@ -67,7 +67,7 @@ These modes simulate outcomes without validating hashes, session IDs or job IDs.
 For a mini-stack container, explicitly request a non-loopback bind:
 
 ```bash
-python tests/integration/fakes/fake_stratum.py --host 0.0.0.0 --port 3333 --mode accept
+python tests/integration/fakes/fake_donation_stratum.py --host 0.0.0.0 --port 3333 --mode accept
 ```
 
 Without `--host`, standalone mode also binds only to loopback. It prints the bound

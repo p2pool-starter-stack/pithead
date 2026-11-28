@@ -78,6 +78,9 @@ for the paths they change; Tari requires the gRPC contract check and merge-minin
 
 The release ingredients manifest records the appliance's baked RigForge commit from
 `RIGFORGE_REF` in `os/rootfs/Dockerfile` alongside the stack component pins.
+The built-in miner's RigForge tree is baked at image build because nothing can be installed later: apt cannot
+run on the read-only root, and a read-write-remount install leaves its `/etc` state on the volatile overlay,
+where the first reboot breaks the compiler.
 One pin is not spelled as a version. The appliance pins RigForge by commit, so that a moved tag
 cannot change what is baked; the pin watcher resolves the latest release tag to the commit it names and
 compares the two commits. Comparing the commit against the tag directly would read stale for ever,
@@ -99,6 +102,19 @@ A digest-pinned base can lag a published security fix until upstream rebuilds th
 image builds name the base's openssl and musl packages in their apk upgrade list, and the Debian
 builds name packages such as apt and zlib1g in their install lists, so an installable fix lands on
 the next rebuild without an ignore (#1438, #3923, #3929).
+
+The Tor image pins its apk package by `ARG TOR_VERSION` in `build/tor/Dockerfile`, because Alpine's
+repository would otherwise change the Tor in the image between builds with no commit here (#4125): the
+0.4.9.17 bump changed state-file semantics and turned the `tor-heal` proof red. `apk add` refuses a pin
+the repository no longer carries, and the build then runs `tor --version` and fails unless it reports the
+pinned version. The Dockerfile also names the base's openssl and musl libs in `--upgrade` and installs
+netcat for the bootstrap healthcheck; it deliberately omits `xxd`, which busybox already provides (#1372).
+Alpine moves the pin: `.github/workflows/tor-bump.yml` runs daily, reads the `tor` package for the pinned
+Alpine branch, and when Alpine carries a newer one opens a `dependencies`-labelled PR against `develop`
+that edits only the pin (`scripts/watch/tor-bump.sh`, #4158) — the apk package no Dependabot ecosystem
+can see. Every bump, from the watcher or by hand, re-runs the `tier4-kvm` `tor-heal` phase before it
+merges: it is the live proof of Tor's state-file behaviour. The release notes name the shipped Tor in
+the `tor` pin row.
 
 A scheduled run has no pull request, so nothing draws a person to its result. On 2026-08-17 the
 rebuild scan went red and nobody was told for seven days
@@ -167,6 +183,22 @@ is no back-merge and no post-release repair step ([#1076]; releases through v1.1
 `develop` into `main` and back, and the back-merge was missed on v1.19.0). Commits that land on
 `develop` after the final cut commit sit ahead of `main`, the normal state between releases.
 `release.sh` warns (it does not abort) when the working tree is on any branch other than `develop`.
+
+The release is pinned to the commit preflight read. Preflight refuses a tag that already exists
+locally or on `origin`, and refuses (outside `--dry-run` and `PITHEAD_REHEARSAL=1`, where it only
+warns) a version whose `:vX.Y.Z` image tag is already in the registry. Before building the bundle,
+publish refuses if `HEAD` is no longer the gated commit or the tree is dirty, and the tag is created
+with `git tag -a "$TAG" "$GIT_COMMIT"`, so a `git pull` during the multi-hour gate cannot make the
+tag, images and bundle disagree.
+
+That publish check runs after the images are promoted. If it stops a cut, rerunning `release.sh`
+is refused, because the `:vX.Y.Z` image tag now exists. Recover by hand instead. Check out the
+gated commit that the refusal names, and review `git status --porcelain` until it is empty (remove
+any files the release tests left behind). Nothing was tagged, and no manifest or bundle was built.
+Then run the remaining steps of `publish()` in `scripts/release/bundle.sh` from that commit:
+`write_manifest`, `make_bundle`, `append_bundle_sha256` and, on a signed cut, `sign_bundle`; then
+tag the commit, push the tag, fast-forward `main`, and create the GitHub Release with the bundle,
+its signature and the manifest.
 
 The fast-forward push cannot ride a PR: GitHub merges a PR by merge commit, squash, or rebase,
 each of which mints a new commit, and the point is that `main` gains no object the tag does not
@@ -442,12 +474,23 @@ budget can then evict the unprotected baseline. Keep other KVM jobs off that ben
 reports the pin held, and confirm the image cache still lists the commit right before submitting
 provision. The cut cannot seed itself: `old_image` needs a strictly older build.
 
-Submit four KVM jobs, each with a 240-minute timeout. A single `phases=["all"]` job exceeds that
+Submit seven KVM jobs, each with a 240-minute timeout. A single `phases=["all"]` job exceeds that
 cap, and so does the boot group with provision; bench-ci refuses an `all` submission before job
 creation. Standalone `tests/os/run.sh --phase all` is unaffected.
 
 - Boot group: boot, update, install.
-- Rig group: the [#1651](https://github.com/p2pool-starter-stack/pithead/issues/1651) phases.
+- Rig group: the [#1651](https://github.com/p2pool-starter-stack/pithead/issues/1651) phases as
+  the four splits the last three release gates ran — rig, rigmedia and media; fault and reset;
+  image-upgrade; stack. In the 2.0.1 and 2.0.2 gates the combined seven-phase job failed one
+  phase each time and reran all seven; the splits keep a rerun to its own phase. The
+  rig/rigmedia/media split is submitted with `require_complete` (#3996): bench-ci appends
+  `--require-complete` to each of its three phases, so a rig phase that skipped the accepted-share
+  leg for want of the reserved Monero node fails the gate instead of concluding success, and
+  rigmedia or media carry the same guard for any input they later start skipping on. The rig phase
+  also missing-skips the card-render leg (#1867) on a harness host without `node`, so until
+  bench-ci#2480 provisions it there, a rig/rigmedia/media job whose only failed row names that
+  card-render row is the guard refusing a skip, not a candidate defect: read the row before
+  blaming the tree.
 - Provision: provision and setup-defaults against the seeded baseline, pinned to the seeded bench.
 - Crossupdate: the update from the previous release, which is the path existing installs take,
   pinned to a bench that keeps that release's image.
@@ -472,9 +515,24 @@ KVM_BOOT_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_BOOT_KEY" 
   '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["boot","update","install"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM boot group",idempotency_key:$key}' \
   | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
 KVM_RIG_KEY=$(uuidgen)
-printf 'KVM rig group idempotency key: %s\n' "$KVM_RIG_KEY"
+printf 'KVM rig/rigmedia/media split idempotency key: %s\n' "$KVM_RIG_KEY"
 KVM_RIG_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_RIG_KEY" \
-  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["rig","rigmedia","media","fault","reset","image-upgrade","stack"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM rig group",idempotency_key:$key}' \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["rig","rigmedia","media"],require_complete:true},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM rig split",idempotency_key:$key}' \
+  | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+KVM_FAULT_KEY=$(uuidgen)
+printf 'KVM fault/reset split idempotency key: %s\n' "$KVM_FAULT_KEY"
+KVM_FAULT_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_FAULT_KEY" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["fault","reset"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM fault/reset split",idempotency_key:$key}' \
+  | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+KVM_IMGUP_KEY=$(uuidgen)
+printf 'KVM image-upgrade split idempotency key: %s\n' "$KVM_IMGUP_KEY"
+KVM_IMGUP_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_IMGUP_KEY" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["image-upgrade"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM image-upgrade split",idempotency_key:$key}' \
+  | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+KVM_STACK_KEY=$(uuidgen)
+printf 'KVM stack split idempotency key: %s\n' "$KVM_STACK_KEY"
+KVM_STACK_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_STACK_KEY" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["stack"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM stack split",idempotency_key:$key}' \
   | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
 KVM_PROV_KEY=$(uuidgen)
 printf 'KVM provision idempotency key: %s\n' "$KVM_PROV_KEY"
@@ -486,18 +544,19 @@ printf 'KVM crossupdate idempotency key: %s\n' "$KVM_CROSS_KEY"
 KVM_CROSS_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_CROSS_KEY" --arg prev "$PREVIOUS_RELEASE_SHA" \
   '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["crossupdate"],old_image_commit:$prev},local_only:true,timeout_minutes:240,submitted_by:"release/devops",note:"release KVM crossupdate",idempotency_key:$key}' \
   | curl -fsS -X POST "$CROSSUPDATE_BENCH_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
-printf 'KVM jobs: %s %s %s %s @%s\n' "$KVM_BOOT_ID" "$KVM_RIG_ID" "$KVM_PROV_ID" "$KVM_CROSS_ID" "$SHA"
+printf 'KVM jobs: %s %s %s %s %s %s %s @%s\n' "$KVM_BOOT_ID" "$KVM_RIG_ID" "$KVM_FAULT_ID" \
+  "$KVM_IMGUP_ID" "$KVM_STACK_ID" "$KVM_PROV_ID" "$KVM_CROSS_ID" "$SHA"
 ```
 
-Read all four completed KVM jobs' full status, logs, artifacts and evidence. Require `success`, zero failed
+Read all seven completed KVM jobs' full status, logs, artifacts and evidence. Require `success`, zero failed
 rows and a reason for every skip. These jobs run before e2e, so an e2e failure cannot cancel their
 battery proof. A failed KVM group prevents the final e2e gate from running.
 
 Every KVM job is bound to the exact tag SHA. `SHA` is the commit that will be tagged; a job whose
 `commit` differs from it is not evidence for the release, however recently it passed. Any change
 after the battery, including a digest re-pin or a version bump, makes the whole KVM set stale:
-rerun the boot, rig, provision and crossupdate jobs on the new SHA and read them again before
-submitting e2e. `release.sh` refuses to publish unless the tag SHA itself carries a successful
+rerun the boot group, the four rig-group splits, provision and crossupdate on the new SHA and
+read them again before submitting e2e. `release.sh` refuses to publish unless the tag SHA itself carries a successful
 `bench-ci/tier4` status from the bench-ci App, but that check reads only the status on the
 release commit and never the KVM jobs' `commit` fields (`require_bench_tier4` in
 `scripts/release/preflight.sh`). Confirming the rerun before publishing is therefore a
@@ -533,9 +592,9 @@ on the same frozen SHA in addition to the status-gated job. The unbounded `matri
 not a supported single-job proof within bench-ci's 240-minute cap.
 Keep the real rig in the run. Only the owner may authorize `no_rig` after reviewing failures
 confined to rigforge-control harness rows. The final e2e job alone requests the aggregate status,
-with the two group jobs in `after`. A bench resolves `after` only against its own jobs, and the
-provision and crossupdate jobs belong to their pinned benches, so the block first refuses to
-submit unless both of those completed with `success`:
+with the boot group and the four rig-group splits in `after`. A bench resolves `after` only
+against its own jobs, and the provision and crossupdate jobs belong to their pinned benches, so
+the block first refuses to submit unless both of those completed with `success`:
 
 ```bash
 for leg in "$PROVISION_BENCH_URL/jobs/$KVM_PROV_ID" "$CROSSUPDATE_BENCH_URL/jobs/$KVM_CROSS_ID"; do
@@ -545,16 +604,17 @@ E2E_MODE=targeted
 E2E_KEY=$(uuidgen)
 printf 'e2e idempotency key: %s\n' "$E2E_KEY"
 jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$E2E_KEY" --arg mode "$E2E_MODE" \
-  --argjson boot "$KVM_BOOT_ID" --argjson rig "$KVM_RIG_ID" \
-  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-e2e",options:{mode:$mode},after:[$boot,$rig],status_gate:true,submitted_by:"release/devops",note:"release status gate",idempotency_key:$key}' \
+  --argjson boot "$KVM_BOOT_ID" --argjson rig "$KVM_RIG_ID" --argjson fault "$KVM_FAULT_ID" \
+  --argjson imgup "$KVM_IMGUP_ID" --argjson stack "$KVM_STACK_ID" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-e2e",options:{mode:$mode},after:[$boot,$rig,$fault,$imgup,$stack],status_gate:true,submitted_by:"release/devops",note:"release status gate",idempotency_key:$key}' \
   | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id'
 ```
 
-Read the completed e2e job's full status, log, artifacts and evidence. All five jobs must carry the same
-SHA and ref. A failed or cancelled leg cannot yield a
+Read the completed e2e job's full status, log, artifacts and evidence. All eight jobs must carry
+the same SHA and ref. A failed or cancelled leg cannot yield a
 successful aggregate status. Confirm the exact commit's newest `bench-ci/tier4` status is
 `success` and its creator is the configured bench-ci App before running `release.sh`; record all
-five job IDs and the SHA in the release issue. Remove a rehearsal branch after confirming its
+eight job IDs and the SHA in the release issue. Remove a rehearsal branch after confirming its
 status with `git push origin --delete "$REF"`. If a submission is refused, stop and report it to
 bench-ci; retain its printed idempotency key for a retry.
 

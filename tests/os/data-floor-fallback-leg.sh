@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 #
 # The /data-floor fallback leg (#1672 — tier 4 for #1393). Sourced by tests/os/run.sh and run at the
 # end of phase_provision, on the guest the migration leg just left committed: floor = this
@@ -34,6 +36,7 @@
 . "$SCRIPT_DIR/../../os/rauc/populate-slot.sh"
 
 FLOOR_FALLBACK_VERSION=99.0.0
+FLOOR_LEG_TMP=""
 
 # $1 marker, $2 stamped version, $3 minimum_os_version -> prints the bundle path (outside
 # os/rauc/build, so _build_bundle's `find | head -1` in a later phase can never pick it up).
@@ -43,8 +46,9 @@ _build_bundle_stamped() {
     cert="$(cd "$(dirname "$RAUC_CERT")" && pwd -P)/$(basename "$RAUC_CERT")" || return 1
     key="$(cd "$(dirname "$RAUC_KEY")" && pwd -P)/$(basename "$RAUC_KEY")" || return 1
     keyring="$(cd "$(dirname "$RAUC_KEYRING")" && pwd -P)/$(basename "$RAUC_KEYRING")" || return 1
-    wt=$(mktemp -d /tmp/pithead-floor-fallback.XXXXXX) || return 1
-    out=/tmp/os-floor-fallback-$marker.raucb
+    mkdir -p "$HOST_SCRATCH" || return 1
+    wt=$(mktemp -d "$HOST_SCRATCH/floor-fallback.XXXXXX") || return 1
+    out="${FLOOR_LEG_TMP:-$HOST_SCRATCH}/os-floor-fallback-$marker.raucb"
     {
         git archive HEAD | tar -x -C "$wt" &&
             printf '%s\n' "$version" >"$wt/VERSION" &&
@@ -58,9 +62,10 @@ _build_bundle_stamped() {
                         os/rauc/mkbundle.sh --dev
             ) &&
             cp "$wt/os/rauc/build/update.raucb" "$out"
-    } >>/tmp/os-fault-bundle.log 2>&1
+    } >>"${FLOOR_LEG_TMP:-$HOST_SCRATCH}/build.log" 2>&1
     local rc=$?
     rm -rf "$wt"
+    docker rmi "pithead-os-rootfs-$marker" >/dev/null 2>&1 || true
     [ "$rc" = 0 ] || return 1
     printf '%s' "$out"
 }
@@ -119,7 +124,7 @@ _floor_target_slot() {
     esac
 }
 
-phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration bundle at VERSION
+_floor_fallback_leg_body() {
     local good_bundle="$1" vfail="$FLOOR_FALLBACK_VERSION" floor0 bundle out rc state target_slot stamp want_stamp
     info "floor-fallback leg — a data_migration update that fails its gate must give the /data floor back (#1393)"
     floor0=$(_ssh "cat /data/pithead/.os-data-floor 2>/dev/null" | tr -d ' \r\n')
@@ -129,8 +134,8 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
     fi
     ok "floor before the failing update: $floor0"
     bundle=$(_build_bundle_stamped vfail "$vfail" "$vfail") || {
-        bundle_build_evidence
-        bad "the $vfail migration bundle build failed — read the build output above (/tmp/os-fault-bundle.log)"
+        bundle_build_evidence "$FLOOR_LEG_TMP/build.log"
+        bad "the $vfail migration bundle build failed — read the build output above"
         return
     }
     ok "built a data_migration bundle stamped $vfail (floor $vfail): $(basename "$bundle")"
@@ -163,7 +168,7 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
     if _floor_fallback_wait vfail 1800; then
         ok "the $vfail slot never committed — the guest is back on the previous slot with its gate passed"
     else
-        bad "the guest did not come back on the previous slot with a passed gate within 30 min (marker/journal: '$(SSH_TIMEOUT=20 _ssh "cat /etc/pithead-test-marker; journalctl -u pithead-boot -b | tail -3" 2>/dev/null | tr '\n' ' ')')"
+        bad "the guest did not come back on the previous slot with a passed gate within 30 min (marker/journal: '$(SSH_TIMEOUT=20 _ssh "cat /etc/pithead-test-marker; journalctl -u pithead-boot -b | tail -3" 2>/dev/null | os_redact_addr | tr '\n' ' ')')"
         return
     fi
     # The mechanism, from the failed boot's own journal (-b -1: the boot between the migration
@@ -202,7 +207,7 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
     if [ "$rc" -eq 0 ]; then
         ok "a bundle at the restored floor ($floor0) installs again through os-update"
     else
-        bad "os-update refused a bundle at the restored floor $floor0 (rc $rc): $(printf '%s' "$out" | tail -2 | tr '\n' ' ')"
+        bad "os-update refused a bundle at the restored floor $floor0 (rc $rc): $(printf '%s' "$out" | os_redact_addr | tail -2 | tr '\n' ' ')"
     fi
 
     # ---- negative control: record deleted before the fallback boot -> the floor stays ----
@@ -259,11 +264,27 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
     if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "a migrating update to $vfail failed its gate and fell back before its migration ran"; then
         ok "os-update refuses a bundle below the stale floor with the failed-update premise"
     else
-        bad "expected a refusal naming the failed migrating update (rc $rc): $(printf '%s' "$out" | tail -2 | tr '\n' ' ')"
+        bad "expected a refusal naming the failed migrating update (rc $rc): $(printf '%s' "$out" | os_redact_addr | tail -2 | tr '\n' ' ')"
     fi
     if printf '%s' "$out" | grep -qi 'factory.reset\|restore a\|restoring a'; then
-        bad "the refusal names a reset or a restore as the way out: $(printf '%s' "$out" | tail -1)"
+        bad "the refusal names a reset or a restore as the way out: $(printf '%s' "$out" | os_redact_addr | tail -1)"
     else
         ok "the refusal names no reset and no restore"
     fi
+}
+
+phase_provision_floor_fallback_leg() {
+    local rc=0 scratch="${HOST_SCRATCH:-${TMPDIR:-/tmp}}"
+    mkdir -p "$scratch" || {
+        bad "could not create the floor-fallback leg's scratch directory"
+        return 1
+    }
+    FLOOR_LEG_TMP=$(mktemp -d "$scratch/pithead-floor-fallback-leg.XXXXXX") || {
+        bad "could not create a temporary directory for the floor-fallback leg"
+        return 1
+    }
+    _floor_fallback_leg_body "$@" || rc=$?
+    rm -rf "$FLOOR_LEG_TMP"
+    FLOOR_LEG_TMP=""
+    return "$rc"
 }

@@ -4,6 +4,7 @@ import math
 import mimetypes
 import os
 import re
+import uuid
 
 from aiohttp import web
 
@@ -14,7 +15,7 @@ from mining_dashboard.service import audit_service, control_service
 from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics, share_reject_pct
 from mining_dashboard.service.workers import worker_adopt, worker_refresh
-from mining_dashboard.web import fleet_upgrade_views
+from mining_dashboard.web import auth, fleet_upgrade_views
 from mining_dashboard.web.config_commit import approval_envelope, config_request
 from mining_dashboard.web.miner_connection import handle_miner_connection
 from mining_dashboard.web.views import diagnostics_views, download_views, log_views, sovereign_views
@@ -42,21 +43,18 @@ async def handle_index(request):
 
 
 async def handle_state(request):
-    """The dashboard's data API. Pull shared state, delegate to the view layer, and return
-    the assembled state object as JSON (or a sanitized 500 on failure)."""
     app = request.app
     data = app["latest_data"]
     state_mgr = app["state_manager"]
     range_arg = request.query.get("range", "all")
-    # Optional manual-zoom window (Issue #47); malformed from/to falls back to the preset range.
     window = parse_window(request.query.get("from"), request.query.get("to"))
-    # Hashrate-averaging window for the chart (#168); unknown/missing falls back to the default.
     avg_window = canonical_window(request.query.get("avg"))
 
     try:
-        return web.json_response(build_state(data, state_mgr, range_arg, window, avg_window))
+        return web.json_response(
+            auth.annotate(request, build_state(data, state_mgr, range_arg, window, avg_window))
+        )
     except Exception:
-        # Log the full error server-side; never leak exception details to the browser.
         logger.exception("Error building dashboard state")
         return web.json_response({"error": "Failed to build dashboard state."}, status=500)
 
@@ -122,12 +120,6 @@ async def handle_metrics(request):
         return web.Response(text="Failed to render metrics.", status=500, content_type="text/plain")
 
 
-# --- Dashboard control channel (#33) ---------------------------------------------------------
-# Registered only when DASHBOARD_CONTROL_ENABLED (absent routes 404 when the feature is off).
-# Every mutating POST must carry this custom header: a cross-site header forces a CORS preflight,
-# which the self-only CSP origin never grants (a cheap CSRF guard, same spirit as the CSP below).
-# The actor is Caddy's authenticated X-Auth-User (header_up overwrites any client value).
-
 CONTROL_HEADER = "X-Pithead-Control"
 
 
@@ -181,11 +173,15 @@ async def handle_control_commit(request):
     _require_control_header(request)
     body = await config_request(request)
     try:
-        actor = request.headers.get("X-Auth-User", "")
         approval = approval_envelope(body)
+        if body.get("id"):
+            uuid.UUID(body["id"])
+    except Exception:
+        raise web.HTTPBadRequest(text="Body must be JSON with a valid intent 'id'.") from None
+    try:
         rid = control_service.submit(
             "commit",
-            actor=actor,
+            actor=request.headers.get("X-Auth-User", ""),
             intent_id=body.get("id"),
             # #719: the operator's typed confirmation for an in-scope disruptive change. It is
             # friction, not a secret — the host gate requires it before a CONFIRM row proceeds.
@@ -193,7 +189,8 @@ async def handle_control_commit(request):
             approval=approval,
         )
     except Exception:
-        raise web.HTTPBadRequest(text="Body must be JSON with a valid intent 'id'.") from None
+        logger.exception("Error submitting control commit")
+        return web.json_response({"error": "Failed to submit the commit request."}, status=500)
     # The preview result (same id) is still on disk; wait for the runner to overwrite it.
     res = await control_service.wait_result(rid, done=lambda r: r.get("status") != "previewed")
     if res is None:
@@ -575,16 +572,14 @@ async def _cancel_bg_tasks(app):
 
 
 def create_app(state_manager, latest_data_ref, notify=None):
-    """Factory to create the web app instance."""
-    app = web.Application(middlewares=[security_headers_middleware])
+    app = web.Application(middlewares=[security_headers_middleware, auth.refresh_middleware])
     app["state_manager"] = state_manager
     app["latest_data"] = latest_data_ref
     app["notify"] = notify
     app["_fleet"] = {}
-    # Fire-and-forget recorder tasks (worker-upgrade, #1014) — tracked so they can't be
-    # garbage-collected mid-flight and so shutdown can cancel any still in progress.
     app["_bg_tasks"] = set()
     app.on_cleanup.append(_cancel_bg_tasks)
+    auth.setup(app)
 
     app.add_routes(
         [
@@ -594,6 +589,7 @@ def create_app(state_manager, latest_data_ref, notify=None):
             web.get("/api/xvb-standby", handle_xvb_standby),
             web.get("/metrics", handle_metrics),
             web.get("/api/access", handle_access_log),
+            *diagnostics_views.support_routes(),
         ]
     )
     # Control channel (#33): routes exist only when the feature is on — off means 404, not 403.
@@ -615,9 +611,7 @@ def create_app(state_manager, latest_data_ref, notify=None):
                 web.get("/api/control/backup-download", download_views.handle_backup_download),
                 web.post("/api/control/os-update", handle_control_os_update),
                 web.post("/api/control/power", handle_control_power),
-                web.post("/api/control/diag-doctor", diagnostics_views.handle_diag_doctor),
-                web.post("/api/control/diag-logs", diagnostics_views.handle_diag_logs),
-                web.post("/api/control/onion-client-key", diagnostics_views.handle_onion_key),
+                *diagnostics_views.control_routes(),
             ]
         )
     if config.DASHBOARD_MODE in ("api", "both"):

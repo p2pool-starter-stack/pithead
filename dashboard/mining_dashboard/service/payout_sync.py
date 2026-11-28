@@ -25,6 +25,7 @@ import asyncio
 import logging
 import time
 
+from mining_dashboard.config import config
 from mining_dashboard.config.config import (
     MONERO_WALLET_ADDRESS,
     TARI_WALLET_ADDRESS,
@@ -60,6 +61,11 @@ async def sync_monero(state_manager, wallet_client, alert_service):
     wallet_id = configured_wallet_id(chain)
     if wallet_id is None:
         return False
+    addresses = await asyncio.to_thread(wallet_client.payout_addresses)
+    if addresses is None:
+        return False
+    if config.MONERO_WALLET_ADDRESS.strip() not in addresses:
+        return True
     min_height = await asyncio.to_thread(state_manager.get_payout_max_height, chain, wallet_id)
     payouts, answered = await asyncio.to_thread(wallet_client.scan, min_height)
     if not answered or not payouts:
@@ -81,6 +87,11 @@ async def sync_tari(state_manager, tari_wallet_client, alert_service):
     wallet_id = configured_wallet_id(chain)
     if wallet_id is None:
         return False
+    addresses, match = await tari_wallet_client.payout_addresses(config.TARI_WALLET_ADDRESS)
+    if addresses is None:
+        return False
+    if not match:
+        return True
     min_height = await asyncio.to_thread(state_manager.get_payout_max_height, chain, wallet_id)
     payouts, answered = await tari_wallet_client.scan(min_height)
     if not answered or not payouts:

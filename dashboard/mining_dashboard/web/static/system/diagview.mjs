@@ -10,6 +10,8 @@
 // its fixed allowlist. Preact interpolation is the final output-escaping boundary in the browser.
 
 import { Component, html } from "../app/preact.mjs";
+import { controlFetch, staleError } from "../config/controlclient.mjs";
+import { RestartAllControl, TOR_RESET_POLL_MAX, TorResetControl } from "./stackactions.mjs";
 import { TorSnapshotTable } from "./torsnapshot.mjs";
 
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
@@ -36,9 +38,18 @@ export const DIAG_SERVICES = [
   ...DIAG_CONTAINERS.slice(3),
 ];
 
-// Doctor has no section/name field. These narrow tokens group its existing messages for display;
-// one cross-service check may appear under more than one service, while unmatched checks remain
-// visible under Machine checks. No check is dropped or rewritten.
+export const RESTART_IMPACT = {
+  tor: "Every Tor circuit drops and rebuilds, and monerod is restarted with it so it re-dials its peers; wallet-rpc is interrupted while monerod restarts.",
+  monerod:
+    "wallet-rpc is interrupted until monerod answers again, and the node's sync pauses briefly.",
+  "wallet-rpc": "Monero wallet sync and payouts pause briefly.",
+  tari: "tari-wallet is interrupted until the node answers again, and the node's sync pauses briefly.",
+  "tari-wallet": "Tari wallet sync and payouts pause briefly.",
+  p2pool: "xmrig-proxy is interrupted and miners reconnect once p2pool answers again.",
+  "xmrig-proxy": "Miners reconnect once the proxy answers again.",
+};
+export const DIAG_RESTARTABLE = Object.keys(RESTART_IMPACT);
+
 const SERVICE_HINTS = {
   tor: [/\btor\b/i, /\bonion\b/i, /\bsocks\b/i, /egress firewall/i],
   monerod: [/\bmonerod\b/i, /\bmonero node\b/i, /monero.*synchron/i],
@@ -69,24 +80,15 @@ export class DiagnosticWaitTimeout extends Error {
   }
 }
 
-// Diagnostics do not write an intermediate `running` result: HTTP 202 means only that no durable
-// result exists yet. Keep that uncertainty instead of borrowing the upgrade flow's version copy or
-// calling the runner wedged from elapsed time alone.
 export async function runDiag(path, body, label = "the diagnostics request", max = DIAG_POLL_MAX) {
-  let res;
-  try {
-    res = await fetch(`/api/control/${path}`, {
-      method: "POST",
-      headers: CONTROL_HEADERS,
-      body: JSON.stringify(body || {}),
-    });
-  } catch {
-    throw new Error(
-      `Could not submit ${label}: the dashboard could not reach the control service.`,
-    );
-  }
+  const res = await controlFetch(`/api/control/${path}`, {
+    method: "POST",
+    headers: CONTROL_HEADERS,
+    body: JSON.stringify(body || {}),
+  });
+  if (res.status === 401 || res.status === 403) throw staleError();
   if (!res.ok && res.status !== 202)
-    throw new Error(`Could not submit ${label}: HTTP ${res.status}`);
+    throw new Error(`Could not submit ${label}: ${(await res.text()) || `HTTP ${res.status}`}`);
   let id;
   try {
     ({ id } = await res.json());
@@ -104,6 +106,7 @@ export async function runDiag(path, body, label = "the diagnostics request", max
       continue;
     }
     if (result.status === 202 || [502, 503, 504].includes(result.status)) continue;
+    if (result.status === 401 || result.status === 403) throw staleError();
     if (!result.ok) throw new Error(`Could not read ${label}: HTTP ${result.status}`);
     try {
       return await result.json();
@@ -167,7 +170,7 @@ const STATUS_CLS = { fail: "status-bad", warn: "status-warn", ok: "status-ok" };
 export class DiagnosticsPanel extends Component {
   constructor(props) {
     super(props);
-    this.state = { healthPhase: "idle", healthResult: null, logs: {} };
+    this.state = { healthPhase: "idle", healthResult: null, logs: {}, restarts: {} };
   }
 
   async runHealth() {
@@ -213,6 +216,62 @@ export class DiagnosticsPanel extends Component {
         },
       }));
     }
+  }
+
+  setRestart(service, restart) {
+    this.setState((state) => ({ restarts: { ...state.restarts, [service]: restart } }));
+  }
+
+  async runRestart(service) {
+    this.setRestart(service, { phase: "waiting", result: null });
+    try {
+      const result = await runDiag(
+        "svc-restart",
+        { container: service },
+        `the ${service} restart`,
+        service === "tor" ? TOR_RESET_POLL_MAX : undefined,
+      );
+      this.setRestart(service, {
+        phase: result.status === "applied" ? "done" : "failed",
+        result,
+      });
+    } catch (error) {
+      this.setRestart(service, {
+        phase: "failed",
+        result: { error: String(error.message || error) },
+      });
+    }
+  }
+
+  renderRestart(service) {
+    if (!DIAG_RESTARTABLE.includes(service)) return null;
+    const restart = this.state.restarts[service] || { phase: "idle", result: null };
+    const { phase, result } = restart;
+    return html`<div>
+      <button class="btn-toggle" disabled=${phase === "waiting" || phase === "confirm"}
+              onClick=${() => this.setRestart(service, { phase: "confirm", result })}>
+        Restart ${service}
+      </button>
+      ${
+        phase === "confirm"
+          ? html`<p class="status-warn">Restart ${service}? ${RESTART_IMPACT[service]}
+            <button class="btn-toggle active" onClick=${() => this.runRestart(service)}>
+              Confirm restart of ${service}
+            </button>
+            <button class="btn-toggle"
+                    onClick=${() => this.setRestart(service, { phase: "idle", result })}>
+              Cancel
+            </button></p>`
+          : null
+      }
+      ${phase === "waiting" ? html`<p class="text-muted">Waiting for the host to restart ${service}…</p>` : null}
+      ${phase === "done" ? html`<p class="status-ok">${service} was restarted.</p>` : null}
+      ${
+        phase === "failed"
+          ? html`<p class="status-bad">${(result && (result.error || result.note)) || `The host could not restart ${service}.`}</p>`
+          : null
+      }
+    </div>`;
   }
 
   renderChecks(rows) {
@@ -273,6 +332,8 @@ export class DiagnosticsPanel extends Component {
           : html`<p class="text-muted text-xs">Run the health check to see this service's checks.</p>`
       }
       ${this.renderLog(service.name)}
+      ${this.renderRestart(service.name)}
+      ${service.name === "tor" ? html`<${TorResetControl} run=${runDiag} />` : null}
     </section>`;
   }
 
@@ -288,12 +349,13 @@ export class DiagnosticsPanel extends Component {
     const groups = groupDoctorRows(haveReport ? healthResult.doctor : null);
     const reportRows = haveReport ? doctorRows(healthResult.doctor) : [];
     const summary = haveReport ? doctorSummary(healthResult.doctor) : null;
-    return html`<div class="card">
+    return html`<div class="card diag-card">
       <h2>Service diagnostics</h2>
       <p>Run the host's read-only health check once. Every service and the machine checks appear
       below; open a service's recent log only when you need it.</p>
       <button class="btn-toggle active" disabled=${healthPhase === "waiting"}
               onClick=${() => this.runHealth()}>Run health check</button>
+      <${RestartAllControl} />
       ${
         healthPhase === "waiting"
           ? html`<p class="text-muted">Waiting for the host to return the health check…</p>`

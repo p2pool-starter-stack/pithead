@@ -287,49 +287,11 @@ class TestRunIteration:
         assert health["level"] == "green" and health["peers_out"] == 0
         assert svc.alert_service.process.await_args.kwargs["monero_health"] is health
 
-    async def test_healthchecks_pinged_when_healthy(self):
-        # Enabled + healthy → a plain liveness ping (no args) each cycle.
+    async def test_data_loop_never_pings_healthchecks(self):
         svc, sm, proxy = _make_service()
         proxy.get_workers.return_value = {"workers": []}
         svc.healthchecks = MagicMock()
         svc.healthchecks.enabled = True
-        svc.healthchecks.ping.return_value = True
-
-        await self._run_one_iteration(
-            svc,
-            monero_sync={
-                "is_syncing": False,
-                "reachable": True,
-                "percent": 100,
-                "current": 100,
-                "target": 100,
-            },
-            tari_sync={"is_syncing": False, "reachable": True},
-        )
-        svc.healthchecks.ping.assert_called_once_with()
-
-    async def test_healthchecks_pinged_even_when_a_node_is_down(self):
-        # Pure dead-man's switch: the heartbeat reports only that the STACK is alive, so a node
-        # being down must NOT change or suppress the ping (that's the Telegram alerter's job, #121).
-        svc, sm, proxy = _make_service()
-        proxy.get_workers.return_value = {"workers": []}
-        svc.healthchecks = MagicMock()
-        svc.healthchecks.enabled = True
-        svc.healthchecks.ping.return_value = True
-
-        await self._run_one_iteration(
-            svc,
-            monero_sync={"is_syncing": False, "reachable": False},  # monerod down
-            tari_sync={"is_syncing": False, "reachable": True},
-        )
-        svc.healthchecks.ping.assert_called_once_with()
-
-    async def test_healthchecks_not_pinged_when_disabled(self):
-        # Default: the disabled client is never invoked from the loop (no worker thread).
-        svc, sm, proxy = _make_service()
-        proxy.get_workers.return_value = {"workers": []}
-        svc.healthchecks = MagicMock()
-        svc.healthchecks.enabled = False
 
         await self._run_one_iteration(
             svc,

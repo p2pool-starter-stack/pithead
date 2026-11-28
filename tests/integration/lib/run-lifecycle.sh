@@ -35,7 +35,7 @@ _run_lifecycle() {
     lifecycle_gate_sample after-restart
     post_op_invariants "after restart"
     run_connection_announcements || lifecycle_stopped run_connection_announcements || return 1
-    local cur_pool fp_before pool_fp_after other pool_apply_ok=1 restore_tls_before
+    local cur_pool fp_before pool_fp_after other pool_apply_ok=1 restore_tls_before arch rt_dir="$OUT_DIR/lifecycle-restore"
     cur_pool="$(lifecycle_pool_start)" || {
         it_fail "pool change starting sidechain established" "config or rendered flags unreadable or inconsistent"
         return 1
@@ -126,11 +126,11 @@ _run_lifecycle() {
     lifecycle_mining_step run_tari_background_sync run_tari_background_sync || lifecycle_stopped run_tari_background_sync || return 1
     run_image_permissions || lifecycle_stopped run_image_permissions || return 1
     restore_tls_before=$(dashboard_tls_identity) || restore_tls_before=""
+    it_selfcheck_run_logged "$rt_dir" || lifecycle_ok=0
     it_step "backup → restore round-trip…"
     post_op_begin
-    local backup_out arch
-    if backup_out="$(pithead backup -y --no-encrypt 2>&1)"; then
-        arch="$(printf '%s\n' "$backup_out" | sed -n 's/^.*Backup written to: //p' | tail -n1)"
+    if it_run_logged "$rt_dir" backup pithead backup -y --no-encrypt; then
+        arch="$(sed -n 's/^.*Backup written to: //p' "${IT_STEP_LOG:-/dev/null}" 2>/dev/null | tail -n1)"
         [ -z "$arch" ] || backup_prune rx backups "$arch" "${SAFETY_ARCHIVE:-}"
         if [ -n "$arch" ]; then
             local fp_b backed_key backed_pool revert_from fp_after gate_marker_before gate_marker_after
@@ -145,11 +145,11 @@ _run_lifecycle() {
                 lifecycle_ok=0
             elif backed_pool="$(pool_label "$backed_key")" &&
                 revert_from="$([ "$backed_key" = main ] && printf mini || printf main)" &&
-                push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$revert_from")" &&
-                pithead apply -y >/dev/null 2>&1 &&
-                pithead down >/dev/null 2>&1 &&
-                pithead restore -y "$arch" >/dev/null 2>&1 &&
-                pithead up >/dev/null 2>&1; then
+                it_run_logged "$rt_dir" config-write push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$revert_from")" &&
+                it_run_logged "$rt_dir" apply pithead apply -y &&
+                it_run_logged "$rt_dir" down pithead down &&
+                it_run_logged "$rt_dir" restore pithead restore -y "$arch" &&
+                it_run_logged "$rt_dir" up pithead up; then
                 if wait_status_ok 240; then
                     it_pass "status OK after restore"
                     post_op_invariants "after restore"
@@ -181,7 +181,7 @@ _run_lifecycle() {
                 fi
                 [ "$IT_FAIL" -le "$failures_before" ] || lifecycle_ok=0
             else
-                it_fail "backup restore round-trip succeeded" "apply, down, restore, or up returned non-zero"
+                it_fail "backup restore round-trip succeeded" "$IT_STEP_NAME returned non-zero (rc $IT_STEP_RC)${IT_STEP_LOG:+; see $IT_STEP_LOG}"
                 lifecycle_ok=0
             fi
             rx "rm -f $(quote_arg "$arch") $(quote_arg "$(dirname "$arch")/.pithead-e2e-safety/$(basename "$arch")")" >/dev/null 2>&1 || true
@@ -190,14 +190,14 @@ _run_lifecycle() {
             lifecycle_ok=0
         fi
     else
-        it_fail "pithead backup succeeded" "backup returned non-zero"
+        it_fail "pithead backup succeeded" "backup returned non-zero (rc $IT_STEP_RC)${IT_STEP_LOG:+; see $IT_STEP_LOG}"
         lifecycle_ok=0
     fi
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
         local carry_old carry_new carry_epoch rows_before rows_after
         carry_old="$(env_on_box DASHBOARD_DATA_DIR)"
         if [ -n "$carry_old" ]; then
-            carry_epoch="$(rx 'date +%s')"
+            carry_epoch="$(rx 'echo $(($(date +%s) - 120))')"
             carry_new="${carry_old}-carried-$carry_epoch"
             rows_before="$(dashboard_durable_rows "$carry_epoch")"
             if [ -z "$rows_before" ]; then
@@ -221,11 +221,11 @@ _run_lifecycle() {
                     lifecycle_ok=0
                 fi
             fi
-            if pithead down >/dev/null 2>&1 && rx "rm -rf -- $(quote_arg "$carry_new")" >/dev/null 2>&1 &&
-                push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1 && wait_status_ok 180; then
+            if it_run_logged "$rt_dir" cleanup-down pithead down && it_run_logged "$rt_dir" cleanup-remove rx "rm -rf -- $(quote_arg "$carry_new")" && it_run_logged "$rt_dir" cleanup-config push_config "$BASELINE_CONFIG" &&
+                it_run_logged "$rt_dir" cleanup-apply pithead apply -y && it_run_logged "$rt_dir" cleanup-health wait_status_ok 180; then
                 it_pass "dashboard carry cleanup restored its baseline safely"
             else
-                it_fail "dashboard carry cleanup restored its baseline safely" "the stack was not stopped, its test copy was not removed, or the baseline did not return healthy"
+                it_fail "dashboard carry cleanup restored its baseline safely" "$IT_STEP_NAME returned non-zero (rc $IT_STEP_RC)${IT_STEP_LOG:+; see $IT_STEP_LOG}"
                 lifecycle_ok=0
             fi
         else

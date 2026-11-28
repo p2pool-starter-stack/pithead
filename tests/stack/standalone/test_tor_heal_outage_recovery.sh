@@ -7,6 +7,8 @@ WORK=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/pithead-tor-heal-outage.XXXXXX
 trap 'rm -rf "$WORK"' EXIT
 # shellcheck source=lib/pithead/02e-tor-recovery.sh
 source "$ROOT/lib/pithead/02e-tor-recovery.sh"
+# shellcheck source=lib/pithead/02f-tor-recovery-reasons.sh
+source "$ROOT/lib/pithead/02f-tor-recovery-reasons.sh"
 # shellcheck source=lib/pithead/22a-config-document.sh
 source "$ROOT/lib/pithead/22a-config-document.sh"
 # shellcheck source=lib/pithead/49-control-request-loop.sh
@@ -24,6 +26,10 @@ sudo() {
     "$@"
 }
 sleep() { :; }
+timeout() {
+    shift
+    "$@"
+}
 log() { :; }
 warn() { printf '%s\n' "$*"; }
 require_deployed() { :; }
@@ -87,9 +93,14 @@ if tor_recover check; then exit 1; fi
 export EGRESS=http-error
 if tor_recover check; then exit 1; fi
 export EGRESS=down
-# An unsaturated history stays refused.
 printf 'CircuitBuildAbandonedCount 3\nTotalBuildTimes 1000\n' >"$WORK/tor/state"
+tor_recover check
+export EGRESS=up
 if tor_recover check; then exit 1; fi
+export EGRESS=down
+mv "$record" "$WORK/record-held"
+if tor_recover check; then exit 1; fi
+mv "$WORK/record-held" "$record"
 printf 'CircuitBuildAbandonedCount 1000\nTotalBuildTimes 1000\n' >"$WORK/tor/state"
 # A symlinked record is not evidence.
 mv "$record" "$WORK/budget-real"
@@ -131,6 +142,17 @@ control_process_request "$WORK/request.json" "$WORK/control"
 printf 'CircuitBuildAbandonedCount 3\nTotalBuildTimes 1000\n' >"$WORK/tor/state"
 control_process_request "$WORK/request.json" "$WORK/control"
 [ "$(jq -r .saturated "$WORK/result")" = false ]
+[ "$(jq -c '[.circuit_established,.pending_circuits]' "$WORK/result")" = '[null,null]' ]
+tor_recovery_circuit_status() { printf 'circuit-established=0 pending=65\n'; }
+control_process_request "$WORK/request.json" "$WORK/control"
+[ "$(jq -c '[.circuit_established,.pending_circuits]' "$WORK/result")" = '[false,65]' ]
+tor_recovery_circuit_status() { printf 'circuit-established=1 pending=2\n'; }
+control_process_request "$WORK/request.json" "$WORK/control"
+[ "$(jq -c '[.circuit_established,.pending_circuits]' "$WORK/result")" = '[true,2]' ]
+tor_recovery_circuit_status() { printf 'garbage\n'; }
+control_process_request "$WORK/request.json" "$WORK/control"
+[ "$(jq -c '[.circuit_established,.pending_circuits]' "$WORK/result")" = '[null,null]' ]
+tor_recovery_circuit_status() { return 1; }
 AUTO_HEAL_OFF=1
 env_get() {
     case "$1" in
@@ -158,7 +180,7 @@ jq -n --arg id "$reject_id" '{id:$id,action:"backup",actor:"tor-heal"}' >"$WORK/
 CONTROL_HEAL_ONLY=false control_run_pending
 [ "$(jq -r .status "$WORK/control/results/$drain_id.json")" = applied ]
 jq -e '.status == "rejected" and .error == "only Tor healing is enabled"' "$WORK/control/results/$reject_id.json" >/dev/null
-if (AUTO_HEAL_OFF=1 control_run_pending); then exit 1; fi
+AUTO_HEAL_OFF=1 control_run_pending
 echo "== disabling general control during a drain restricts the next request =="
 control_commit() {
     GENERAL_CONTROL=false
@@ -169,6 +191,13 @@ jq -n --arg id "$reject_id" '{id:$id,action:"backup",actor:"tor-heal"}' >"$WORK/
 GENERAL_CONTROL=true CONTROL_HEAL_ONLY=true control_run_pending
 [ "$(jq -r .status "$WORK/control/results/$drain_id.json")" = applied ]
 jq -e '.status == "rejected" and .error == "only Tor healing is enabled"' "$WORK/control/results/$reject_id.json" >/dev/null
+echo "== disabling general control during a drain still serves a queued support bundle =="
+export_id=cccccccc-cccc-4ccc-8ccc-cccccccccccc
+control_support_bundle() { control_write_result "$4/results" "$2" '{"status":"applied"}'; }
+jq -n --arg id "$drain_id" '{id:$id,action:"commit",actor:"admin"}' >"$WORK/control/requests/1.json"
+jq -n --arg id "$export_id" '{id:$id,action:"support-bundle",actor:"admin"}' >"$WORK/control/requests/2.json"
+GENERAL_CONTROL=true control_run_pending
+[ "$(jq -r .status "$WORK/control/results/$export_id.json")" = applied ]
 echo "== No login rejects every unrelated action and non-healer actor =="
 for action in preview commit upgrade worker-apply worker-upgrade restart apply backup os-check os-download os-verify os-install os-reboot diag-doctor diag-logs onion-client-key egress-sync unknown; do
     jq -n --arg id "$id" --arg action "$action" '{id:$id,action:$action,actor:"tor-heal"}' >"$WORK/unrelated.json"
@@ -186,6 +215,21 @@ done
 jq '.extra="x"' "$WORK/request.json" >"$WORK/extra.json"
 control_process_request "$WORK/extra.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = rejected ]
+echo "== tor-heal-exhausted audits the healer's give-up and nothing else =="
+rm -f "$WORK/audit"
+jq -n --arg id "$id" '{id:$id,action:"tor-heal-exhausted",actor:"tor-heal"}' >"$WORK/exhausted.json"
+control_process_request "$WORK/exhausted.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = applied ]
+[ "$(cat "$WORK/audit")" = applied ]
+for payload in '.actor="operator"' '.extra="x"' '.config={}'; do
+    jq "$payload" "$WORK/exhausted.json" >"$WORK/bad-exhausted.json"
+    control_process_request "$WORK/bad-exhausted.json" "$WORK/control"
+    [ "$(jq -r .status "$WORK/result")" = rejected ]
+done
+AUTO_HEAL_OFF=1
+control_process_request "$WORK/exhausted.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = rejected ]
+AUTO_HEAL_OFF=0
 echo "== host evidence separates outages and ignores delayed or duplicate observations =="
 # Host timestamps the first round; repeat reads cannot become a second round.
 rm "$record"

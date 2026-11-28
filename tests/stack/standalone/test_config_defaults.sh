@@ -38,6 +38,8 @@ for defaults_platform in diy appliance; do
                 /^TELEGRAM_ENABLED=/ { print "TELEGRAM_LEVEL=off"; next }
                 /^TELEGRAM_EVENT_/ { next }
                 /^COMPOSE_PROFILES=/ { print "COMPOSE_PROJECT_NAME=pithead" }
+                /^XVB_POOL_URL=na\.xmrvsbeast\.com:/ { sub(/=na\./, "=eu.") }
+                /^MONERO_OUT_PEERS=48$/ { $0 = "MONERO_OUT_PEERS=24" }
                 { print }' "$ROOT/tests/stack/fixtures/config-2.0.0/$defaults_platform.env")"
         assert_eq "$defaults_platform absent local_miner.enabled matches v2.0.0" \
             "$(cat "$defaults_dir/golden/local-miner.txt")" "$(cat "$ROOT/tests/stack/fixtures/config-2.0.0/$defaults_platform.local-miner")"

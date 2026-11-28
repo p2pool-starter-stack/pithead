@@ -181,7 +181,7 @@ test("commit surfaces a real HTTP error from the commit request instead of polli
   );
   assert.equal(calls, 1);
   assert.equal(view.state.phase, "error");
-  assert.match(view.state.error, /HTTP 400/);
+  assert.equal(view.state.error, "bad request");
 });
 
 test("a rejected appliance preview labels the host validation log", async () => {

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in - Pithead</title>
+    <link rel="icon" type="image/svg+xml" href="/static/pithead-mark.svg">
+    <script src="/static/theme-init.js"></script>
+    <link rel="stylesheet" href="/static/dashboard.css">
+    <script type="module" src="/static/login.js"></script>
+</head>
+<body>
+    <div class="container login-container">
+        <main class="login-card">
+            <div class="brand">
+                <img class="brand-logo" src="/static/pithead-mark.svg" alt="" width="40" height="40">
+                <h1 class="brand-name">Pithead</h1>
+            </div>
+            <form id="login-form" class="login-form" method="post" action="/api/auth/login">
+                <label for="login-username">Username</label>
+                <input id="login-username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
+                <label for="login-password">Password</label>
+                <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+                <label class="login-remember">
+                    <input id="login-remember" name="remember" type="checkbox">
+                    Remember me for 30 days
+                </label>
+                <p id="login-error" class="status-bad" role="alert" hidden></p>
+                <button type="submit" class="btn-toggle">Sign in</button>
+            </form>
+        </main>
+    </div>
+</body>
+</html>

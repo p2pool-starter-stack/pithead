@@ -1,8 +1,8 @@
 # shellcheck shell=bash
-# Real equal-version A/B fallback after a migrating candidate fails its health gate.
 preserve_migration_bundle() {
-    local saved
-    saved=$(mktemp "${TMPDIR:-$(dirname -- "$1")}/pithead-migration-good.XXXXXX.saved") || return 1
+    local saved dir="${HOST_SCRATCH:-${TMPDIR:-$(dirname -- "$1")}}"
+    mkdir -p "$dir" || return 1
+    saved=$(mktemp "$dir/pithead-migration-good.XXXXXX.saved") || return 1
     cp "$1" "$saved" || {
         rm -f "$saved"
         return 1

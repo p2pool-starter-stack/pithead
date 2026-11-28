@@ -11,10 +11,13 @@ This file lists the [rig](../README.md#glossary) checks that still need hands on
 - **Time.** About 2 hours, the Rigs session of the [Run sheet](../README.md#run-sheet).
 
 The battery is defined in [appliance-release.md](../../appliance-release.md). The `rig` KVM phase
-only proves the [wizard](../README.md#glossary)'s rig card, role select, a submit toward a faked pool listener, volatile
-journald, a plain reboot, a power cut, and the A/B update leg — so these three stay hands-on
-until #1886's first gap converts what it can and names a bench e2e for the rest. Each row below names the
-check that replaces it once that lands. M14 (run-from-USB) no longer needs a hand-run: the
+proves the [wizard](../README.md#glossary)'s rig card, role select, a submit toward a faked pool listener, volatile
+journald, a plain reboot, a power cut, and the A/B update leg; its share leg (#2063,
+`tests/os/rig-share-leg.sh`) boots a second guest as a remote-node coordinator and proves an
+accepted share on the appliance channel both ways, and since #3996 asserts a nonzero hashrate floor
+on the rig's own feed and fails a release job whose promised input went missing
+(`--require-complete`), while #3994 added the dashboard adoption and config push. Each row below
+says what is automated and what a hand must still do. M14 (run-from-USB) no longer needs a hand-run: the
 `rigmedia` KVM phase (`tests/os/phases/rigmedia.sh`, #2069) covers it — see its row below for what
 it proves and what it still leaves out.
 
@@ -36,9 +39,20 @@ it proves and what it still leaves out.
 - `doctor` on the rig reports MSR applied and hugepages reserved.
 - Hashrate sits within the box's recorded baseline band.
 
-*Replaced by: the accepted-share and `doctor` MSR/hugepages checks #1886's gap 1 still has to add
-— the KVM phase fakes the pool listener and never accepts a share, and asserts nothing about MSR or
-hugepages.*
+*Automated (partially, #2063 + #3996): the `rig` phase's share leg (`tests/os/rig-share-leg.sh`)
+re-points the already-proven rig guest at a coordinator guest the battery itself boots, asserts a
+nonzero hashrate on the rig's own RigForge feed (the M11 floor), and fails unless the rig's worker
+AND the coordinator's built-in miner both show an accepted share — the release rig/rigmedia/media
+split is submitted with `--require-complete` (`docs/dev/releasing.md`), so that leg can no longer
+pass as a skip there. Stays manual: the physical half (flash the
+stick, firmware-boot the loaner and read its rig card, real `pithead.local` discovery), the
+`doctor` MSR check — a KVM guest's `/dev/cpu/*/msr` is the guest's virtual MSRs, so a write there
+proves the path works but moves nothing a virtual CPU can measure, and the RandomX MSR hashrate
+effect is a physical-CPU fact — and the baseline-band reading itself. Hugepages: the boot sizer
+(`os/overlay/pithead-hugepages`) sizes the reservation off the guest's RAM (full 3072 pages on the
+16 GiB guest) and the xmrig unit is fenced from re-growing it
+(`os/overlay/pithead-xmrig-hugepages.conf`), but a guest-side reservation cannot show the pool is
+physically backed, so the `doctor` line here stays hardware-only too.*
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
@@ -59,7 +73,8 @@ hugepages.*
 coordinator power-cut rows in `rig_share_leg`. It uses the existing two guests, enables the
 coordinator control channel, previews and commits an adoption with typed `APPLY`, and polls
 for an adopted worker with a reachable API. Worker descriptors reload on each poll; adoption
-does not require a separate dashboard restart. The leg changes `DONATION`, waits for the
+does not require a separate dashboard restart. The leg changes `watchdog_interval_min` (#4184; a
+`DONATION` probe from the fleet-standard 0 would donate the mining rig's dev fee), waits for the
 matching `change_id` in worker history to reach `applied`, checks the rig's
 own config and unchanged pools, restores the original effective value (read from the rig's
 reported config when the raw key is absent), and checks that the unpinned
@@ -90,7 +105,7 @@ token. The form and inspector clicks remain manual.*
 return-mining-unaided fact off a real `virsh destroy`, and the phase's existing update leg proves
 the install/self-commit half. What stays manual is Restore on AC Power Loss itself — a firmware
 setting a virtual disk cannot show — and the Keep-everything pass itself: no automated leg
-reinstalls a rig over its own `/data` yet (#3961).*
+reinstalls a rig over its own `/data` yet (#3995).*
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 

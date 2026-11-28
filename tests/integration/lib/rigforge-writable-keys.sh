@@ -173,25 +173,12 @@ run_rigforge_writable_keys() { # <rig>
     # Permanent safety refusals are verdict rows, not prose that disappears beside the summary.
     it_skip_leg "autotune write (#1236)" "starts a real tuning run on borrowed production hardware" by-design
     it_skip_leg "watchdog write (#1236)" "would remove thermal protection from borrowed production hardware" by-design
+    it_skip_leg "DONATION write (#1236)" "a rig at DONATION 0 can only be probed upward, and a nonzero probe donates the borrowed rig's dev fee to XMRig, not the owner (#4184); watchdog_interval_min and the #513 max_temp_c leg carry the scalar write path, and the fake-worker contract keeps DONATION" by-design
     it_log "   #1236: pools is never derived from the rig's own read (credential-stripped, #113) — see docs/dev/integration-testing.md"
     detail="$(_worker_detail "$rig")"
     if ! printf '%s' "$detail" | jq -e '(.rig_config | type) == "object"' >/dev/null 2>&1; then
         it_skip_phase "rigforge writable-key legs (#1236)" "rig '$rig' reports no writable config (.rig_config is null — 'could not read', or a RigForge older than v1.10.0/rigforge#253)"
         return 0
-    fi
-
-    # DONATION: the issue's headline key. Move it toward zero whenever it is non-zero, so the probe
-    # can only ever REDUCE what a borrowed rig donates; only a rig already at 0 gets a nonzero probe.
-    # Bounds are 0-100 (rigforge.sh:406), so both directions are valid.
-    orig="$(_rig_config_key "$detail" DONATION)"
-    if [ -z "$orig" ]; then
-        it_skip_leg "DONATION write (#1236)" "rig '$rig' reports no DONATION in its writable config — can't read the original to restore it"
-    elif ! printf '%s' "$orig" | grep -qE '^[0-9]+$'; then
-        it_fail "the rig's reported DONATION is a number (#1236)" "got [$orig]"
-    else
-        probe=0
-        [ "$orig" -eq 0 ] && probe=1
-        _writable_key_round_trip "$rig" DONATION "$orig" "$probe" || return 1
     fi
 
     # watchdog_interval_min: a second scalar key, and the safest change on the list — the watchdog

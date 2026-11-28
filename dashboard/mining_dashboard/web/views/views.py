@@ -26,6 +26,7 @@ from mining_dashboard.helper.utils import (
     format_hashrate,
     format_time_abs,
 )
+from mining_dashboard.service.health.node_alert import build_node_alert
 from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.host_resources import build_host_resources
 from mining_dashboard.service.metrics import build_metrics
@@ -56,6 +57,7 @@ from mining_dashboard.web.views.infra_views import (
 )
 from mining_dashboard.web.views.monero_view import build_monero
 from mining_dashboard.web.views.overview_views import build_mining_activity, build_overview
+from mining_dashboard.web.views.paused_badge import paused_badges
 from mining_dashboard.web.views.series_views import (
     _gauge_series,  # noqa: F401 — re-export for worker_detail.py
     _mode_palette,
@@ -242,10 +244,8 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
     )
     metrics = build_metrics(data, state_mgr, history)
     db_healthy = state_mgr.is_db_healthy()
-
     mode_tok, p2p_tok, xvb_tok = _mode_palette(metrics.mode)
     pool_net = build_pool_network(data, metrics)
-
     # Built once, consumed twice: the Earnings card reads the full payload, the expected-vs-actual
     # summary (#808) rolls the same figures up — one build, so the two can't disagree.
     earnings = build_earnings(
@@ -297,6 +297,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
     badges = build_badges(
         data, metrics, mode_tok, db_healthy, wallet_change=recent_wallet_change(state_mgr)
     )
+    badges[:0] = paused_badges(data, metrics)
     badges.append(_egress_badge(egress["summary"]))
 
     disk_growth = state_mgr.get_disk_growth()
@@ -378,6 +379,8 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         "xvb_history": build_xvb_history(state_mgr.get_xvb_history(), range_arg, window),
         "egress": egress,
         "topology": topology,
+        "ping_failures": state_mgr.get_ping_failures(8),
+        "node_alert": build_node_alert(data),
         "chart": build_chart(
             history,
             data.get("shares", []),

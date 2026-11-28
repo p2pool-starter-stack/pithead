@@ -10,8 +10,8 @@ import socks
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+from fake_donation_stratum import FakeStratum  # noqa: E402
 from fake_socks import FakeSocks  # noqa: E402
-from fake_stratum import FakeStratum  # noqa: E402
 
 
 def send(client, method, params, request_id=1):
@@ -164,7 +164,7 @@ def test_standalone_port_and_log(tmp_path, explicit_host):
     process = subprocess.Popen(  # noqa: S603
         [
             sys.executable,
-            str(pathlib.Path(__file__).with_name("fake_stratum.py")),
+            str(pathlib.Path(__file__).with_name("fake_donation_stratum.py")),
             "--port",
             "0",
             "--log",

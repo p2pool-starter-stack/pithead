@@ -31,7 +31,7 @@ P2POOL_BACKUP_ARGS_B64=LS1ob3N0
 MONERO_BACKUP_NODES='[{"host":"backup.example","rpc_port":28081,"zmq_port":28083,"rpc_login":"user:pass with spaces"}]'
 P2POOL_PORT=37889
 STRATUM_BIND=0.0.0.0
-XVB_POOL_URL=na.xmrvsbeast.com:4247
+XVB_POOL_URL=eu.xmrvsbeast.com:4247
 XVB_DONOR_ID=49Wallet
 XVB_ENABLED=true
 P2POOL_URL=172.28.0.28:3333
@@ -148,7 +148,7 @@ expect_min "log rotation on every service" "max-size:" 9
 # leaving the other was green. The two would then run different socket-proxy builds, which is exactly
 # the split the separate-proxy design exists to prevent.
 expect_min "tecnativa socket-proxy pinned by digest (both proxies)" "tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459" 2
-expect_present "caddy pinned by digest" "caddy:2.11.7@sha256:36c24ad91a7ff7bc4c87fe22bfa8df3c4b18da0773d73fc12ee2c52b98c0bb7e"
+expect_present "caddy pinned by digest" "caddy:2.11.9@sha256:4851e54a46b206517c574821bb5cc67f170d2156041e9fbc4c9193b45e84a75b"
 expect_present "tari node pinned by digest" "minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec"
 
 # Per-service precision checks via the JSON render.

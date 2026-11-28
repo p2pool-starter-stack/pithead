@@ -115,6 +115,7 @@ if [ "${1:-}" = --case ]; then
     }
     cosign() { [ "$scenario" != bad-install-signature ]; }
     confirm() { return 0; }
+    require_gated_commit() { :; }
     git() { printf 'git %s\n' "$*" >>"$WORKDIR/writes"; }
     gh() {
         case "$*" in

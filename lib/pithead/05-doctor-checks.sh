@@ -247,8 +247,9 @@ monerod_peers_and_tip() { # <user> <pass> <url>
     counts=$(monerod_peer_counts)
     [ -z "$counts" ] || read -r out inn <<<"$counts"
     if [ -n "$1" ]; then
-        hdr=$(curl -fsS --max-time 8 --digest -u "$1:$2" -H 'Content-Type: application/json' \
-            -d '{"jsonrpc":"2.0","id":"0","method":"get_last_block_header"}' "$3/json_rpc" 2>/dev/null)
+        hdr=$(printf 'user = %s\n' "$(printf '%s:%s' "$1" "$2" | jq -Rs .)" |
+            curl -fsS --max-time 8 --digest --config - -H 'Content-Type: application/json' \
+                -d '{"jsonrpc":"2.0","id":"0","method":"get_last_block_header"}' "$3/json_rpc" 2>/dev/null)
     else
         hdr=$(curl -fsS --max-time 8 -H 'Content-Type: application/json' \
             -d '{"jsonrpc":"2.0","id":"0","method":"get_last_block_header"}' "$3/json_rpc" 2>/dev/null)

@@ -35,6 +35,8 @@ test-stack: pithead ## pithead shell test suite
 	bash tests/stack/standalone/test_tor_diagnostics.sh
 	bash tests/stack/standalone/test_tor_heal_outage_recovery.sh
 	bash tests/stack/standalone/test_tor_lifecycle_receipts.sh
+	bash tests/stack/standalone/test_tor_unsaturated_reset.sh
+	bash tests/stack/standalone/test_tor_reset.sh
 	bash tests/stack/standalone/test_data_reset.sh
 	bash tests/stack/standalone/test_directory_linebreaks.sh
 	bash tests/stack/standalone/test_os_update_recovery.sh
@@ -43,6 +45,7 @@ test-stack: pithead ## pithead shell test suite
 	bash tests/stack/standalone/test_grub_hugepages_real.sh
 	python3 tests/stack/standalone/test_clearnet_attestation.py
 	python3 tests/stack/standalone/test_stratum_port.py
+	python3 tests/stack/standalone/test_quadlet_provenance.py
 
 test-netwatch: ## netwatch passive flow-audit: classifier verdicts + the test-tool coverage guard (no bench, no network)
 	@# Tier 1 on purpose. The capture needs a bench; the JUDGEMENT does not, and the judgement is
@@ -75,6 +78,8 @@ test-tools: pithead
 	python3 tests/stack/standalone/test_tor_saturated_fixture.py
 	python3 tests/stack/standalone/test_monero_download.py
 	python3 tests/stack/standalone/test_appliance_release_docs.py
+	bash scripts/watch/tor-bump.sh --self-test
+	bash tests/watch/test-find-open-issue.sh
 	sed -n '/^  shell-block:$$/,/^  shell-fragment:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 15( |$$)'
 	sed -n '/^  shell-fragment:$$/,/^  shell:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
 	sed -n '/^  shell:$$/,/^  shell-standalone:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 5( |$$)'
@@ -122,6 +127,8 @@ SHELLCHECK_VERSION := 0.11.0
 # is tied to one binary and fails loudly until it matches.
 SHFMT_VERSION := 3.13.1
 
+SHELLCHECK_FILE_BUDGET := 120
+
 print-shellcheck-version: ## Print the pinned shellcheck version (ci.yml's installer reads this)
 	@echo $(SHELLCHECK_VERSION)
 
@@ -159,7 +166,7 @@ lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ contai
 		os/overlay/pithead-machine-id os/overlay/pithead-media-config os/overlay/pithead-hugepages os/overlay/pithead-address-watch os/overlay/pithead-miner-recovery os/overlay/pithead-serial-port-present \
 		os/overlay/pithead-journal-persist os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version os/overlay/pithead-tor \
 		tests/os/*.sh tests/os/*/*.sh tests/netwatch/*.sh \
-		| xargs -0 -n 1 -P 4 shellcheck -x --severity=warning
+		| xargs -0 -n 1 -P 4 bash scripts/lint/shellcheck-budget.sh $(SHELLCHECK_FILE_BUDGET)
 # CLI slices are checked through the generated pithead above: their semantic context
 # depends on concatenation order. Listing them separately duplicates a large analysis
 # and reports false unused-global warnings. shfmt checks every slice independently.
