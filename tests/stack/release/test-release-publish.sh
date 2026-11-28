@@ -84,13 +84,15 @@ resume_out="$(cd "$ROOT" && bash "$REL" --resume-promote 2>&1)"
 assert_rc "--resume-promote refuses a replaced staging tag" "$?" "1"
 assert_contains "--resume-promote has no mutable-tag recovery path" "$resume_out" "Unknown option: --resume-promote"
 echo "== unit: release.sh requires the exact-SHA release status gate (#1996) =="
-release_status_gate() { # <statuses-json> [resolved-app-id] [expected-app-id] [app-slug] [dry-run]
+release_status_gate() { # <statuses-json> [resolved-app-id] [expected-app-id] [app-slug] [dry-run] [context]
     local RELEASE_STATUSES="$1" RELEASE_RESOLVED_APP_ID="${2:-4242}"
     local RELEASE_EXPECTED_APP_ID="${3-4242}" RELEASE_APP_SLUG="${4-release-gate}" RELEASE_DRY_RUN="${5:-0}"
+    local RELEASE_CONTEXT="${6-release-gate/suite}"
     (
         cd "$ROOT" || exit
         set --
-        export RELEASE_REQUIRED_STATUS_APP_ID="$RELEASE_EXPECTED_APP_ID"
+        if [ -n "$RELEASE_CONTEXT" ]; then export RELEASE_REQUIRED_STATUS_CONTEXT="$RELEASE_CONTEXT"; else unset RELEASE_REQUIRED_STATUS_CONTEXT; fi
+        if [ -n "$RELEASE_EXPECTED_APP_ID" ]; then export RELEASE_REQUIRED_STATUS_APP_ID="$RELEASE_EXPECTED_APP_ID"; else unset RELEASE_REQUIRED_STATUS_APP_ID; fi
         if [ -n "$RELEASE_APP_SLUG" ]; then export RELEASE_REQUIRED_STATUS_APP_SLUG="$RELEASE_APP_SLUG"; else unset RELEASE_REQUIRED_STATUS_APP_SLUG; fi
         # shellcheck disable=SC1090  # dynamic source
         source "$REL" 2>/dev/null
@@ -111,19 +113,19 @@ release_status_gate() { # <statuses-json> [resolved-app-id] [expected-app-id] [a
         require_release_status_gate
     )
 }
-gate_ok="$(release_status_gate '[{"context":"other","state":"success","creator":{"login":"release-gate[bot]"}},{"context":"bench-ci/tier4","state":"success","creator":{"login":"release-gate[bot]"}}]' 2>&1)"
+gate_ok="$(release_status_gate '[{"context":"other","state":"success","creator":{"login":"release-gate[bot]"}},{"context":"release-gate/suite","state":"success","creator":{"login":"release-gate[bot]"}}]' 2>&1)"
 assert_rc "a successful status permits the release" "$?" "0"
 assert_contains "the passing status names the exact release commit" "$gate_ok" "0123456789abcdef0123456789abcdef01234567"
 gate_missing="$(release_status_gate '[]' 2>&1)"
 assert_rc "a missing status refuses the release" "$?" "1"
-assert_contains "the missing status refusal names the required context" "$gate_missing" "bench-ci/tier4"
-gate_failed="$(release_status_gate '[{"context":"bench-ci/tier4","state":"failure","creator":{"login":"release-gate[bot]"}}]' 2>&1)"
+assert_contains "the missing status refusal names the required context" "$gate_missing" "release-gate/suite"
+gate_failed="$(release_status_gate '[{"context":"release-gate/suite","state":"failure","creator":{"login":"release-gate[bot]"}}]' 2>&1)"
 assert_rc "a failed status refuses the release" "$?" "1"
 assert_contains "the failed status is reported as failure" "$gate_failed" "got: failure"
-gate_forged="$(release_status_gate '[{"context":"bench-ci/tier4","state":"success","creator":{"login":"other-app[bot]"}}]' 2>&1)"
+gate_forged="$(release_status_gate '[{"context":"release-gate/suite","state":"success","creator":{"login":"other-app[bot]"}}]' 2>&1)"
 assert_rc "the same context from another actor refuses the release" "$?" "1"
 assert_contains "the forged status cannot impersonate the required App" "$gate_forged" "from GitHub App 4242"
-gate_wrong_app="$(release_status_gate '[{"context":"bench-ci/tier4","state":"success","creator":{"login":"release-gate[bot]"}}]' 9999 2>&1)"
+gate_wrong_app="$(release_status_gate '[{"context":"release-gate/suite","state":"success","creator":{"login":"release-gate[bot]"}}]' 9999 2>&1)"
 assert_rc "an App slug resolving to the wrong id refuses the release" "$?" "1"
 assert_contains "the App-id mismatch names both ids" "$gate_wrong_app" "id 9999, expected 4242"
 gate_no_app_id="$(release_status_gate '[]' 4242 '' 2>&1)"
@@ -135,18 +137,27 @@ assert_contains "the invalid-slug refusal names its setting" "$gate_bad_slug" "R
 gate_no_slug="$(release_status_gate '[]' 4242 4242 '' 2>&1)"
 assert_rc "an unset App slug refuses the release" "$?" "1"
 assert_contains "the unset-slug refusal names its setting, not a defaulted App" "$gate_no_slug" "RELEASE_REQUIRED_STATUS_APP_SLUG"
+# Optional gate: with all three settings unset it skips, so a lane without a status-publishing App still cuts.
+# MUTATION PROOF: drop the skip branch (or default the context in preflight.sh) and these go red.
+gate_unset="$(release_status_gate '[]' 4242 '' '' 0 '' 2>&1)"
+assert_rc "all three settings unset skips the release" "$?" "0"
+assert_contains "the skip names the unset settings" "$gate_unset" "Release status gate skipped"
+# When any one is set, all three are required: the context cannot be omitted behind an App pin.
+gate_no_context="$(release_status_gate '[]' 4242 4242 release-gate 0 '' 2>&1)"
+assert_rc "an unset context refuses an enabled release gate" "$?" "1"
+assert_contains "the unset-context refusal names its setting" "$gate_no_context" "RELEASE_REQUIRED_STATUS_CONTEXT"
 # --dry-run previews the verdict instead of dying on it (#1108, signing). MUTATION PROOF: drop the DRY_RUN carve-out from require_release_status_gate and these go red.
 gate_dry_missing="$(release_status_gate '[]' 4242 4242 release-gate 1 2>&1)"
 assert_rc "a missing status only warns under --dry-run" "$?" "0"
-assert_contains "the dry-run warning still names the required context" "$gate_dry_missing" "bench-ci/tier4"
-gate_dry_no_app_id="$(release_status_gate '[{"context":"bench-ci/tier4","state":"success","creator":{"login":"release-gate[bot]"}}]' 4242 '' release-gate 1 2>&1)"
+assert_contains "the dry-run warning still names the required context" "$gate_dry_missing" "release-gate/suite"
+gate_dry_no_app_id="$(release_status_gate '[{"context":"release-gate/suite","state":"success","creator":{"login":"release-gate[bot]"}}]' 4242 '' release-gate 1 2>&1)"
 assert_rc "an unpinned App id only warns under --dry-run" "$?" "0"
 assert_contains "the dry-run warning names the unset setting" "$gate_dry_no_app_id" "RELEASE_REQUIRED_STATUS_APP_ID"
 assert_contains "the dry run still performs the status lookup it can" "$gate_dry_no_app_id" "Release status gate passed"
 # The gate is only worth anything if it refuses BEFORE release bytes are built and promoted — a gate
 # that ran after stage_push would have already produced the artefacts it is meant to withhold. #2243
 # removed the --resume-promote branch this ordering was previously proven through, so drive the real
-# linear main() with each stage stubbed to a trace. MUTATION PROOF: move require_bench_tier4 below
+# linear main() with each stage stubbed to a trace. MUTATION PROOF: move require_release_status_gate below
 # stage_push in release.sh and the expected order goes red.
 gate_order="$SANDBOX/gate-order"
 # shellcheck disable=SC1090,SC2034,SC2329  # dynamic source; stubs are called by the sourced main
