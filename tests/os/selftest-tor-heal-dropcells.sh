@@ -4,7 +4,7 @@ export TMPDIR="${TMPDIR:-${RUNNER_TEMP:-/tmp}}"
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 work=$(mktemp -d "${TMPDIR:?}/tor-heal-dropcells-selftest.XXXXXX")
 trap 'rm -rf "$work"' EXIT
-# shellcheck disable=SC2034 # sourced phase reads both globals.
+# shellcheck disable=SC2034
 OS_RUN_SUITE=1 SCRIPT_DIR="$ROOT/tests/os"
 # shellcheck source=tests/os/phases/tor-heal-dropcells.sh
 source "$ROOT/tests/os/phases/tor-heal-dropcells.sh"
