@@ -1,4 +1,4 @@
-FROM golang:1.27.4-trixie@sha256:f18c3d73a184fb0582828510722e723b63a93f7188d11dd223d9be6f6880e65d AS gobuild
+FROM golang:1.27.4-trixie@sha256:430985542100b871e108ccc00e8dcc5eef08ca14ee5825e98ebf563d8ffec4ee AS gobuild
 
 ARG COMPOSE_COMMIT=ed25575984c8dbd1ad137c93002d782f52478809
 ARG COSIGN_COMMIT=0e48502cf5ef34e2e60bbd3617aa19945712f705
@@ -46,7 +46,7 @@ RUN COMPOSE_VERSION="$(/tools/module-version.sh /tools/compose/go.mod github.com
 # Pinned by digest (#135) so the debian:trixie-slim tag can't be silently re-pointed. The digest
 # bump is how base-distro CVE fixes reach the appliance (#833): there is no apt on the running
 # box — every Debian package here is frozen until the next bake.
-FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
+FROM debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -116,11 +116,6 @@ COPY --from=gobuild /out/docker-compose /out/cosign /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
     && touch /etc/containers/nodocker
 
-# The built-in miner (#796): a pinned RigForge tree plus everything it needs, baked at image
-# build because nothing can be installed later — apt cannot run on the read-only root, and even
-# a rw-remount install leaves its /etc state (alternatives, ld.so.cache) on the volatile overlay
-# where the first reboot breaks the compiler. RIGFORGE_REF pins the commit of RigForge
-# v1.18.1 (8f06cb8d); pin releases by commit.
 # v1.16.0 is the floor for the HugePages pool ceiling: hugepages_pool_ceiling_mb (rigforge#398,
 # filed from #1103) is absent from v1.15.1's tree entirely, and declaring it into one fails OPEN —
 # parse_config never reads the key, so the rendered config would look capped and behave as today.
@@ -135,7 +130,7 @@ RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
 # msr-tools gives doctor its rdmsr probe; gettext-base is envsubst, which renders the unit on
 # every boot and is the ONLY tool a prebuilt tree strictly needs. Unsupported RigForge tests and their extra tool dependencies are not baked.
 COPY os/rootfs/fetch-archive.sh /usr/local/bin/fetch-archive
-ARG RIGFORGE_REF=8f06cb8df791f3cb16d47bbee85fde92103cbe0b
+ARG RIGFORGE_REF=04f8799955989120cf0a36121d3391cc5b5f5661
 RUN sh /usr/local/bin/fetch-archive \
         "https://github.com/p2pool-starter-stack/rigforge/archive/${RIGFORGE_REF}.tar.gz" /tmp/rigforge.tar.gz \
     && mkdir -p /opt/rigforge \

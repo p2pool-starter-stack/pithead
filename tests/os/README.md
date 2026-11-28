@@ -60,6 +60,13 @@ for a guest-local alert sink. It restores its original config and state on exit,
 state only after Tor stops. Failures report the current stage, bounded command logs and
 the restoration result separately from the test result; no shared Tor is poisoned.
 
+The opt-in `tor-heal-exhausted` phase provisions its own local-node guest and proves the
+ladder's rejected-NEWNYM rung: with no saturated history, a host-rejected NEWNYM must advance
+to the host state reset and Tor must recover unattended (#4075). It is a separate phase because
+the `tor-heal` ladder alone consumes about three and a half hours of the 240-minute bench
+window, and both legs must run to their own bounded end. `selftest-tor-heal-exhausted.sh`
+exercises its wrapper without a guest.
+
 The opt-in `tor-guard` phase (#4342) provisions a local-node guest and grafts a private Tor network onto it: one
 authority, a middle, an exit that reaches a guest-local web server, four ordinary guards and one guard whose torrc enables
 `DoSCircuitCreation*` with defence type 2 and a one-connection threshold. The stack's Tor image is unchanged; its torrc
@@ -76,6 +83,8 @@ at 40 minutes; the defence period is 20). With the healer on it requires a `tor-
 through the probe and an unchanged Tor `StartedAt`, and records the verdict. Rotation picks among five guards at random,
 so a rotation that lands on the refusing guard again waits for the healer's next cooldown. Submit with `--timeout-minutes 240`.
 `tests/os/selftest-run-modules.sh` pins the phase's wiring; the guest script is proved only by the KVM job.
+
+The provision LAN-guard leg writes the three-switch `./pithead apply -y` output to `lan-guard-apply.log` in the guest's `/data/pithead` and, when the apply fails, prints its last 60 lines (redacted) with the exit code (#4281). `selftest-lan-guard-apply-output.sh` covers that branch without a guest.
 
 Submitting `tor-heal` to bench-ci needs `--timeout-minutes 240`: the ladder runs about three
 and a half hours after provisioning, and the tier's default run window ends the job after the
@@ -415,7 +424,7 @@ the host's `/etc`.
   Fault E (#4038) runs `recovery-bundle` on the fault guest with no container running and a
   deliberately failed pithead unit and a dummy unit installed at run time; the archive is a zip taken with
   `--since` and `--until`, mode 600 under `/data/pithead/support-bundles`, and must hold the failed unit's
-  journal line, the dummy unit's file, the whole-journal, kernel and boot-list files and a manifest with
+  journal line with its seeded `--rpc-login` redacted and no copy of the value anywhere in the archive, the dummy unit's file, the whole-journal, kernel and boot-list files and a manifest with
   the journal facts; its path must appear on the serial console, which also records how many quadlet
   container units carried journal lines.
 - **reset** — first, boot the real **Set up again** menu entry on a provisioned coordinator

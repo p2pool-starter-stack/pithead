@@ -1,0 +1,71 @@
+name: OS package watch
+
+on:
+  schedule:
+    - cron: "45 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: os-package-watch
+
+jobs:
+  os-package-watch:
+    name: Check the latest release's OS packages against advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TITLE: "OS packages: rebuild for fixed advisories"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build the advisory report
+        id: report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          rc=0
+          tag=$(gh release view --json tagName --jq .tagName) || rc=1
+          assets=$(gh release view "$tag" --json assets --jq '.assets[].name') || rc=1
+          if [ "$rc" != 0 ]; then
+            echo "The OS package watch could not read the latest release." >report.md
+          elif ! grep -qx "os-packages-$tag.txt" <<<"$assets"; then
+            echo "Release $tag has no os-packages-$tag.txt asset: it was cut before releases recorded their installed OS packages." >report.md
+          elif gh release download "$tag" --pattern "os-packages-$tag.txt" --dir assets; then
+            python3 scripts/watch/os-package-watch.py "$tag" "assets/os-packages-$tag.txt" >report.md || rc=$?
+          else
+            echo "The OS package watch could not download os-packages-$tag.txt." >report.md
+            rc=1
+          fi
+          [ -s report.md ] || { echo "The OS package watch produced no report." >report.md; rc=1; }
+          fixable=$(sed -n 's/^<!-- os-package-watch: fixable=\([0-9]*\) unchecked=[0-9]* -->$/\1/p' report.md | tail -1)
+          cat report.md >>"$GITHUB_STEP_SUMMARY"
+          echo "rc=$rc" >>"$GITHUB_OUTPUT"
+          echo "fixable=${fixable:-0}" >>"$GITHUB_OUTPUT"
+      - name: Open, annotate or close the rebuild issue
+        if: steps.report.outputs.rc == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FIXABLE: ${{ steps.report.outputs.fixable }}
+        run: |
+          set -Eeuo pipefail
+          n=$(bash scripts/watch/find-open-issue.sh "$TITLE")
+          if [ -n "$n" ]; then
+            gh issue edit "$n" --body-file report.md
+            echo "updated #$n"
+            if [ "$FIXABLE" = 0 ]; then
+              gh issue close "$n" --comment "The latest release has no installed package with a fixed advisory."
+            fi
+          elif [ "$FIXABLE" != 0 ]; then
+            gh issue create --title "$TITLE" --label dependencies --body-file report.md
+          fi
+      - name: Fail the run if the watch could not complete
+        if: steps.report.outputs.rc != '0'
+        run: |
+          echo "::error::OS package watch could not complete: unchecked packages are not known to be clean"
+          exit 1

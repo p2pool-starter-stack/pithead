@@ -187,7 +187,8 @@ import json
 import urllib.request
 
 NODES = {"rigs", "browser", "xmrig-proxy", "caddy", "dashboard", "p2pool",
-         "monerod", "tari", "docker", "tor", "internet"}
+         "monerod", "tari", "docker", "host-time-sync", "host-updates", "host-containers",
+         "tor", "internet"}
 
 
 def bail(msg):

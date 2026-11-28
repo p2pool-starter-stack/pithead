@@ -75,6 +75,8 @@ validate_worker_endpoints() {
                 then "workers.list[\(.name)].api_token needs an operator-set host and 1-128 printable non-space characters."
               elif has("watts") and ((.watts | type) != "number" or .watts <= 0 or .watts >= 1000000)
                 then "workers.list[\(.name)].watts must be a positive number of watts (a manual power-draw estimate for the energy calculator, #260)."
+              elif has("rig_id") and ((.rig_id | type) != "string" or (.rig_id | length) != 32 or (.rig_id | test("^[0-9a-f]{32}$") | not))
+                then "workers.list[\(.name)].rig_id must be a 32-character lowercase hex identity id (RigForge rig_id)."
               else empty end
           ] | first // empty end' "$CONFIG_FILE" 2>/dev/null)
     [ -z "$dw_err" ] || error "$dw_err"
@@ -210,6 +212,38 @@ migrate_removed_telegram_control() {
     else
         rm -f "$tmp"
         warn "Could not drop the removed telegram.control key from $CONFIG_FILE — it is no longer read, but the dashboard config editor will refuse commits until it is deleted by hand."
+    fi
+}
+
+# XvB is retiring its NA servers in favour of eu.xmrvsbeast.com (#4308): a saved xvb.url on the NA
+# host moves to the EU host with the same port. Nothing else in the file changes, a custom host is
+# left alone, and the prior file is kept as ${CONFIG_FILE}.bak-xvb-na. Best effort: the NA name
+# still resolves, so a failed write only warns.
+readonly XVB_NA_URL_JQ='(.xvb | objects | .url | strings) | test("^na\\.xmrvsbeast\\.com(:[0-9]+)?$"; "i")'
+migrate_xvb_na_endpoint() {
+    local owner tmp="${CONFIG_FILE}.tmp"
+    [ -f "$CONFIG_FILE" ] || return 0
+    jq -e "$XVB_NA_URL_JQ" "$CONFIG_FILE" >/dev/null 2>&1 || return 0
+    if [ "$PITHEAD_DRY_RUN" -eq 1 ]; then
+        log "xvb.url would move from na.xmrvsbeast.com to eu.xmrvsbeast.com on apply."
+        return 0
+    fi
+    if ! cp -p "$CONFIG_FILE" "${CONFIG_FILE}.bak-xvb-na" 2>/dev/null; then
+        warn "Could not back up $CONFIG_FILE before moving xvb.url off na.xmrvsbeast.com — leaving it; change it to eu.xmrvsbeast.com by hand."
+        return 0
+    fi
+    owner=$(stat -c '%u:%g' "$CONFIG_FILE" 2>/dev/null || stat -f '%u:%g' "$CONFIG_FILE" 2>/dev/null) || owner=""
+    if (
+        umask 077
+        jq 'if (.xvb | type) == "object" then .xvb.url |= sub("^na\\.xmrvsbeast\\.com"; "eu.xmrvsbeast.com"; "i") else . end' "$CONFIG_FILE" >"$tmp" 2>/dev/null
+    ); then
+        mv "$tmp" "$CONFIG_FILE"
+        chmod 600 "$CONFIG_FILE"
+        if [ -n "$owner" ]; then chown "$owner" "$CONFIG_FILE" 2>/dev/null || true; fi
+        log "XvB retired its NA servers: xvb.url moved to eu.xmrvsbeast.com (same port) — the old copy is at ${CONFIG_FILE}.bak-xvb-na."
+    else
+        rm -f "$tmp"
+        warn "Could not move xvb.url off na.xmrvsbeast.com in $CONFIG_FILE — change it to eu.xmrvsbeast.com by hand."
     fi
 }
 

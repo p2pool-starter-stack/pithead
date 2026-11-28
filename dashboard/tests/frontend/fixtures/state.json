@@ -249,6 +249,13 @@
       "unverified": 0
     }
   },
+  "egress_audit": {
+    "counters": [],
+    "host_violations": 0,
+    "loaded": false,
+    "unmonitored": true,
+    "would_drop": 0
+  },
   "energy": {
     "available": true,
     "cost_per_kwh": 0.0,
@@ -615,6 +622,27 @@
         "label": "container API",
         "route": "local",
         "to": "docker"
+      },
+      {
+        "from": "host-time-sync",
+        "kind": "egress",
+        "label": "htpdate time sync",
+        "route": "unknown",
+        "to": "internet"
+      },
+      {
+        "from": "host-updates",
+        "kind": "egress",
+        "label": "release + OS update fetches",
+        "route": "unknown",
+        "to": "internet"
+      },
+      {
+        "from": "host-containers",
+        "kind": "egress",
+        "label": "container image pulls",
+        "route": "unknown",
+        "to": "internet"
       }
     ],
     "nodes": [
@@ -669,6 +697,24 @@
         "zone": "host"
       },
       {
+        "id": "host-time-sync",
+        "label": "time sync",
+        "scope": "host",
+        "zone": "host"
+      },
+      {
+        "id": "host-updates",
+        "label": "OS + release fetches",
+        "scope": "host",
+        "zone": "host"
+      },
+      {
+        "id": "host-containers",
+        "label": "image pulls",
+        "scope": "host",
+        "zone": "host"
+      },
+      {
         "id": "tor",
         "label": "tor",
         "zone": "tor"
@@ -711,6 +757,7 @@
       "h15_str": "0.00 H/s",
       "h60": 5100,
       "h60_str": "5.10 kH/s",
+      "identity_change": null,
       "invalid": 0,
       "ip": "192.168.1.10",
       "ip_sort": 3232235786,
@@ -763,6 +810,7 @@
       "h15_str": "0.00 H/s",
       "h60": 4800,
       "h60_str": "4.80 kH/s",
+      "identity_change": null,
       "invalid": 0,
       "ip": "192.168.1.11",
       "ip_sort": 3232235787,

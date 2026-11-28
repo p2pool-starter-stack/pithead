@@ -4,6 +4,7 @@ import logging
 import time
 
 from mining_dashboard.client.rig_config_meta import parse_config_meta
+from mining_dashboard.client.rig_reply import usable_reply
 from mining_dashboard.client.rigforge_freshness import STALE_AFTER_S, feed_age
 from mining_dashboard.config.config import (
     API_TIMEOUT,
@@ -22,29 +23,41 @@ from mining_dashboard.config.config import (
 from mining_dashboard.helper.http import ResponseTooLarge, bounded_read
 from mining_dashboard.service.control_service import SECRET_SENTINEL, WORKER_WRITABLE_KEYS
 
-WORKER_ENDPOINTS = None  # test override; production reads mounted files live
+WORKER_ENDPOINTS = None
 _MAX_NAME_TOKEN = 128
 
-# Ceiling on one rig's /1/summary. The poll pulls a device's response straight into the
-# dashboard's memory, and since #1235 part of it is forwarded on to the operator's browser;
-# nothing else bounds it, so aiohttp would buffer whatever the far end chose to send.
-#
-# Measured, not guessed — JSON-serialized /1/summary at real rig shapes, RigForge block included:
-# ~2.8 KiB for an 8-thread rig, 3.6 KiB for a 32-thread workstation, 8.0 KiB for a 192-thread
-# EPYC, and 16.0 KiB for an absurd-but-legitimate 512 threads with 8 pools. The term that actually
-# scales is hashrate.threads — one row per mining thread. 1 MiB is ~64x that absurd case, so the
-# cap cannot plausibly be reached by a rig telling the truth, which is the failure that would
-# matter: a cap set tight enough to bite a real operator is worse than the exhaustion it prevents.
 _MAX_SUMMARY_BYTES = 1024 * 1024
 
-# Re-warn about a worker whose API keeps failing at most this often, so a misconfigured fleet logs
-# one line per worker per interval — not one per poll (the data loop runs every ~30s).
 _WARN_INTERVAL_S = 300
 
 try:
     _INTERNAL_NET = ipaddress.ip_network(MINING_NET_CIDR, strict=False)
 except ValueError:
     _INTERNAL_NET = ipaddress.ip_network("172.28.0.0/16")
+
+
+_MAX_FEED_TEXT = 256
+
+
+def _feed_text(value):
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text or len(text) > _MAX_FEED_TEXT:
+        return None
+    return text
+
+
+def _feed_identity(block):
+    if not isinstance(block, dict):
+        return None
+    hints = {key: _feed_text(block.get(key)) for key in ("mac", "board_uuid", "cpu_model")}
+    return hints if any(hints.values()) else None
+
+
+def _feed_rig_id(payload):
+    rf = payload.get("rigforge") if isinstance(payload, dict) else None
+    return _feed_text(rf.get("rig_id")) if isinstance(rf, dict) else None
 
 
 def parse_rigforge(payload, now=None):
@@ -100,6 +113,9 @@ def parse_rigforge(payload, now=None):
         },
         "config": _rig_writable_config(rf.get("config")),
         "config_meta": parse_config_meta(rf.get("config_meta")),
+        "os_version": _feed_text(rf.get("os_version")),
+        "rig_id": _feed_text(rf.get("rig_id")),
+        "identity": _feed_identity(rf.get("identity")),
     }
 
 
@@ -282,21 +298,23 @@ def _safe_probe_host(ip) -> str | None:
     return host
 
 
-def _worker_override(name_token, safe_ip):
-    """The workers.list[] entry for this worker, or None (#506).
+def _rig_id_agrees(entry, rig_id):
+    entry_id = entry.get("rig_id")
+    return not (entry_id and rig_id and entry_id != rig_id)
 
-    Matched by the rig's stratum name first; on a name miss, by the validated connecting IP
-    against an operator-set ``host`` (covers a renamed rig that still connects from its declared
-    address). config.py already enforces unique names (first-declared wins), so the first list
-    hit is the match.
-    """
+
+def _worker_override(name_token, safe_ip, rig_id=None):
     entries = WORKER_ENDPOINTS if WORKER_ENDPOINTS is not None else current_worker_endpoints()
+    if rig_id:
+        for entry in entries:
+            if entry.get("rig_id") == rig_id:
+                return entry
     for entry in entries:
-        if entry["name"] == name_token:
+        if entry["name"] == name_token and _rig_id_agrees(entry, rig_id):
             return entry
     if safe_ip:
         for entry in entries:
-            if entry.get("host") == safe_ip:
+            if entry.get("host") == safe_ip and _rig_id_agrees(entry, rig_id):
                 return entry
     return None
 
@@ -365,40 +383,15 @@ class XMRigWorkerClient:
         )
 
     async def get_stats(self, ip, name):
-        """
-        Fetch /1/summary from a worker's xmrig API — exactly ONE way, derived from config.
-
-        The auth method is chosen by ``XMRIG_API_AUTH`` (``none`` default / ``name`` / ``token``);
-        the port by ``XMRIG_API_PORT``. There is no auto-detection fallback: if the configured probe
-        fails, we return ``{"api_ok": False, "adopted": bool}`` and log a single (rate-limited)
-        WARNING with a fix hint, rather than silently trying alternatives or swallowing the error.
-        ``adopted`` — does the descriptor we resolved carry a control token — lets the row read
-        "not adopted" rather than blame config (#1857); it rides the success payload too.
-
-        Per-worker overrides (#506, ``workers.list[]``) merge on top: per-worker field >
-        fleet default > inherit. An operator-set ``host`` replaces the connecting IP as the probe
-        target; a per-worker read credential becomes the Bearer for that worker only.
-
-        Only two things are ever used as the request host (SSRF guard, #122): the worker's
-        validated IP, or a host the OPERATOR wrote into config.json. A miner-controlled worker
-        *name* is never a host — in ``name`` auth it is only offered back as the Bearer token —
-        and a per-worker read credential is never sent anywhere a miner-advertised value could
-        point it. The write-capable control token is never used for this probe.
-        """
         name_token = name.split("+")[0].strip()[:_MAX_NAME_TOKEN] if name else ""
         safe_ip = _safe_probe_host(ip)
         override = _worker_override(name_token, safe_ip) or {}
-        # Adoption reuses the probe's name-then-host match, including `+suffix` names (#1857).
         adopted = bool(override.get("token"))
         if "host" in override:
-            # Operator-set in config.json — never miner-advertised (#122). Pinning the host also
-            # means an imposter claiming this rig's name can't pull the rig's token to its own
-            # address; docs recommend host+token together for exactly that reason.
             host = override["host"]
         elif safe_ip:
             host = safe_ip
         else:
-            # Never fall back to the miner-controlled name as a host (#122).
             return {}
 
         port = override.get("port", XMRIG_API_PORT)
@@ -416,13 +409,10 @@ class XMRigWorkerClient:
             headers = self._auth_header(name_token, "")
 
         try:
-            async with self.session.get(url, headers=headers, timeout=API_TIMEOUT) as response:
+            async with self.session.get(
+                url, headers=headers, timeout=API_TIMEOUT, allow_redirects=False
+            ) as response:
                 if response.status == 200:
-                    # The bounded async read was worked out here (#1347) and lifted into
-                    # ``bounded_read`` by #1360 — one contract, one implementation; the
-                    # ``bytearray``/short-read rationale lives in ``helper/http.py``. Overflow is a
-                    # refusal for THIS rig only, never an exception that takes the poll down for
-                    # every other worker, so it is caught here, not by the blanket handler below.
                     try:
                         body = await bounded_read(
                             response.content,
@@ -434,8 +424,18 @@ class XMRigWorkerClient:
                         return {"api_ok": False, "adopted": adopted}
                     payload = json.loads(body)
                     if isinstance(payload, dict):
-                        self._warned.pop(host, None)  # recovered — allow the next failure to log
+                        payload = usable_reply(payload)
+                        self._warned.pop(host, None)
                         payload["api_ok"], payload["adopted"] = True, adopted
+                        payload["identity_change"] = False
+                        claimed = _feed_rig_id(payload)
+                        if claimed and override.get("rig_id") != claimed:
+                            resolved = _worker_override(name_token, safe_ip, claimed)
+                            if resolved is not None:
+                                payload["adopted"] = bool(resolved.get("token"))
+                            elif override.get("rig_id"):
+                                payload["adopted"] = False
+                                payload["identity_change"] = True
                         return payload
                     self._warn(host, name, url, f"HTTP 200 but body was {type(payload).__name__}")
                     return {"api_ok": False, "adopted": adopted}

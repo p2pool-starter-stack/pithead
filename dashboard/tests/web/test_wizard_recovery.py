@@ -69,17 +69,28 @@ def test_populated_legacy_workers_replace_an_empty_canonical_default_and_drop_un
     prepared, changes = prepare_config(
         {
             "dashboard": {
-                "workers": [{"name": "shed", "host": "rig.local", "api_token": "drop-me"}]
+                "workers": [
+                    {"name": "shed", "host": "rig.local", "api_token": "keep-me", "bogus": 1}
+                ]
             },
             "workers": {"list": []},
         },
         REFERENCE,
     )
-    assert prepared["workers"]["list"] == [{"name": "shed", "host": "rig.local"}]
+    assert prepared["workers"]["list"] == [
+        {"name": "shed", "host": "rig.local", "api_token": "keep-me"}
+    ]
     assert changes == [
         "dashboard.workers → workers.list",
-        "workers.list[].api_token removed",
+        "workers.list[].bogus removed",
     ]
+
+
+def test_prepare_config_keeps_the_rig_id_descriptor_field():
+    entry = {"name": "shed", "host": "rig.local", "rig_id": "0a1b2c3d4e5f60718293a4b5c6d7e8f9"}
+    prepared, changes = prepare_config({"workers": {"list": [entry]}}, REFERENCE)
+    assert prepared["workers"]["list"] == [entry]
+    assert changes == []
 
 
 @pytest.mark.parametrize("malformed", [{}, 0])
@@ -318,3 +329,9 @@ async def test_valid_install_marker_still_reports_installing(client, spool):
     spool.joinpath("installing").write_text("1")
     await _auth(client)
     assert (await _state(client))["stage"] == "installing"
+
+
+def test_spool_read_tolerates_a_truncated_multibyte_character(tmp_path):
+    (tmp_path / "error.txt").write_bytes(b"\x94 failed after the dash")
+    assert wizard._spool_read("error.txt", str(tmp_path)).endswith("failed after the dash")
+    assert wizard._spool_read("absent.txt", str(tmp_path)) is None

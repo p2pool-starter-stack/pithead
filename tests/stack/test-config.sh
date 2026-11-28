@@ -263,9 +263,15 @@ assert_contains "duplicate worker names are warned" "$out" "first-declared"
 assert_contains "a 1.x dashboard.workers[] list is migrated on apply (#1832)" "$out" "Migrated the 1.x config keys"
 # The write-capable control token stays host-only, not in the dashboard environment (R15).
 if ! grep -q 'WORKER_API_TOKENS=.*tok_abc123' "$V/.env"; then ok "legacy worker control token stays out of .env"; else bad "legacy worker control token stays out of .env" "write credential leaked"; fi
-
-# workers.list[] is the 2.0.0 key; legacy cases above prove migrate-then-validate order.
-wl_case() { # <workers-json> <label> <expected-msg-fragment>
+xvb_url_after_apply() { # <saved-url> (#4308)
+    seed_env
+    printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "xvb":{"url":"%s"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$1" >"$V/config.json"
+    (cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
+    grep '^XVB_POOL_URL=' "$V/.env" | cut -d= -f2-
+}
+assert_eq "apply moves a saved NA xvb.url to the EU host with the same port (#4308)" "$(xvb_url_after_apply na.xmrvsbeast.com:5555)" "eu.xmrvsbeast.com:5555"
+assert_eq "apply leaves a non-NA xvb.url unchanged (#4308)" "$(xvb_url_after_apply us.xmrvsbeast.com:5555)" "us.xmrvsbeast.com:5555"
+wl_case() {
     seed_env
     printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"}, "workers":{"list":%s} }\n' "$WALLET" "$1" >"$V/config.json"
     out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
@@ -284,11 +290,12 @@ wl_case '[{"name":"rig1","api_token":"probe-only"}]' "unpinned worker probe toke
 wl_case '[{"name":"rig1","host":"rig.lan","api_token":"has space"}]' "unsafe worker probe token" "workers.list[rig1].api_token"
 wl_case '[{"name":"rig1","watts":0}]' "non-positive workers.list watts (#260)" "workers.list[rig1].watts"
 wl_case '[{"name":"rig1","watts":"142"}]' "string workers.list watts (#260)" "workers.list[rig1].watts"
+wl_case '[{"name":"rig1","rig_id":"not-hex"}]' "non-hex workers.list rig_id" "workers.list[rig1].rig_id"
+wl_case '[{"name":"rig1","rig_id":123}]' "non-string workers.list rig_id" "workers.list[rig1].rig_id"
+wl_case '[{"name":"rig1","rig_id":"0a1b2c3d4e5f60718293a4b5c6d7e8f9\n"}]' "trailing-newline workers.list rig_id" "control character"
 
-# A valid workers.list[] applies cleanly, leaves the 1.x migration inert, and — like the 1.x shape
-# — carries only its explicitly read-only, endpoint-bound api_token through .env (R15).
 seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"}, "workers":{"list":[{"name":"rig1","host":"worker-lan.local","token":"tok_first","api_token":"probe_first"},{"name":"rig1","host":"other.lan","token":"tok_second","api_token":"probe_second"}]} }\n' "$WALLET" >"$V/config.json"
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"}, "workers":{"list":[{"name":"rig1","host":"worker-lan.local","token":"tok_first","api_token":"probe_first","rig_id":"0a1b2c3d4e5f60718293a4b5c6d7e8f9"},{"name":"rig1","host":"other.lan","token":"tok_second","api_token":"probe_second"}]} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "valid workers.list applies" "$?" "0"
 assert_not_contains "a canonical workers.list[] config triggers no 1.x migration" "$out" "Migrated the 1.x config keys"

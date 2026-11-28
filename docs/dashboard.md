@@ -120,13 +120,16 @@ on the initial loading screen and during chain sync. Reload the page or open the
 a new tab to inspect a browser warning or login prompt. On an appliance, an address change can
 replace the certificate even when the hostname stays the same. Compare a replacement
 certificate's SHA-256 fingerprint with the current one on the appliance console; stop on a
-mismatch and accept only a match. Polling reconnects after trust is restored. The page cannot
-distinguish certificate, network and authentication failures.
+mismatch and accept only a match. Polling reconnects after trust is restored. Certificate and
+network failures look alike; an expired session does not — a refresh answered 401 reloads the
+tab to the sign-in page, as described below.
 
 A tab remembers the version from its first successful refresh. When a later refresh reports a
 different version, or the first successful refresh after the disconnected banner, the page shows
 "Pithead was updated or restarted. Reloading…" and reloads itself, so an open tab does not keep
-running old code after a restart, rollback or update. The page reloads only after the dashboard
+running old code after a restart, rollback or update. A refresh answered 401 — an expired
+session — shows "Pithead restarted or the page is out of date. Reloading…" and reloads on the
+first poll, landing on the sign-in page. The page reloads only after the dashboard
 has answered, never into a browser error page, and at most once every 2 minutes per tab: a
 trigger inside that window shows the message but leaves the reload to a later refresh. The page
 also checks once when the window regains focus or becomes visible. An update-dialog step in
@@ -293,15 +296,17 @@ clear before it releases:
 | Monero node has 0 outgoing peers | the current reading shows 0 outgoing peers | `MINING_GUARD_GRACE_SEC`, default 600 s |
 | Monero node not synchronized | monerod's own `synchronized` flag is false | `MINING_GUARD_GRACE_SEC` |
 | Monero node behind P2Pool's peers | at least two different peers appear in P2Pool's log in the last 2 minutes as at least `P2POOL_LAG_BLOCKS` (default 5) blocks ahead, and monerod's height has not moved for 15 minutes | `NODE_DOWN_AFTER_SEC`, default 90 s |
-| P2Pool reports monerod is not synchronized | P2Pool logged `monerod is not synchronized` in the last 2 minutes | `NODE_DOWN_AFTER_SEC` |
+| P2Pool reports monerod is not synchronized | P2Pool logged `monerod is not synchronized` in the last 30 seconds (it repeats the line every second while it waits, so a burst that has ended stops holding) | `NODE_DOWN_AFTER_SEC` |
 | P2Pool has no sidechain peers | P2Pool reports 0 outgoing and 0 incoming connections | `MINING_GUARD_GRACE_SEC` |
 | P2Pool has no ZMQ messages | P2Pool's last ZMQ message is older than `P2POOL_ZMQ_STALE_SEC`, default 600 s | `NODE_DOWN_AFTER_SEC` |
 | `monerod`, `p2pool` or `tor` container down | the container is not running, is restarting, or its healthcheck is `starting` or `unhealthy` (Tor's check is bootstrap complete); a container the stack does not run is skipped | `NODE_DOWN_AFTER_SEC` |
 
 The current-reading rows exist so that a dashboard restart during a pause cannot readmit rigs onto
-a node that is still peerless or unsynchronized. A trigger that has fired keeps firing for 10
-minutes even when its input cannot be read (the Docker proxy, P2Pool's stats or its logs), then
-drops out; a failed read alone never ends a pause sooner. A trigger that has not fired drops out
+a node that is still peerless or unsynchronized. An active hold whose key is missing from its input
+(the Docker proxy, P2Pool's stats or its logs) is kept; its recovery timer resets while the key is
+missing and the normal `NODE_RECOVERY_AFTER_SEC` window applies once a healthy reading returns. An
+active hold whose container is permanently removed lasts until the dashboard restarts, because the
+key can never reappear. A trigger that has not fired drops out
 the moment its reading goes away: a recreate rotates P2Pool's stats, and a hold no reading
 supports must not keep the proxy stopped for ten minutes with nothing to show for it — the cost of
 a dropped reading is readmission onto a P2Pool of unknown peer state, chosen over an invisible
@@ -771,7 +776,11 @@ says so instead of guessing.
 **XMR Network** and **Tari Merge-Mining** say whether each node runs here or somewhere else; the
 sync screen gives that location for Tari too. The **Stack Topology & Egress** diagram moves a
 remote `monerod` or `tari` outside the host zone and captions its route as LAN, Clearnet, or
-Unverified. The difference is
+Unverified. The diagram also draws three
+host-OS nodes below the stack (time sync, OS and release fetches, image pulls) under a scope pill that
+says whether host traffic is audited or not observed; a warning appears when the host audit counted
+flows outside the allowlist, and a notice appears when the audit table is not loaded
+([Privacy](privacy.md)). The difference is
 operational: a node you run is yours to restart and resync, and a node you point at
 (`monero.mode: remote`, `tari.mode: remote`) is somebody else's to fix, so it is
 the first thing worth knowing when one stalls. It also makes the remote-node setting visible
@@ -924,7 +933,7 @@ for your payout address) and the stack runs a **view-only** `monero-wallet-rpc` 
 node, scanning for confirmed incoming payouts. P2Pool pays each miner's share directly in a Monero
 block's coinbase, so the wallet is the only ground truth that a payout arrived. The Monero tab of
 the earnings card then shows a **Confirmed on-chain** block under the estimate — and a
-`payout_confirmed` alert fires once per payout (Telegram and the other sinks). The Tari tab carries
+`payout_confirmed` alert fires once per payout (Telegram and the other sinks). If every channel fails, the dashboard keeps the alert queued, retries it each five-minute payout scan, and stops after one channel accepts it or seven days. The Tari tab carries
 the same **Confirmed on-chain** block in XTM once Tari payout confirmation is on (see the Tari note
 below).
 

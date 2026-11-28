@@ -8,6 +8,7 @@ from unittest.mock import patch
 import requests
 
 import mining_dashboard.service.health.tor_heal as tor_heal
+import mining_dashboard.service.health.tor_probe_targets as tor_probe_targets
 from mining_dashboard.service.health.tor_heal import TorEgressHealer
 
 
@@ -120,20 +121,20 @@ class TestProbeTargets:
         monkeypatch.delenv("TOR_HEAL_PROBE_URL", raising=False)
         monkeypatch.delenv("TOR_HEAL_SECOND_PROBE_URL", raising=False)
         try:
-            module = importlib.reload(tor_heal)
+            module = importlib.reload(tor_probe_targets)
             assert module.PROBE_URL == "https://www.google.com/generate_204"
             assert module.SECOND_PROBE_URL == "https://www.cloudflare.com/cdn-cgi/trace"
         finally:
-            importlib.reload(tor_heal)
+            importlib.reload(tor_probe_targets)
 
     def test_environment_overrides_both_targets_and_empty_keeps_defaults(self, monkeypatch):
         monkeypatch.setenv("TOR_HEAL_PROBE_URL", "http://10.0.0.9:8080/a")
         monkeypatch.setenv("TOR_HEAL_SECOND_PROBE_URL", "")
         try:
-            module = importlib.reload(tor_heal)
+            module = importlib.reload(tor_probe_targets)
             assert module.PROBE_URL == "http://10.0.0.9:8080/a"
             assert module.SECOND_PROBE_URL == "https://www.cloudflare.com/cdn-cgi/trace"
         finally:
             monkeypatch.delenv("TOR_HEAL_PROBE_URL")
             monkeypatch.delenv("TOR_HEAL_SECOND_PROBE_URL")
-            importlib.reload(tor_heal)
+            importlib.reload(tor_probe_targets)
