@@ -209,6 +209,6 @@ assert_eq "catch-up alone cannot bypass reachability and address checks" "$fails
 mkdir -p "$TD/absent"
 WALLET_TEST_TARI_ABSENT=1 capture_wallet_diagnostics "$TD/absent" >/dev/null 2>&1
 assert_eq "absent Tari wallet writes no Tari artifacts (4031)" "$(find "$TD/absent" -name 'tari-wallet-*' | wc -l | tr -d ' ')" "0"
-assert_contains "monero wallet health survives an absent Tari wallet (#4031)" "$(cat "$TD/absent/wallet-health.json")" 'scan_grace=active'
+assert_contains "monero wallet health survives an absent Tari wallet (4031)" "$(cat "$TD/absent/wallet-health.json")" 'scan_grace=active'
 printf 'selftest-wallet-diagnostics: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"
 [ "$IT_FAIL" -eq 0 ]
