@@ -104,7 +104,14 @@ export function initDashboard({
   let connected = true;
   let disconnectedSince = null;
   let inflight = false;
-  const freshness = installFreshness({ reload, store, fetchFn, now, sleep, onChange: () => rerender() });
+  const freshness = installFreshness({
+    reload,
+    store,
+    fetchFn,
+    now,
+    sleep,
+    onChange: () => rerender(),
+  });
 
   const paint =
     renderApp ??
