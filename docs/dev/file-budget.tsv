@@ -77,6 +77,7 @@ tests/os/phases/update.sh	413
 tests/os/selftest-miner-recovery.sh	412
 tests/os/selftest-run-modules.sh	462
 tests/stack/appliance/test-appliance-boot-remint.sh	445
+tests/stack/appliance/test-appliance-boot-verdicts.sh	404
 tests/stack/appliance/test-appliance-boot.sh	639
 tests/stack/appliance/test-appliance-identity-boot.sh	465
 tests/stack/appliance/test-appliance-identity.sh	483

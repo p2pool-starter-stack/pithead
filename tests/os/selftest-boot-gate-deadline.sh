@@ -63,6 +63,12 @@ for scenario in unhealthy slow-dashboard slow-doctor slow-status slow-render lat
         gate_advisory=''
         OS_INFLIGHT="$scratch/no-update"
         hold_chain=0
+        migration_fingerprint=''
+        sync() { :; }
+        commit_config_stamp() { :; }
+        restore_data_floor_after_fallback() { :; }
+        boot_publish_os_update_verdict() { :; }
+        docker() { return 1; }
         gate_probe_header() { :; }
         curl() {
             printf '200 10'
@@ -82,6 +88,7 @@ for scenario in unhealthy slow-dashboard slow-doctor slow-status slow-render lat
             [ "$1" != 1800 ] || return 0
             [ "$1" = --kill-after=2 ] || fail 'probe has no forced-kill grace'
             local budget=$2 operation=$4 duration=0
+            [ "$3" != env ] || operation=$6
             [ "$3" != curl ] || {
                 curl
                 return
@@ -187,7 +194,7 @@ for failures in 1 2; do
 done
 jq -e '.blocking | index("Health probe exceeded its time budget: doctor") != null and index("container dashboard: UNHEALTHY") != null and index("container caddy: certificate restart failed") != null' \
     "$scratch/inflight.json" >/dev/null || fail 'fallback lost its retained cause'
-sed -n "/| awk '/,/^    '; then/p" "$HERE/phases/update-healthgate-leg.sh" | sed '1d;$d' >"$scratch/timing.awk"
+sed -n "/journalctl -u pithead-boot.*| awk '\$/,/^    '; then/p" "$HERE/phases/update-healthgate-leg.sh" | sed '1d;$d' >"$scratch/timing.awk"
 [ -s "$scratch/timing.awk" ] || fail 'the KVM timing verdict was not selected'
 for finish in 970 975 976 9 missing; do
     printf '[   10.000] host pithead-boot: health gate started; deadline 960 seconds\n' >"$scratch/journal"
