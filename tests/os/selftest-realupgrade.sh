@@ -33,10 +33,10 @@ eq "old tag orders numerically, not lexically" v2.0.10 "$(realupgrade_old_tag 2.
 eq "old tag skips pre-releases and junk" v2.0.1 "$(realupgrade_old_tag 2.0.3 v2.0.2-rc1 latest v2.0.1)"
 refuses "old tag fails when nothing is older" realupgrade_old_tag 1.0.0 v1.0.0 v2.0.0
 
-check "a build with the fixes gets the strict cause rows" realupgrade_cause_applies v2.0.4
+check "a build with the fixes gets the strict cause rows" realupgrade_cause_applies v2.0.3
+check "a later patch gets the strict cause rows" realupgrade_cause_applies v2.0.4
 check "a later build gets the strict cause rows" realupgrade_cause_applies v2.1.0
 refuses "v2.0.2 predates the fixes" realupgrade_cause_applies v2.0.2
-refuses "v2.0.3 predates the fixes" realupgrade_cause_applies v2.0.3
 refuses "a junk tag has no cause rows" realupgrade_cause_applies latest
 eq "commit budget is the gate timeout plus 50%" 1350 "$(realupgrade_commit_budget_s 900)"
 refuses "commit budget refuses a non-number" realupgrade_commit_budget_s abc
@@ -118,13 +118,13 @@ eq "the scratch root now claims the debug variant the candidate carries" debug "
 good='{"verdict":{"outcome":"rolled_back","interrupted":true,"blocking":["interrupted before the update was verified"]}}'
 v202='{"verdict":{"outcome":"rolled_back","from":"2.0.2","to":"2.0.3","blocking":[]}}'
 eq "the cause row is a skip on an N-2 without the fixes" skip "$(realupgrade_cause_row v2.0.2 "$v202")"
-eq "the cause row passes on a fixed build that names the cause" pass "$(realupgrade_cause_row v2.0.4 "$good")"
-eq "the cause row fails on a fixed build with the v2.0.2 verdict shape" fail "$(realupgrade_cause_row v2.0.4 "$v202")"
-eq "the cause row fails without the interrupted flag" fail "$(realupgrade_cause_row v2.0.4 '{"verdict":{"outcome":"rolled_back","blocking":["interrupted before the update was verified"]}}')"
-eq "the cause row fails on an updated verdict" fail "$(realupgrade_cause_row v2.0.4 '{"verdict":{"outcome":"updated"}}')"
+eq "the cause row passes on a fixed build that names the cause" pass "$(realupgrade_cause_row v2.0.3 "$good")"
+eq "the cause row fails on a fixed build with the v2.0.2 verdict shape" fail "$(realupgrade_cause_row v2.0.3 "$v202")"
+eq "the cause row fails without the interrupted flag" fail "$(realupgrade_cause_row v2.0.3 '{"verdict":{"outcome":"rolled_back","blocking":["interrupted before the update was verified"]}}')"
+eq "the cause row fails on an updated verdict" fail "$(realupgrade_cause_row v2.0.3 '{"verdict":{"outcome":"updated"}}')"
 check "a skipped cause row is a counted missing skip, never an info line" grep -Fq 'skip) it_skip_leg "negctl rollback cause on $RU_TAG (#3909/#3910)" "$REALUPGRADE_CAUSE_SKIP_REASON" missing ;;' "$HERE/realupgrade-legs.sh"
 refuses "the cause row is never reported as info" grep -Eq 'info "negctl.*(cause|#3909)' "$HERE/realupgrade-legs.sh"
-eq "the skip reason names the missing input and the tracking issue" "no published N-2 carries #3909/#3910 (#4338)" "$REALUPGRADE_CAUSE_SKIP_REASON"
+eq "the skip reason names the missing input and the tracking issue" "the N-2 image predates v2.0.3, the first build with the #3909/#3910 fixes (#4338)" "$REALUPGRADE_CAUSE_SKIP_REASON"
 RUN="$HERE/run.sh"
 check "the rollback cause needle is the text pithead-boot records" grep -Fq "$REALUPGRADE_ROLLBACK_CAUSE" "$HERE/../../os/overlay/pithead-boot"
 check "run.sh usage line lists the phase" grep -Fq '|crossupdate|realupgrade|realupgrade-main|realupgrade-negctl|stack|' "$RUN"

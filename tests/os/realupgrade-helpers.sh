@@ -6,8 +6,8 @@ REALUPGRADE_BOOT_GATE_S=900
 REALUPGRADE_SOAK_S=600
 REALUPGRADE_LEGS_DEFAULT="upgrade,soak,negctl"
 REALUPGRADE_ROLLBACK_CAUSE="interrupted before the update was verified"
-REALUPGRADE_CAUSE_FIX_VERSION=2.0.4
-REALUPGRADE_CAUSE_SKIP_REASON="no published N-2 carries #3909/#3910 (#4338)"
+REALUPGRADE_CAUSE_FIX_VERSION=2.0.3
+REALUPGRADE_CAUSE_SKIP_REASON="the N-2 image predates v2.0.3, the first build with the #3909/#3910 fixes (#4338)"
 REALUPGRADE_SEED_UNIT="pithead-realupgrade-seed.service"
 
 realupgrade_old_tag() {
