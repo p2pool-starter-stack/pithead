@@ -76,7 +76,7 @@ reset
 _mml_target_row "$SHIP_FACTS" "$LN_FACTS" >/dev/null 2>&1
 check "same revision, mainnet vs testnet passes" "$IT_PASS/$IT_FAIL" 1/0
 reset
-_mml_target_row "$SHIP_FACTS" "${LN_FACTS/80a52117/97aa59ec}" >/dev/null 2>&1
+_mml_target_row "$SHIP_FACTS" "${LN_FACTS/1fe8cff5/97aa59ec}" >/dev/null 2>&1
 check "a different revision fails" "$IT_FAIL" 1
 reset
 _mml_target_row "$SHIP_FACTS" "$SHIP_FACTS" >/dev/null 2>&1
