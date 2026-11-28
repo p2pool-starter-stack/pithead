@@ -222,7 +222,7 @@ PY
         c_bad "broken Tari wallet secret yields unhealthy gRPC health" "could not start health row"
     fi
 
-    # Control: disabling payout confirmation constructs neither wallet client nor any wallet dial.
+    compose stop dashboard >/dev/null
     set_wallet '{"transfers":[],"reset_calls":true}'
     set_tari_wallet '{"transactions":[],"reset_calls":true}'
     PAYOUT_CONFIRM_ENABLED=false TARI_PAYOUT_CONFIRM_ENABLED=false compose up -d --force-recreate dashboard >/dev/null 2>&1
