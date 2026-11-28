@@ -111,8 +111,10 @@ on Linux or macOS with Bash 3.2 or newer, Python 3 and jq; it does not require G
      so the cached installer keeps a transient GitHub Releases outage from redding every scan,
      issue #2214),
      `lint-proto` (buf),
-     `lint-toml` (taplo). The
-     non-Python tools run via `npx`/`uvx`/`docker`, so a contributor needs **Node, uv, and Docker**
+     `lint-toml` (taplo, over tracked files only: its directory walker panics on any unreadable
+     directory, such as root-owned artifacts in an agent worktree). Biome, markdownlint-cli2 and
+     taplo are pinned in `.config/package.json` and its lockfile, installed once by `npm ci` into
+     `.config/node_modules`. The other non-Python tools run via `uvx`/`docker`, so a contributor needs **Node, uv, and Docker**
      on PATH (plus `shfmt`); `pre-commit` runs the same checks on changed files. Link-checking
      (`lychee`) runs on a weekly schedule, not per-PR.
    - **test-dashboard** — the dashboard `pytest` suite (must stay ≥ the **80% total coverage gate**).
