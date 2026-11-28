@@ -47,6 +47,12 @@ fixed `sleep`. Pool readiness uses the configured sidechain, defaulting to mini 
 `p2pool.pool` is omitted. It then runs the assertion battery below. All reads happen on the box
 (`pithead status`/`doctor` and `curl http://127.0.0.1:8000/api/state`), so SSH and `--local`
 behave identically and never depend on resolving the box's dashboard hostname.
+The commands `rx` and `on_bench` send define a `curl` wrapper first: a request to
+`http://127.0.0.1:8000/` gets the `X-Pithead-Proxy-Secret` header the running dashboard container
+expects (read with `docker exec dashboard printenv`), passed to curl through a process substitution
+(`--header @<(...)`), so the value never reaches argv and stdin stays free for a request body. Every
+other URL goes to curl unchanged. A command that runs its own shell (`bash -s`, a script) defines the wrapper
+itself or reads the value from `.env`.
 
 Before the first scenario it snapshots the box's original `config.json` and a fingerprint of
 its secrets. After the run it restores the original config and re-applies (unless `--keep`).

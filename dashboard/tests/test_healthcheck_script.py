@@ -10,10 +10,12 @@ SCRIPT = Path(__file__).resolve().parents[1] / "healthcheck.sh"
 
 def _server(status):
     seen = []
+    headers = []
 
     class Handler(BaseHTTPRequestHandler):
         def do_HEAD(self):
             seen.append(self.path)
+            headers.append(self.headers.get("X-Pithead-Proxy-Secret"))
             self.send_response(status)
             self.end_headers()
 
@@ -22,11 +24,12 @@ def _server(status):
 
     server = HTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
+    server.headers = headers
     return server, seen
 
 
-def _run(port):
-    env = {"PATH": "/usr/bin:/bin", "DASHBOARD_HEALTH_PORT": str(port)}
+def _run(port, **extra):
+    env = {"PATH": "/usr/bin:/bin", "DASHBOARD_HEALTH_PORT": str(port), **extra}
     command = ["/bin/bash", str(SCRIPT)]
     return subprocess.run(command, env=env, timeout=30, check=False).returncode  # noqa: S603
 
@@ -54,3 +57,13 @@ def test_healthcheck_fails_on_a_closed_port():
 
 def test_healthcheck_starts_no_python():
     assert "python" not in SCRIPT.read_text()
+
+
+def test_healthcheck_sends_the_proxy_secret():
+    server, _ = _server(200)
+    try:
+        assert _run(server.server_address[1], DASHBOARD_PROXY_SECRET="from-env") == 0
+        assert server.headers == ["from-env"]
+    finally:
+        server.shutdown()
+        server.server_close()

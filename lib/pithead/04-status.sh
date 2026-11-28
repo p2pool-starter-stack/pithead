@@ -74,28 +74,16 @@ dashboard_onion_status() {
     fi
 }
 
-# The dashboard's own global sync gate: prints true/false from /api/state.syncing, nothing and
-# non-zero when the app isn't answering or jq is missing (#3351).
 dashboard_syncing() {
     command -v jq >/dev/null 2>&1 || return 1
-    curl -fsS --max-time 3 "http://127.0.0.1:8000/api/state" 2>/dev/null | jq -er '.syncing | if type == "boolean" then tostring else empty end' 2>/dev/null
+    dashboard_state 3 | jq -er '.syncing | if type == "boolean" then tostring else empty end' 2>/dev/null
 }
 
-# Re-render the dashboard's live per-chain initial-sync progress (#384) as human lines for `status`,
-# so a held miner shows real numbers instead of only "check the dashboard". Prints nothing unless the
-# dashboard's global gate (.syncing) is on, so `.syncing=false` with a Tari row stuck at "loading"
-# never reads as a hold (#3351), and never lists Tari while TARI_REQUIRED=false. Reads the same /api/state
-# the UI does (127.0.0.1:8000 — host-local, no auth) and prints one line per chain that isn't synced
-# yet. No ETA: the block rate isn't sampled here, so 'remaining' blocks is the honest figure. Prints
-# nothing and returns non-zero when every chain is done, the dashboard app isn't answering yet (stack
-# still starting, or down), or jq is missing — so `status` degrades quietly.
 dashboard_sync_progress() {
     command -v jq >/dev/null 2>&1 || return 1
     local body rows tari_required
     tari_required=$(env_get TARI_REQUIRED 2>/dev/null || true)
-    body=$(curl -fsS --max-time 3 "http://127.0.0.1:8000/api/state" 2>/dev/null) || return 1
-    # Only the dashboard's own global gate (.syncing) holds the miner; a non-required Tari row
-    # (tari.mode off, or dashboard.tari_required false) is passive and never listed (#3351).
+    body=$(dashboard_state 3) || return 1
     rows=$(printf '%s' "$body" | jq -r --arg tari_required "${tari_required:-true}" '
         select(.syncing == true) | (.sync // {}) | to_entries[]
         | select(.value.state != "done")
@@ -273,4 +261,8 @@ stack_status() {
         warn "$problems service(s) need attention (see above)."
         return 1
     fi
+}
+
+dashboard_state() {
+    curl -fsS --max-time "$1" --header @- "http://127.0.0.1:8000/api/state" 2>/dev/null <<<"X-Pithead-Proxy-Secret: $(env_get DASHBOARD_PROXY_SECRET 2>/dev/null)"
 }

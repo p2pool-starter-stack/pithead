@@ -520,7 +520,8 @@ the page is served over HTTPS.
 - **Scripts and API clients** keep sending the username and password as HTTP basic auth, for
   example `curl -u admin:PASSWORD`. A basic-auth request for a page that asks for HTML
   (`Accept: text/html`, outside `/api/`) is sent to the sign-in page instead, which is what a
-  browser does. Local callers on `127.0.0.1:8000` are unaffected.
+  browser does. A local script uses the same address and login: the dashboard app on
+  `127.0.0.1:8000` refuses requests that do not come through Caddy.
 - **After an upgrade from 2.0.3** the password is unchanged. A browser that still holds the old
   basic-auth login is sent to the sign-in page on its next page load. Once it has a session
   cookie, the cookie decides and the old basic-auth login is ignored, so "Sign out" works.
@@ -557,9 +558,9 @@ A couple of things to know:
   and redirects to HTTPS. On a custom port that redirect is switched off (it would otherwise keep
   holding port 80, defeating the point). Your fronting proxy owns the http→https bounce.
 - **This does not remove Caddy or its login.** `dashboard.port` only moves the port. The dashboard
-  itself still binds `127.0.0.1:8000` with no authentication of its own — Caddy checks the
-  `dashboard.auth` login before a request reaches it — so keep Caddy in the path and set a password
-  before your proxy exposes it.
+  itself binds `127.0.0.1:8000` and answers only requests that Caddy forwards, and Caddy checks the
+  `dashboard.auth` login before a request reaches it, so point your proxy at Caddy, never at port
+  8000, and set a password before your proxy exposes it.
 
 ### Remote access over Tor (onion service)
 

@@ -25,24 +25,24 @@ error() {
     exit 1
 }
 DASHBOARD_SECURE=false HOST_PORT=8080 DASHBOARD_AUTH_USER=admin
-export DASHBOARD_AUTH_HASH_B64
+export DASHBOARD_AUTH_HASH_B64 DASHBOARD_PROXY_SECRET
+DASHBOARD_PROXY_SECRET=$(openssl rand -hex 32)
 DASHBOARD_AUTH_HASH_B64=$(printf '%s\n' fixture-password | docker run --rm -i "$image" caddy hash-password | openssl base64 -A)
 generate_caddyfile "$scratch/Caddyfile"
 chmod 755 "$scratch"
 chmod 644 "$scratch/Caddyfile"
 docker network create "$name" >/dev/null
 docker volume create "$name-logs" >/dev/null
-docker run -d --name "$name-caddy" --network "$name" \
+docker run -d --name "$name-caddy" --network "$name" -e DASHBOARD_PROXY_SECRET \
     -v "$scratch/Caddyfile:/etc/caddy/Caddyfile:ro" -v "$name-logs:/var/log/caddy" "$image" >/dev/null
 docker run -d --name "$name-dashboard" --network "container:$name-caddy" \
-    -v "$name-logs:/access-log:ro" -e UPDATE_INTERVAL=2 -e TOR_SOCKS_PROXY=socks5h://172.28.0.25:9050 pithead-dashboard:itest >/dev/null
-# The driver runs once on the loopback side, once across the bridge as an untrusted client.
+    -v "$name-logs:/access-log:ro" -e UPDATE_INTERVAL=2 -e TOR_SOCKS_PROXY=socks5h://172.28.0.25:9050 -e DASHBOARD_PROXY_SECRET pithead-dashboard:itest >/dev/null
 run_driver() {
-    docker run --rm -i --network "$1" -e DASHBOARD_AUTH_HASH_B64 --entrypoint python pithead-dashboard:itest - "$2" "$3" <"$ROOT/tests/integration/mini-stack/boot-health-proxy.py"
+    docker run --rm -i --network "$1" -e DASHBOARD_AUTH_HASH_B64 -e DASHBOARD_PROXY_SECRET --entrypoint python pithead-dashboard:itest - "$2" "$3" <"$ROOT/tests/integration/mini-stack/boot-health-proxy.py"
 }
 run_driver "container:$name-caddy" local 127.0.0.1
+run_driver "container:$name-caddy" direct 127.0.0.1
 run_driver "$name" external "$name-caddy"
-# A real fronting proxy turns an external socket into a loopback connection to Caddy.
 docker run -d --name "$name-front" --network "container:$name-caddy" \
     -v "$ROOT/tests/integration/mini-stack/boot-health-front-proxy.py:/fixture.py:ro" \
     --entrypoint python pithead-dashboard:itest /fixture.py >/dev/null
@@ -54,7 +54,7 @@ import os
 from pathlib import Path
 raw = Path("/access-log/access.log").read_text()
 capability = hashlib.sha256(("pithead-boot-health-v1:" + os.environ["DASHBOARD_AUTH_HASH_B64"]).encode()).hexdigest()
-if capability in raw or "X-Pithead-Boot-Probe" in raw:
+if capability in raw or "X-Pithead-Boot-Probe" in raw or os.environ["DASHBOARD_PROXY_SECRET"] in raw:
     raise AssertionError("boot capability leaked into access log")
 PYLOG
 docker exec "$name-dashboard" python -c "

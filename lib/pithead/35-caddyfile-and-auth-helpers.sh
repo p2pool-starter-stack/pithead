@@ -52,6 +52,7 @@ caddy_hash_password_b64() {
 generate_caddyfile() {
     local target="${1:-Caddyfile}" mint_appliance_cert="${2:-true}"
     local auth="" gate verify_site="" proxy_user_hdr="" epoch
+    local front=$'            header_up Host {upstream_hostport}\n            header_up X-Pithead-Proxy-Secret {env.DASHBOARD_PROXY_SECRET}'
     if [ -n "${DASHBOARD_AUTH_HASH_B64:-}" ]; then
         local hash
         hash=$(printf '%s' "$DASHBOARD_AUTH_HASH_B64" | openssl base64 -d -A)
@@ -64,6 +65,7 @@ generate_caddyfile() {
             '    reverse_proxy @pithead_public 127.0.0.1:8000 {' \
             "        header_up X-Pithead-Auth-Epoch \"$epoch\"" \
             '        header_up X-Forwarded-For {http.request.remote.host}' \
+            "$front" \
             '        header_up -X-Pithead-Boot-Probe' \
             '    }' \
             '    @pithead_basic {' \
@@ -85,6 +87,7 @@ generate_caddyfile() {
             '    forward_auth @pithead_session 127.0.0.1:8000 {' \
             '        uri /api/auth/check' \
             "        header_up X-Pithead-Auth-Epoch \"$epoch\"" \
+            "$front" \
             '        copy_headers X-Auth-User X-Pithead-Session-Refresh' \
             '    }')
         verify_site=$(printf 'http://127.0.0.1:8001 {\n    bind 127.0.0.1\n    route {\n        basic_auth {\n            %s %s\n        }\n        respond 204\n    }\n}\n' "$DASHBOARD_AUTH_USER" "$hash")
@@ -339,6 +342,7 @@ $boot_marker
 $gate
         reverse_proxy 127.0.0.1:8000 {
 $proxy_user_hdr
+$front
             header_up -X-Pithead-Boot-Probe
         }
     }
@@ -359,6 +363,7 @@ $logblk
     route {
 $gate
         reverse_proxy 127.0.0.1:8000 {
+$front
             header_up -X-Pithead-Boot-Probe
         }
     }
@@ -383,6 +388,7 @@ $logblk
     route {
 $gate
         reverse_proxy 127.0.0.1:8000 {
+$front
             header_up -X-Pithead-Boot-Probe
         }
     }

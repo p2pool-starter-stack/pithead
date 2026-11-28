@@ -89,6 +89,7 @@ services:
       PROXY_HOST: "172.30.250.14"
       PROXY_API_PORT: "3344"
       PROXY_AUTH_TOKEN: "itest"
+      DASHBOARD_PROXY_SECRET: "itest-proxy-secret"
       UPDATE_INTERVAL: "2"
       NODE_DOWN_AFTER_SEC: "4"
       TARI_NODE_DOWN_AFTER_SEC: "4"

@@ -246,7 +246,7 @@ stage miner-share
 miner_start=$SECONDS
 miner_ready=0
 while :; do
-    miner_state="$(curl -fsS --max-time 10 http://127.0.0.1:8000/api/state 2>/dev/null || true)"
+    miner_state="$(sed -n 's/^DASHBOARD_PROXY_SECRET=/X-Pithead-Proxy-Secret: /p' "$MOUNT/current/.env" 2>/dev/null | curl -fsS --max-time 10 --header @- http://127.0.0.1:8000/api/state 2>/dev/null || true)"
     miner_ready=0
     [ "$(jq -r '.sync.monero.state // ""' <<<"$miner_state" 2>/dev/null)" = "done" ] && miner_ready=$((miner_ready + 1))
     [ "$(jq -r '.sync.tari.state // ""' <<<"$miner_state" 2>/dev/null)" = "done" ] && miner_ready=$((miner_ready + 2))

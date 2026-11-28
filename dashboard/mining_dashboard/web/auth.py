@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import hmac
 import ipaddress
 import logging
 import sqlite3
@@ -7,8 +8,9 @@ import time
 from pathlib import Path
 
 import aiohttp
-from aiohttp import web
+from aiohttp import hdrs, web
 
+from mining_dashboard.config import config
 from mining_dashboard.service import auth_sessions
 
 logger = logging.getLogger("WebAuth")
@@ -24,6 +26,9 @@ MAX_TRACKED_CLIENTS = 1024
 MAX_CONCURRENT_VERIFY = 4
 MAX_LOGIN_BYTES = 4096
 MAX_FIELD_CHARS = 256
+FRONT_HEADER = "X-Pithead-Proxy-Secret"
+HEALTH_PATH = "/api/health"
+APP_HOSTS = frozenset({"127.0.0.1:8000", "localhost:8000"})
 
 
 class Attempts:
@@ -199,6 +204,25 @@ async def check(request):
     return web.Response(status=204, headers=headers)
 
 
+async def health(request):
+    return web.Response(text="ok")
+
+
+def from_front(request) -> bool:
+    secret = config.DASHBOARD_PROXY_SECRET.encode()
+    sent = request.headers.get(FRONT_HEADER, "").encode(errors="replace")
+    return bool(secret) and hmac.compare_digest(sent, secret)
+
+
+@web.middleware
+async def front_middleware(request, handler):
+    if request.headers.get(hdrs.HOST) not in APP_HOSTS or (
+        request.path != HEALTH_PATH and not from_front(request)
+    ):
+        raise web.HTTPForbidden(text="This port answers only the dashboard's web front.")
+    return await handler(request)
+
+
 @web.middleware
 async def refresh_middleware(request, handler):
     response = await handler(request)
@@ -217,5 +241,6 @@ def setup(app):
             web.post("/api/auth/login", login),
             web.post("/api/auth/logout", logout),
             web.get("/api/auth/check", check),
+            web.get(HEALTH_PATH, health),
         ]
     )

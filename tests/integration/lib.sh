@@ -255,8 +255,10 @@ pool_label() {
     esac
 }
 
+IT_DASHBOARD_CURL='curl() { case "$*" in *http://127.0.0.1:8000/*) command curl --header @<(printf '\''X-Pithead-Proxy-Secret: %s\n'\'' "$(docker exec dashboard printenv DASHBOARD_PROXY_SECRET)") "$@" ;; *) command curl "$@" ;; esac; }; '
+
 rx() {
-    local snippet="$1"
+    local snippet="$IT_DASHBOARD_CURL$1"
     if [ "$IT_MODE" = "local" ]; then
         (cd "$IT_REMOTE_DIR" && bash -c "$snippet")
     else

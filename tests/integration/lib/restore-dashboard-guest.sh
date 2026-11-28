@@ -81,7 +81,7 @@ set_cost() {
 wait_cost() {
     local endpoint="$1" query="$2" expected="$3" deadline=$((SECONDS + 120))
     while [ "$SECONDS" -lt "$deadline" ]; do
-        if curl -fsS --max-time 5 "http://127.0.0.1:8000/api/$endpoint" |
+        if sed -n 's/^DASHBOARD_PROXY_SECRET=/X-Pithead-Proxy-Secret: /p' .env | curl -fsS --max-time 5 --header @- "http://127.0.0.1:8000/api/$endpoint" |
             jq -e --argjson expected "$expected" "$query == \$expected" >/dev/null; then
             return 0
         fi

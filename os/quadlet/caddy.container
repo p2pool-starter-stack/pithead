@@ -4,6 +4,7 @@ Description=pithead caddy
 ContainerName=caddy
 Image=docker.io/library/caddy:2.11.9@sha256:4851e54a46b206517c574821bb5cc67f170d2156041e9fbc4c9193b45e84a75b
 Network=host
+Environment="DASHBOARD_PROXY_SECRET=rendered-proxy-secret"
 Volume=/opt/pithead/Caddyfile:/etc/caddy/Caddyfile:ro
 Volume=pithead-caddy-data:/data
 Volume=/opt/pithead/data/caddy-logs:/var/log/caddy
