@@ -538,7 +538,8 @@ cap, and so does the boot group with provision.
   control. It is one job (62 minutes in bench job 787, under the 240-minute cap); it is the single payload the recipe submits (the candidate is built once; the guest is
   provisioned twice, for the upgrade/soak and for the negative control); if a measured run needs more, submit
   `realupgrade-main` (upgrade and soak) and `realupgrade-negctl` (the negative control) as two
-  jobs, which makes nine KVM jobs and nine payloads in this recipe.
+  jobs, which makes nine KVM jobs and nine payloads in this recipe; list both job IDs in the e2e
+  job's `after` and read ten jobs, not nine, at the e2e gate.
 
 Set four inputs first: `BASELINE_SHA`, the seeded baseline; `PROVISION_BENCH_URL`, the API base of
 the bench that pins it; `PREVIOUS_RELEASE_SHA`, from `git rev-parse "vX.Y.Z^{commit}"` for the
