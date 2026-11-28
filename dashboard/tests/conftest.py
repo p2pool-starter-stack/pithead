@@ -3,9 +3,13 @@
 Everything here keeps tests hermetic: no real database on disk, no network, no containers.
 """
 
+import os
 import sqlite3
 
 import pytest
+
+if not os.environ.get("TOR_SOCKS_PROXY", "").strip():
+    os.environ["TOR_SOCKS_PROXY"] = "socks5h://127.0.0.1:9050"
 
 from mining_dashboard.config import config
 from mining_dashboard.service.storage_service import StateManager
@@ -38,6 +42,8 @@ def _prune_sampler_off(monkeypatch):
 @pytest.fixture
 def state_manager():
     """A real StateManager backed by an in-memory SQLite database."""
+    from mining_dashboard.service.storage_service import StateManager
+
     sm = StateManager(db_path=":memory:")
     yield sm
     sm.close()

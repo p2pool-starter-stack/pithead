@@ -44,3 +44,7 @@ be95cee9f654b55eff157c89350913921fdb23ab:tests/os/selftest-miner-connection.sh:g
 # Synthetic secret strings in the first #4060 draft-redaction test commit; the current test file has no such literal at these lines.
 ff9e346a13f2d1e645aa6bc5b0ff5cd85d8f6e69:dashboard/tests/frontend/config/configdraft.test.mjs:generic-api-key:72
 ff9e346a13f2d1e645aa6bc5b0ff5cd85d8f6e69:dashboard/tests/frontend/config/configdraft.test.mjs:generic-api-key:81
+# Synthetic password fixtures in the #4168 selftest commits; the current test file masks
+# PASSWORD= redaction with a low-entropy literal and carries no finding at these lines.
+b499f15e7cbec47749aa9ac25e71bc833287cf5c:tests/integration/selftest/selftest-restore-mining-ready.sh:generic-api-key:170
+2323f27127b3f71b0e463141482b304098dff763:tests/integration/selftest/selftest-restore-mining-ready.sh:generic-api-key:165

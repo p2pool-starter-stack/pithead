@@ -184,3 +184,11 @@ def test_remote_syncing_or_stale_node_still_gets_no_verdict():
     mon, _ = _mon()
     v = mon.observe(_sync(is_syncing=True, stale=True), local=False)
     assert v["level"] == "unknown" and not v["peers_visible"]
+
+
+def test_verdict_carries_the_target_height_for_the_stall_trigger():
+    mon, _ = _mon()
+    assert mon.observe(_sync(target=135, is_syncing=True))["target_height"] == 135
+    assert mon.observe(_sync(height=135))["target_height"] is None
+    v = mon.observe(_sync(target=135), local=False)
+    assert "target_height" not in v

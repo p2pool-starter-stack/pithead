@@ -226,7 +226,7 @@ expected_services() {
     printf '%s\n' "$out" | tr ' ' '\n' | sort
 }
 expected_topology_nodes() { # topology nodes: local-miner when enabled; Tari unless mode=off
-    local out="browser,caddy,dashboard,docker,internet,monerod,p2pool,rigs,tari,tor,xmrig-proxy"
+    local out="browser,caddy,dashboard,docker,host-containers,host-time-sync,host-updates,internet,monerod,p2pool,rigs,tari,tor,xmrig-proxy"
     [ "$(printf '%s' "$1" | jq -r '.tari.mode // "local"')" = "off" ] && out="${out/tari,/}"
     [ "$(printf '%s' "$1" | jq -r '.local_miner.enabled // false')" = "true" ] && printf '%s' "${out/internet,/internet,local-miner,}" || printf '%s' "$out"
 }

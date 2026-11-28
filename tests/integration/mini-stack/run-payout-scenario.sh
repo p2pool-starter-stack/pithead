@@ -118,7 +118,11 @@ scenario_payout_confirmation() {
     if [ "$(payout_alert_count)" = 1 ]; then c_ok "Monero payout alert fired once"; else c_bad "Monero payout alert fired once" "got $(payout_alert_count)"; fi
     set_wallet '{"transfers":[{"txid":"a1","amount":250000000000,"height":100,"timestamp":1000}]}'
     wait_min_height 100
-    if [ "$(payout_alert_count)" = 1 ] && [ "$(wallet_min_height)" = 100 ]; then c_ok "Monero payout replay fires no alert and seeds min_height"; else c_bad "Monero payout replay fires no alert and seeds min_height" "alerts=$(payout_alert_count), min_height=$(wallet_min_height)"; fi
+    if [ "$(payout_alert_count)" = 1 ] && [ "$(wallet_min_height)" = 100 ]; then c_ok "Monero payout replay fires no alert and seeds min_height"; else
+        c_bad "Monero payout replay fires no alert and seeds min_height" "alerts=$(payout_alert_count), min_height=$(wallet_min_height), wallet_calls=$(wallet_calls)"
+        compose logs --no-color --timestamps --since 90s dashboard 2>&1 |
+            /usr/bin/grep -aE "payout|Payout|Poll step|wallet-rpc|Collection Error|ERROR" | tail -25 || true
+    fi
 
     compose exec -T fake-sink sh -c ': > /tmp/requests.log'
     set_tari_wallet '{"transactions":[{"tx_id":7,"amount":2500000,"timestamp":1000,"mined_in_block_height":100}]}'
@@ -173,6 +177,7 @@ PY
     set_tari_wallet '{"address":"tari-test-wallet"}'
     wait_wallet_field monero down false && wait_wallet_field tari down false
     compose stop fake-wallet-rpc >/dev/null
+    compose --profile wallet-outage up -d fake-wallet-down >/dev/null
     compose stop fake-tari-wallet >/dev/null
     # Track each wallet separately after its first unreachable observation. The 4s
     # debounce can be seen on the next 2s collection cycle; allow one more cycle.
@@ -206,7 +211,12 @@ PY
     if [ "$outage_state" = OK ] &&
         [ "$(wallet_down_count monero)" = 3 ] && [ "$(wallet_down_count tari)" = 3 ] &&
         [ "$(wallet_status monero | jq -r .reachable)" = false ] &&
-        [ "$(wallet_status tari | jq -r .reachable)" = false ]; then c_ok "stopped wallets turn earnings red"; else c_bad "stopped wallets turn earnings red" "Monero=$(wallet_status monero), Tari=$(wallet_status tari)"; fi
+        [ "$(wallet_status tari | jq -r .reachable)" = false ]; then c_ok "stopped wallets turn earnings red"; else
+        c_bad "stopped wallets turn earnings red" "Monero=$(wallet_status monero), Tari=$(wallet_status tari), outage_state=$outage_state"
+        compose logs --no-color --timestamps --since 90s dashboard 2>&1 |
+            /usr/bin/grep -aE "payout|Payout|Poll step|wallet|Tari|Collection Error|ERROR" | tail -25 || true
+    fi
+    compose --profile wallet-outage rm -sf fake-wallet-down >/dev/null
     compose start fake-wallet-rpc >/dev/null
     compose start fake-tari-wallet >/dev/null
 
@@ -225,7 +235,7 @@ PY
         c_bad "broken Tari wallet secret yields unhealthy gRPC health" "could not start health row"
     fi
 
-    # Control: disabling payout confirmation constructs neither wallet client nor any wallet dial.
+    compose stop dashboard >/dev/null
     set_wallet '{"transfers":[],"reset_calls":true}'
     set_tari_wallet '{"transactions":[],"reset_calls":true}'
     PAYOUT_CONFIRM_ENABLED=false TARI_PAYOUT_CONFIRM_ENABLED=false compose up -d --force-recreate dashboard >/dev/null 2>&1

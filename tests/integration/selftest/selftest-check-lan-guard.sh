@@ -27,7 +27,7 @@ command_not_found_handle() {
 # These assertions belong to other selftests. Here only the routing of side effects matters.
 for fn in it_pass it_fail it_log it_skip_leg assert_eq assert_rc assert_contains assert_num_gt \
     assert_num_ge assert_onion_targets assert_pool_type assert_mining_state assert_tari_synced_required \
-    assert_zmq_publishes assert_mergemine_roundtrip assert_egress_dial_pair \
+    assert_zmq_publishes assert_mergemine_roundtrip assert_egress_dial_pair assert_purpose_circuits \
     assert_egress_posture assert_xvb_over_tor assert_metrics_via_caddy assert_share_stats_live \
     assert_telemetry_tables_present assert_doctor_ok wait_for; do
     eval "$fn() { :; }"

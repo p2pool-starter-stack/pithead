@@ -153,8 +153,8 @@ _image_upgrade_prepare_inputs() {
     # The harness reads one file outside its own tree by relative path: hugepage-probe.sh's
     # REDUCED_PAGES pin in os/overlay/pithead-hugepages (#2685). Without it the guest's
     # harness reported "got []" (job 1229).
-    _image_upgrade_input_run candidate-bundle 'tar --no-xattrs -czf <harness> tests/integration os/overlay/pithead-hugepages' \
-        tar --no-xattrs -czf "$stage/harness.tar.gz" tests/integration os/overlay/pithead-hugepages || return $?
+    _image_upgrade_input_run candidate-bundle 'tar --no-xattrs -czf <harness> tests/integration os/overlay/pithead-hugepages scripts/cosign-image.sh build/cosign' \
+        tar --no-xattrs -czf "$stage/harness.tar.gz" tests/integration os/overlay/pithead-hugepages scripts/cosign-image.sh build/cosign || return $?
 }
 
 _image_upgrade_sign_wrong_key() { # <private stage>

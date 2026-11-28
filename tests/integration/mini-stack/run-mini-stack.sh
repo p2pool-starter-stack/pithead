@@ -152,7 +152,10 @@ wait_dashboard_api() { # wait_dashboard_api [tries]
 
 teardown() {
     log "tearing down"
-    compose down -v --remove-orphans >/dev/null 2>&1 || true
+    if [ "$FAIL" -gt 0 ]; then
+        compose logs --no-color dashboard 2>&1 | tail -300 || true
+    fi
+    compose --profile wallet-outage down -v --remove-orphans >/dev/null 2>&1 || true
     control_roundtrip_cleanup
     rm -f "$LOCK_FILE"
 }
@@ -185,7 +188,8 @@ import os
 import urllib.request
 
 NODES = {"rigs", "browser", "xmrig-proxy", "caddy", "dashboard", "p2pool",
-         "monerod", "tari", "docker", "tor", "internet"}
+         "monerod", "tari", "docker", "host-time-sync", "host-updates", "host-containers",
+         "tor", "internet"}
 
 
 def bail(msg):

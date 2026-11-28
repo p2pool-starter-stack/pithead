@@ -180,8 +180,8 @@ For local validation of a release-branch PR, fetch its base and select it
 explicitly:
 
 ```bash
-git fetch origin develop-v2.0.2
-make lint-file-budget FILE_BUDGET_BASE_REF=origin/develop-v2.0.2
+git fetch origin develop-v2.1.0
+make lint-file-budget FILE_BUDGET_BASE_REF=origin/develop-v2.1.0
 ```
 
 `FILE_BUDGET_BASE_REF` takes precedence over `GITHUB_BASE_REF` and must resolve
@@ -241,7 +241,8 @@ The Dependabot equivalent of the first check is to group its PRs by `baseRefName
 
 ## Opening a pull request
 
-- Target the `develop` branch and fill out the PR template.
+- Target the `develop` branch and fill out the PR template. Security and bug fixes always
+  target `develop`; a `develop-vX.Y.Z` release line takes feature work for a later release only.
 - Link the issue your PR addresses (e.g. `Closes #123`).
 - Make sure `make test` passes; CI runs the same checks.
 - For a PR targeting `develop`, read merge readiness from `mergeable` and
@@ -258,9 +259,9 @@ The Dependabot equivalent of the first check is to group its PRs by `baseRefName
 - A PR into `develop` merges on green required checks plus the `adversarial-review`
   status recorded on its head SHA by a session that did not author it, human-driven
   or automated; see [AI workflow](docs/dev/ai-workflow.md#review-and-handoff). The
-  merge is a squash, and only the owner's account performs it. The one exception to the
-  squash is a forward merge into a `develop-v*` line; see
-  [Releasing](docs/dev/releasing.md#forward-merges-into-release-line-branches). A PR into
+  merge is a squash, and only the owner's account performs it. Two merges are not
+  squashed: a forward merge into a `develop-v*` line, and folding a line back into `develop`;
+  see [Releasing](docs/dev/releasing.md#forward-merges-into-release-line-branches). A PR into
   `main` also needs the [code owner](.github/CODEOWNERS).
 
 ## Style

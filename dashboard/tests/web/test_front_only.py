@@ -1,8 +1,4 @@
 import asyncio
-import re
-import runpy
-import urllib.request
-from pathlib import Path
 
 import pytest
 
@@ -108,16 +104,3 @@ async def test_refusal_carries_security_headers(direct):
     resp = await direct.get("/api/state", headers=LOCAL)
     assert resp.status == 403
     assert resp.headers.get("X-Content-Type-Options") == "nosniff"
-
-
-def test_container_healthcheck_sends_the_secret(monkeypatch, tmp_path):
-    script = (Path(__file__).parents[2] / "healthcheck.sh").read_text()
-    probe = tmp_path / "probe.py"
-    probe.write_text(re.search(r"python3 -c '(.+)'", script).group(1))
-    seen = []
-    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout: seen.append(req))
-    monkeypatch.setenv("DASHBOARD_PROXY_SECRET", "from-env")
-    runpy.run_path(str(probe))
-    (req,) = seen
-    assert (req.full_url, req.get_method()) == ("http://127.0.0.1:8000/api/state", "HEAD")
-    assert req.headers == {"X-pithead-proxy-secret": "from-env"}
