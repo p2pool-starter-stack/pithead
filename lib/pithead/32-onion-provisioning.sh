@@ -84,7 +84,8 @@ provision_onion_client_auth() {
     if [ "${DASHBOARD_ONION_CLIENT_AUTH:-false}" != "true" ]; then
         if $run test -d "$hs_dir/authorized_clients"; then
             log "Disabling Tor onion client-auth for the dashboard — the onion becomes password-only."
-            $run rm -rf "$hs_dir/authorized_clients"
+            $run sh -c 'cd -P -- "$1" && base=$(pwd -P) && cd -P -- dashboard && [ "$(pwd -P)" = "$base/dashboard" ] && rm -rf authorized_clients' sh "$TOR_DATA_DIR" ||
+                error "Could not clear Tor onion client-auth: $hs_dir must be a real folder inside the Tor data folder."
         fi
         return 0
     fi
@@ -96,18 +97,24 @@ provision_onion_client_auth() {
         DASHBOARD_ONION_CLIENT_PRIVKEY="${kp##* }"
         log "Generated a Tor onion client-auth key for the dashboard."
     fi
-    $run mkdir -p "$hs_dir/authorized_clients"
-    printf 'descriptor:x25519:%s\n' "$DASHBOARD_ONION_CLIENT_PUBKEY" | $run tee "$hs_dir/authorized_clients/dashboard.auth" >/dev/null
+    local write_key='umask 077
+        cd -P -- "$1" && base=$(pwd -P) && want=$base || exit 1
+        for d in dashboard authorized_clients; do
+            want=$want/$d
+            mkdir -p "$d" && cd -P -- "$d" && [ "$(pwd -P)" = "$want" ] && chmod 700 . || exit 1
+        done
+        new=$(mktemp -u dashboard.auth.XXXXXXXXXX) || exit 1
+        (set -C && printf "descriptor:x25519:%s\n" "$2" >"$new") && mv -fT -- "$new" dashboard.auth'
+    $run sh -c "$write_key" sh "$TOR_DATA_DIR" "$DASHBOARD_ONION_CLIENT_PUBKEY" ||
+        error "Could not write the Tor onion client-auth key: $hs_dir must be a real folder inside the Tor data folder."
     # Tor refuses a HiddenServiceDir that is group/other-accessible; keep it 0700/0600 and owned by
     # whatever uid already owns the tor data dir, so tor can read authorized_clients.
-    $run chmod 700 "$hs_dir" "$hs_dir/authorized_clients"
-    $run chmod 600 "$hs_dir/authorized_clients/dashboard.auth"
     local owner
     # GNU stat first, BSD fallback (macOS dev checkouts). With neither, skip the chown — and do it
     # with `if`, not `[ ] &&`, so an empty owner doesn't become the function's (nonzero) return
     # value and abort the whole apply under set -e after .env is already committed.
     owner=$($run stat -c '%u:%g' "$TOR_DATA_DIR" 2>/dev/null || $run stat -f '%u:%g' "$TOR_DATA_DIR" 2>/dev/null) || owner=""
-    if [ -n "$owner" ]; then $run chown -R "$owner" "$hs_dir"; fi
+    if [ -n "$owner" ]; then $run chown -hR "$owner" "$hs_dir"; fi
 }
 
 # Read the dashboard onion hostname from the running tor container into DASHBOARD_ONION (#343).

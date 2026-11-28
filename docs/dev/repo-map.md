@@ -28,6 +28,9 @@ pithead/
 └── .github/              CI, templates, and ownership
 ```
 
+The [project donation planner](project-donation-planner.md) defines the pure
+cycle planner, simulator and provisional policy for the dark feature.
+
 ## Product entry points
 
 | Area | Start here | Change and verify |
@@ -132,6 +135,9 @@ Appliance reset leg 0 is `tests/os/phases/reset-config.sh`. Its guest-only
 `tests/os/reset-config-probe.sh` records the real Compose shutdown status and output before
 configuration removal, including suppressed RC4 diagnostics. `tests/os/selftest-reset-config-probe.sh`
 checks that failed or unrecorded stops cannot pass from reset's final exit 0.
+The probe retries `compose down` once on a storage-unmount error, and the selftest covers a failure that clears on the retry.
+`tests/os/appliance-recovery-bundle-leg.sh` stops the container units, then waits up to 30 s for `podman ps` to empty; `selftest-recovery-bundle.sh` covers a 6 s stop.
+`tests/os/rig-failure-evidence.sh` is called from the rig share leg against the coordinator guest: it prints the guest journal from the backup apply, the xmrig-proxy and p2pool logs, the proxy summary and the container list when the leg's share or backup-recovery rows fail, and records a row that those sections came back when the backup trial passes (`selftest-rig-failure-evidence.sh`).
 
 Coordinator setup-again runs before those resets in `tests/os/coordinator-setup-again-leg.sh`;
 `tests/os/selftest-coordinator-setup-again.sh` drives safe-prefill and preservation failure controls.
@@ -162,7 +168,9 @@ readback helpers are in `02d-tor-egress-verify.sh`.
 The LAN source rule and old-listener stop are in `02b-lan-guard.sh`; the staged Compose passes
 and scoped node restarts are in `02b1-lan-guard-compose.sh`. Transition prearm and the periodic
 live-rule check are in `02c-lan-guard-check.sh`.
-Explicit saturated Tor circuit-history recovery is in `02e-tor-recovery.sh`;
+Explicit saturated Tor circuit-history recovery is in `02e-tor-recovery.sh`, and the reset
+reasons that need no saturated history (sustained outage, wedged control port, stalled bootstrap)
+are in `02f-tor-recovery-reasons.sh`;
 its read-only authenticated bootstrap probe is `build/tor/recovery-diagnose.sh`;
 the dashboard's clearnet healer stays in `service/health/tor_heal.py`, with host
 history observations and recovery results in `service/health/tor_heal_history.py`.
@@ -335,6 +343,10 @@ both local-miner toggles converge without rebooting.
 The appliance-only `os/overlay/pithead-miner-recovery` timer recovers a disconnected active
 local miner, restarting at once when the proxy container was recreated since its last reading;
 `tests/os/selftest-miner-recovery.sh` covers its decision window, recreation fast restart and refusals.
+On a rig the same timer reads the rig's own XMRig `/2/summary` and restarts `xmrig.service` after 120 seconds
+without a pool connection or with zero hashrate and no share progress, at most once per 300 seconds;
+`tests/os/selftest-miner-recovery-rig.sh` covers it. The rig share leg's strand injection is also removed
+90 seconds after the strand is witnessed, so a stranded rig cannot hold the coordinator's miner blocked.
 `tests/os/appliance-miner-recovery{,-leg}.sh` proves per-worker accepted-share progress after
 dashboard backup on the stack phase’s synced guest, using a reversible loopback strand.
 Trial receipts distinguish backup completion, strand detection, unchanged proxy identity with
@@ -384,7 +396,9 @@ The Tari-mode unreadable-config branch streams `tests/os/caddy-failure-evidence.
 through `caddy-failure-evidence.sh` for a bounded, allowlisted guest snapshot;
 `tests/os/selftest-caddy-failure-evidence.sh` exercises collection and the failure branch.
 The opt-in KVM `tor-heal` phase streams `tor-heal-guest.sh` into an isolated guest
-to prove saturated-history recovery and the disabled control with production timers.
+to prove saturated-history recovery and the disabled control with production timers. The
+opt-in KVM `tor-heal-exhausted` phase streams `tor-heal-exhausted-guest.sh` into its own guest
+to prove a spent NEWNYM budget still reaches the state reset on an unsaturated history.
 The opt-in KVM `p2pool-heal` phase streams `pool-heal-guest.sh` into a guest to prove the dashboard's
 zero-peer P2Pool restart through the appliance control path; `run-pool-peer-loss.sh` is the `fault-injection` leg that
 cuts a live P2Pool's peers.

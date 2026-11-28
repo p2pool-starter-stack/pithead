@@ -83,4 +83,27 @@ exposure_previews "P2Pool-clearnet preview with the firewall off names this host
     "P2Pool sidechain peers over CLEARNET" "visible to the P2Pool network"
 exposure_previews "public-IP preview names the dashboard login reachable from the internet" '.dashboard.expose_public_ip=true' \
     "Dashboard PUBLISHED" "anyone on the internet can reach the dashboard login"
+exposure_previews "donation enabling names project routing" '.donation.enabled=true | .donation.percent=0.1' "Project donation set to true"
+exposure_previews "enabling donation while off Tor names the direct dial" '.donation.enabled=true | .donation.percent=1 | .donation.tor=false' \
+    "Project donation set to true" "dials the project endpoint directly"
+exposure_previews "donation percentage change names the percentage" '.donation.percent=5' "5 percent"
+exposure_previews "donation off Tor while disabled names the later exposure" '.donation.enabled=false | .donation.tor=false' \
+    "there is no project dial now" "exposes this host's IP to the project endpoint"
+exposure_previews "donation off Tor with the firewall on names IP exposure and the per-container scope" '.donation.enabled=true | .donation.percent=1 | .donation.tor=false' \
+    "Project donation OFF Tor" "project endpoint sees this host's IP" "exception is per container"
+exposure_previews "donation off Tor with the firewall off names IP exposure without a scoped exception" '.donation.enabled=true | .donation.percent=1 | .donation.tor=false | .network.tor_egress_firewall=false' \
+    "Project donation OFF Tor" "project endpoint sees this host's IP"
+jq '.donation.enabled=true | .donation.percent=1 | .donation.tor=false | .network.tor_egress_firewall=false' "$C/config.json" >"$C/cand.json"
+preview_only "$C/cand.json"
+assert_eq "donation off Tor with the firewall off still names the exposure" "$(previewed_with "Project donation OFF Tor" "project endpoint sees this host's IP")" "true"
+assert_eq "donation off Tor with the firewall off claims no scoped exception" "$(previewed_with "exception is per container")" "false"
+cp "$C/config.json" "$C/config.keep"
+cp "$C/.env" "$C/env.keep"
+sed -i.bak 's/^DONATION_TOR_ENABLED=.*/DONATION_TOR_ENABLED=false/' "$C/.env"
+rm -f "$C/.env.bak"
+jq '.donation={"enabled":true,"percent":1,"tor":false}' "$C/config.keep" >"$C/config.json"
+exposure_previews "donation back on Tor names the restored posture" '.donation.tor=true' \
+    "Project donation back on Tor" "Tor exit"
+mv "$C/config.keep" "$C/config.json"
+mv "$C/env.keep" "$C/.env"
 unset -f preview_only previewed_with exposure_previews

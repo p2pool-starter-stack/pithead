@@ -361,10 +361,26 @@ self_test() {
     rc=0
     [ -n "$preflight_call_line" ] && [ -n "$workdir_line" ] && [ "$preflight_call_line" -lt "$workdir_line" ] || rc=1
     _case "every release route runs preflight before doing release work" 0 "$rc"
-    clean_tree_line=$(grep -n '^[[:space:]]*require_clean_release_tree$' "$clone/repo/scripts/release/preflight.sh" | cut -d: -f1 || true)
+    clean_tree_line=$(grep -n '^[[:space:]]*require_clean_release_tree$' "$clone/repo/scripts/release/preflight.sh" | tail -1 | cut -d: -f1 || true)
     rc=0
     [ -n "$clean_tree_line" ] && [ -n "$build_line" ] && [ "$clean_tree_line" -lt "$build_line" ] || rc=1
     _case "release preflight refuses dirty trees before building release bytes" 0 "$rc"
+    local preflight_def_line tag_free_line version_log_line
+    preflight_def_line=$(grep -n '^preflight() {$' "$clone/repo/scripts/release/preflight.sh" | cut -d: -f1 || true)
+    tag_free_line=$(grep -n '^[[:space:]]*check_release_tag_free$' "$clone/repo/scripts/release/preflight.sh" | tail -1 | cut -d: -f1 || true)
+    version_log_line=$(grep -n 'log "Version:' "$clone/repo/scripts/release/preflight.sh" | tail -1 | cut -d: -f1 || true)
+    rc=0
+    [ -n "$preflight_def_line" ] && [ -n "$tag_free_line" ] && [ -n "$version_log_line" ] &&
+        [ "$preflight_def_line" -lt "$tag_free_line" ] && [ "$tag_free_line" -lt "$version_log_line" ] || rc=1
+    _case "release preflight checks the tag is free on origin and in the registry" 0 "$rc"
+    local publish_def_line gated_line tag_line
+    publish_def_line=$(grep -n '^publish() {$' "$clone/repo/scripts/release/bundle.sh" | cut -d: -f1 || true)
+    gated_line=$(grep -n '^[[:space:]]*require_gated_commit$' "$clone/repo/scripts/release/bundle.sh" | head -1 | cut -d: -f1 || true)
+    tag_line=$(grep -n 'run git tag -a "$TAG" "$GIT_COMMIT"' "$clone/repo/scripts/release/bundle.sh" | cut -d: -f1 || true)
+    rc=0
+    [ -n "$publish_def_line" ] && [ -n "$gated_line" ] && [ -n "$tag_line" ] &&
+        [ "$publish_def_line" -lt "$gated_line" ] && [ "$gated_line" -lt "$tag_line" ] || rc=1
+    _case "release publish checks the gated commit before tagging it" 0 "$rc"
     rm -rf "$clone"
 
     local cs
