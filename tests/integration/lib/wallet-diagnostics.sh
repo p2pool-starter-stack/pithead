@@ -37,4 +37,9 @@ WALLET_DIAGNOSTICS
 capture_wallet_diagnostics() { # <artifact directory>
     rx "timeout 5 docker inspect --format '{{json .State.Health}}' wallet-rpc" 2>&1 | redact >"$1/wallet-health.json" || true
     wallet_scan_sample >"$1/wallet-memory-events.txt" || true
+    if rx 'timeout 5 docker inspect tari-wallet' >/dev/null 2>&1; then
+        rx "timeout 5 docker inspect --format '{{json .State.Health}}' tari-wallet" 2>&1 | redact >"$1/tari-wallet-health.json" || true
+        rx 'timeout 5 docker logs --tail 200 tari-wallet' 2>&1 | redact >"$1/tari-wallet-log.txt" || true
+        rx "timeout 5 docker exec tari-wallet sh -c 'find /var/tari/wallet -name \"*.log\" -type f 2>/dev/null | sort | tail -3 | xargs -r tail -n 40'" 2>&1 | redact >"$1/tari-wallet-scan-log.txt" || true
+    fi
 }
