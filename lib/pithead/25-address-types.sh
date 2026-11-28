@@ -53,7 +53,8 @@ _payout_keys_go_classify() {
             rc=0
             {
                 printf '%s\0%s\0%s\0' "$chain" "$key_only" "$address"
-            } | PITHEAD_GO_HELPER=payout-keys-address "$binary" 2>/dev/null || rc=$?
+            } | PITHEAD_GO_HELPER=payout-keys-address PITHEAD_IMPL_LAUNCHED=1 "$binary" 2>/dev/null ||
+                rc=$?
             printf '%d\0' "$rc"
         } 2>/dev/null
     ) || return 125

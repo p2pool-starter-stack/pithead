@@ -96,7 +96,11 @@ path (`PITHEAD_SELF`).
 consult `_pithead_impl_selected payout-keys` at their own layer. When the
 piece is selected the Bash slice runs the same `go/bin/pithead` binary as a
 helper, found through `PITHEAD_GO_BINARY`, then `SCRIPT_DIR`, then the stack
-file's own directory so that sourced suites select too. `PITHEAD_GO_HELPER`
+file's own directory so that sourced suites select too. The slice exports
+`PITHEAD_IMPL_LAUNCHED=1` on that call — the same marker the launcher exports
+before execing the Go side — and the binary answers helper mode only with both
+markers set, so a stray `PITHEAD_GO_HELPER` in a shell cannot turn an ordinary
+invocation of the binary into a silent helper. `PITHEAD_GO_HELPER`
 names the helper: `payout-keys-address` classifies one address,
 `payout-keys-derive` derives a public view key. A request and its answer are
 NUL-terminated fields on stdin and stdout; a private view key travels only

@@ -19,11 +19,13 @@ const (
 )
 
 func main() {
-	switch os.Getenv("PITHEAD_GO_HELPER") {
-	case helperAddress:
-		os.Exit(runAddressHelper(os.Stdin, os.Stdout))
-	case helperDerive:
-		os.Exit(runDeriveHelper(os.Stdin, os.Stdout))
+	if os.Getenv("PITHEAD_IMPL_LAUNCHED") == "1" {
+		switch os.Getenv("PITHEAD_GO_HELPER") {
+		case helperAddress:
+			os.Exit(runAddressHelper(os.Stdin, os.Stdout))
+		case helperDerive:
+			os.Exit(runDeriveHelper(os.Stdin, os.Stdout))
+		}
 	}
 	handoff()
 }

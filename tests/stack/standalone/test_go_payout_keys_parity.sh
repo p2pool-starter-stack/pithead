@@ -180,18 +180,26 @@ address_request "$xmr" | "$BINARY" >"$WORK/direct.out" 2>/dev/null || true
 ! cmp -s "$WORK/direct.out" "$WORK/direct.want" ||
     fail "the binary must answer the helper protocol only when selected" "unselected run answered it"
 bump
-address_request "$xmr" | PITHEAD_GO_HELPER=payout-keys-address "$BINARY" >"$WORK/direct.out"
+address_request "$xmr" | PITHEAD_GO_HELPER=payout-keys-address "$BINARY" >"$WORK/direct.out" 2>/dev/null || true
+! cmp -s "$WORK/direct.out" "$WORK/direct.want" ||
+    fail "a stray helper selector must not answer without the launched marker" \
+        "answered [$(cat "$WORK/direct.out")]"
+bump
+address_request "$xmr" |
+    PITHEAD_GO_HELPER=payout-keys-address PITHEAD_IMPL_LAUNCHED=1 "$BINARY" >"$WORK/direct.out"
 cmp -s "$WORK/direct.out" "$WORK/direct.want" ||
     fail "the address helper must answer the NUL-framed protocol" \
         "got [$(cat "$WORK/direct.out")]"
 bump
-printf 'tari\x000\x00%s\x00' "$tari_dual" | PITHEAD_GO_HELPER=payout-keys-address "$BINARY" >"$WORK/direct.out"
+printf 'tari\x000\x00%s\x00' "$tari_dual" |
+    PITHEAD_GO_HELPER=payout-keys-address PITHEAD_IMPL_LAUNCHED=1 "$BINARY" >"$WORK/direct.out"
 printf 'ok\0' >"$WORK/direct.want"
 cmp -s "$WORK/direct.out" "$WORK/direct.want" ||
     fail "the address helper must answer the NUL-framed protocol for tari" \
         "got [$(cat "$WORK/direct.out")]"
 bump
-printf 'tari\x001\x00%s\x00' "$tari_single" | PITHEAD_GO_HELPER=payout-keys-address "$BINARY" >"$WORK/direct.out"
+printf 'tari\x001\x00%s\x00' "$tari_single" |
+    PITHEAD_GO_HELPER=payout-keys-address PITHEAD_IMPL_LAUNCHED=1 "$BINARY" >"$WORK/direct.out"
 if ! {
     IFS= read -r -d '' tari_keys <"$WORK/direct.out" && [ "${#tari_keys}" -eq 66 ] &&
         [ -z "${tari_keys//[0-9a-f]/}" ]
@@ -200,7 +208,8 @@ if ! {
         "got [$(cat "$WORK/direct.out")]"
 fi
 bump
-printf 'monero\x00%s\x00' "$scalar" | PITHEAD_GO_HELPER=payout-keys-derive "$BINARY" >"$WORK/direct.out"
+printf 'monero\x00%s\x00' "$scalar" |
+    PITHEAD_GO_HELPER=payout-keys-derive PITHEAD_IMPL_LAUNCHED=1 "$BINARY" >"$WORK/direct.out"
 printf '5866666666666666666666666666666666666666666666666666666666666666\0' >"$WORK/direct.want"
 cmp -s "$WORK/direct.out" "$WORK/direct.want" ||
     fail "the derive helper must answer the NUL-framed protocol" \
@@ -209,7 +218,8 @@ bump
 {
     printf 'monero\x000\x00'
     printf abc
-} | PITHEAD_GO_HELPER=payout-keys-address "$BINARY" >"$WORK/direct.out" 2>/dev/null && direct_rc=0 || direct_rc=$?
+} | PITHEAD_GO_HELPER=payout-keys-address PITHEAD_IMPL_LAUNCHED=1 "$BINARY" >"$WORK/direct.out" 2>/dev/null &&
+    direct_rc=0 || direct_rc=$?
 [ "$direct_rc" != 0 ] && [ ! -s "$WORK/direct.out" ] ||
     fail "an unterminated helper request must fail without output" "rc=$direct_rc"
 bump
