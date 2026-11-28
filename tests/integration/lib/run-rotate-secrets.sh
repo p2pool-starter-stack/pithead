@@ -1,8 +1,7 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 
-# Read live argv because the entrypoint appends --access-password after Docker's configured args.
-_rotate_proxy_live_args() { rx "docker exec xmrig-proxy sh -c 'tr \"\\0\" \"\\n\" </proc/1/cmdline' 2>/dev/null"; }
+_rotate_proxy_live_args() { rx "docker exec xmrig-proxy sh -c 'tr \"\\0\" \"\\n\" </tmp/xmrig-proxy.proc/cmdline' 2>/dev/null"; }
 
 # Only an accepted digest login proves the credential is live in the running monerod.
 _rotate_monero_rpc_probe() { # <user> <pass> -> rpc-ok | rpc-refused | rpc-fail

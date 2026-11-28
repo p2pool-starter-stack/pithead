@@ -15,6 +15,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 - The **Stack Topology & Egress** panel shows the host's own traffic: a scope pill, host-OS nodes for time sync, OS and release fetches and image pulls, a warning when the host audit counted flows outside the allowlist, and a not-observed notice when the audit table is not loaded. `GET /api/system/egress-audit` and `egress_audit` in `/api/state` expose the counters (#4415, #4416, #4417).
 - With `tor.auto_heal`, a Tor stuck at 95% bootstrap with no circuit and an up guard (a relay refusing circuit creation) is cured by a guard rotation (`DROPGUARDS`) on the NEWNYM budget instead of a refresh that keeps the guards, and the heal never restarts Tor after one (#4121).
+- Log hygiene (#4159): P2Pool's "monerod is not synchronized" and xmrig-proxy's "connection refused" retry lines
+  show once a minute with a count of the hidden repeats, the rendered Caddyfile is `caddy fmt` clean and serves
+  no HTTP/3 (no UDP listener, no plain-listener HTTP/2 notice), monerod hides its txpool "Transaction not found"
+  error, the Access log view no longer lists the trusted boot-health probe, and both Docker socket proxies give
+  their event-stream backend a 10-minute server timeout. `docs/operations.md` records the decision for every other
+  warning row; the Tari checkpoint and Tor ControlPort rows are deferred there.
 
 ### Fixed
 

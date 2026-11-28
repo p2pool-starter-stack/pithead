@@ -53,9 +53,8 @@ it_pass() { passes=$((passes + 1)); }
 read_failure=''
 rx() {
     case "$1" in
-    *'/proc/1/cmdline'*)
+    *'/tmp/xmrig-proxy.proc/cmdline'*)
         [ "$read_failure" != argv ] || return 1
-        # Exercise the exact remote snippet with a fake docker, preserving NULs.
         docker() { printf 'xmrig-proxy\0--donate-level=0\0--access-password=fixture-secret\0'; }
         export -f docker
         bash -c "$1"

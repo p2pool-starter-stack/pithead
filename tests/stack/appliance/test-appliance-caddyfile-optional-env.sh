@@ -133,3 +133,45 @@ coe_render "$coe_mutant" "$coe_full" >/dev/null 2>&1
 coe_rc=$?
 assert_rc "#1246 mutant: still renders fine when the key IS present" "$coe_rc" 0
 assert_eq "#1246 mutant: and that render still carries the auth block" "$(coe_state)" "with-auth"
+
+echo "== rendered Caddyfile is caddy-fmt shaped and serves no HTTP/3 (#4159) =="
+CF="$SANDBOX/caddyfile-format"
+mkdir -p "$CF"
+cf_render() {
+    (
+        cd "$CF" || exit 1
+        # shellcheck disable=SC1090
+        source "$STACK"
+        set +e
+        export DASHBOARD_SECURE="$1" HOST_PORT="$2" HOST_IP=192.168.1.50 NETWORK_PREFIX=172.28.0 DASHBOARD_HOST='' DASHBOARD_ONION='' CADDY_LOG_DIR=/var/log/caddy
+        export DASHBOARD_AUTH_USER=admin DASHBOARD_AUTH_HASH_B64
+        DASHBOARD_AUTH_HASH_B64=$(printf '%s' "\$2y\$14\$examplebcrypthashvalue" | openssl base64 -A)
+        generate_caddyfile "$3" false >/dev/null 2>&1
+    )
+}
+cf_ok="" cf_sp="" cf_tr="" cf_edge="" cf_h3="" cf_def="" cf_80=""
+for cf_mode in "false:" "true:" "true:8443" "false:8443"; do
+    cf_out="$CF/Caddyfile.${cf_mode/:/-}"
+    cf_render "${cf_mode%%:*}" "${cf_mode#*:}" "$cf_out"
+    cf_ok="$cf_ok $([ -s "$cf_out" ] && echo yes || echo no)"
+    cf_sp="$cf_sp $(grep -c '^ ' "$cf_out")"
+    cf_tr="$cf_tr $(grep -c '[[:space:]]$' "$cf_out")"
+    cf_edge="$cf_edge $(awk 'prev ~ /\{$/ && $0 == "" {n++} prev == "" && $0 ~ /^[[:space:]]*\}/ {n++} {prev = $0} END {print n + 0}' "$cf_out")"
+    cf_h3="$cf_h3 $(grep -c 'h3' "$cf_out")"
+    cf_def="$cf_def $(grep -c "^$(printf '\t\t')protocols h1 h2\$" "$cf_out")"
+    cf_80="$cf_80 $(awk '/^\tservers :80 \{/ {f = 1; next} f {print; exit}' "$cf_out" | tr -d '\t')"
+done
+assert_eq "caddyfile renders non-empty in all four modes" "${cf_ok# }" "yes yes yes yes"
+assert_eq "caddyfile indents with tabs only" "${cf_sp# }" "0 0 0 0"
+assert_eq "caddyfile has no trailing whitespace" "${cf_tr# }" "0 0 0 0"
+assert_eq "caddyfile has no blank line at a block edge" "${cf_edge# }" "0 0 0 0"
+assert_eq "caddyfile never serves HTTP/3" "${cf_h3# }" "0 0 0 0"
+assert_eq "caddyfile default listeners speak h1 and h2" "${cf_def# }" "1 1 1 1"
+assert_eq "caddyfile plain :80 listener drops h2" "${cf_80# }" "protocols h1 protocols h1 protocols h1 protocols h1"
+assert_contains "caddyfile: the HTTPS redirect option stays when :80 is taken over" "$(cat "$CF/Caddyfile.true-")" "auto_https disable_redirects"
+assert_not_contains "caddyfile: plain mode never disables redirects" "$(cat "$CF/Caddyfile.false-")" "auto_https"
+
+echo "== monerod log level hides only the txpool noise (#4159) =="
+MONERO_LOG_LEVEL=$(sed -n 's/^log-level=//p' "$ROOT/build/monero/bitmonero.conf.template")
+assert_eq "monerod: level 0 plus a txpool override" "$MONERO_LOG_LEVEL" "0,txpool:FATAL"
+assert_not_contains "monerod: the global category that carries sync lines is not silenced" "$MONERO_LOG_LEVEL" "global"

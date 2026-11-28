@@ -163,17 +163,9 @@ doctor() {
         dr_ok "No clearnet initial sync active — all node P2P is Tor-only."
     fi
 
-    # p2pool Tor-routing fail-safe (#273): with clearnet off, P2POOL_FLAGS carries the #165 --socks5;
-    # the RUNNING p2pool must actually carry it. A STALE p2pool image (pre-#165 entrypoint) ignores the
-    # env var and dials sidechain peers directly — over CLEARNET, exposing the home IP. The #270 firewall
-    # now DROPs that dial (so a stale p2pool just can't peer rather than leaking), but surface the cause
-    # loudly so the fix — rebuild with 'pithead upgrade' — is obvious instead of a silent leak/stall.
-    # Read the EXEC'd args from /proc/1/cmdline (the env flags are word-split in the entrypoint, so they
-    # never appear in the container's Args). Empty = p2pool not running (often an intentional sync hold
-    # #31/#35) — don't flag.
     if printf '%s' "$(env_get P2POOL_FLAGS 2>/dev/null)" | grep -q -- '--socks5'; then
         local _p2args
-        _p2args=$(docker exec p2pool cat /proc/1/cmdline 2>/dev/null | tr '\0' ' ')
+        _p2args=$({ docker exec p2pool cat /tmp/p2pool.proc/cmdline 2>/dev/null || docker exec p2pool cat /proc/1/cmdline 2>/dev/null; } | tr '\0' ' ')
         case "$_p2args" in
         "") : ;;
         *--socks5*) dr_ok "p2pool routes outbound sidechain P2P via Tor (#165)." ;;

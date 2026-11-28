@@ -107,45 +107,33 @@ generate_caddyfile() {
             }
         }
     }'
-    # Caddy LAN listen port (#740). An empty HOST_PORT — or a value that equals the scheme's own
-    # default (443 for HTTPS, 80 for HTTP) — keeps the standard port and renders today's Caddyfile
-    # verbatim. A custom port is appended to the site address so an existing reverse proxy on the
-    # host can keep 80/443 (co-hosting, #181). In HTTPS mode a custom port also disables Caddy's
-    # automatic :80 -> HTTPS redirect (a global option emitted once at the top of the file) so port
-    # 80 is left free for that proxy; the fronting proxy owns any http->https bounce instead.
-    local dport="${HOST_PORT:-}" port_suffix="" global_block="" own_plain_port=0
+    local dport="${HOST_PORT:-}" port_suffix="" redirects_off="" own_plain_port=0 plain_ports=" :80 127.0.0.1:80${verify_site:+ 127.0.0.1:8001}"
     if [ "$DASHBOARD_SECURE" == "true" ]; then
         [ "$dport" == "443" ] && dport=""
         if [ -n "$dport" ]; then
             port_suffix=":$dport"
-            global_block='{
-    auto_https disable_redirects
-}
-
-'
+            redirects_off=1
         else
-            # Caddy's own HTTP->HTTPS redirect is a CATCH-ALL, and its target is the Host header the
-            # request carried: :80 answered `Host: evil.example` with `308 -> https://evil.example`
-            # (#1123, measured against the running bench appliance, not read off the config). Same
-            # open redirector #1118 closed in the setup wizard, except this one is the state the
-            # machine spends its life in, and it lands the operator on the dashboard login — the
-            # screen where they type the dashboard password.
-            #
-            # So take :80 over rather than leaving it to auto_https. The site is built below, once
-            # $site_hosts and the bind list exist: this is the port decision, that is the address
-            # decision, and the bind list is what keeps the new block from reopening the addresses
-            # #1021 closed.
             own_plain_port=1
-            global_block='{
-    auto_https disable_redirects
-}
-
-'
+            redirects_off=1
         fi
     else
         [ "$dport" == "80" ] && dport=""
-        [ -n "$dport" ] && port_suffix=":$dport"
+        [ -n "$dport" ] && port_suffix=":$dport" plain_ports="$plain_ports :$dport 127.0.0.1:$dport"
     fi
+    [ "${DASHBOARD_ONION_ENABLED:-false}" != true ] || plain_ports="$plain_ports $NETWORK_PREFIX.1:80"
+    local _p servers_block="    servers {
+        protocols h1 h2
+    }"
+    for _p in $plain_ports; do servers_block="$servers_block
+    servers $_p {
+        protocols h1
+    }"; done
+    local global_block="{
+${redirects_off:+    auto_https disable_redirects
+}$servers_block
+}
+"
 
     # The site addresses — and the certificate's SAN list — now come from ONE shared builder
     # (appliance_site_names, #1132): a name Caddy serves and a name the certificate covers can no
@@ -280,7 +268,7 @@ $(_bind_line)
     fi
 
     : >"$target"
-    [ -n "$global_block" ] && printf '%s' "$global_block" >>"$target"
+    printf '%s\n' "$global_block" >>"$target"
     [ -n "$redirect_block" ] && printf '%s' "$redirect_block" >>"$target"
     # The appliance hands its ONE certificate to Caddy — the same file the setup page served, so
     # the operator's trust decision survives the handoff. Without this the wizard's cert is
@@ -390,4 +378,5 @@ $gate
 EOF
         fi
     fi
+    _caddyfile_format "$target"
 }

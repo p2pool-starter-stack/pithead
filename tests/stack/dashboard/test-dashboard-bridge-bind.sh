@@ -32,9 +32,9 @@ caddy_bridge="$(
         generate_caddyfile >/dev/null 2>&1
     cat Caddyfile
 )"
-bridge_bind="$(printf '%s' "$caddy_bridge" | grep '^    bind ' | sort -u)"
+bridge_bind="$(printf '%s' "$caddy_bridge" | grep '^[[:space:]]bind ' | sort -u)"
 assert_eq "the bind keeps the LAN, ULA and loopback and drops engine bridges but keeps LAN bridges (br0, br-lan)" \
-    "$bridge_bind" "    bind 192.168.1.10 fd00::1 192.168.50.2 192.168.60.2 127.0.0.1 ::1"
+    "$bridge_bind" $'\tbind 192.168.1.10 fd00::1 192.168.50.2 192.168.60.2 127.0.0.1 ::1'
 site_line="$(printf '%s' "$caddy_bridge" | grep -m1 '^https://pithead.local')"
 assert_eq "the site list keeps the LAN addresses and drops every engine bridge address" "$site_line" \
     "https://pithead.local, https://192.168.1.10, https://fd00::1, https://192.168.50.2, https://192.168.60.2, https://localhost {"

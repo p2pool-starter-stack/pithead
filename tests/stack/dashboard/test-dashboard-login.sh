@@ -22,12 +22,12 @@ assert_contains "login: session check goes through forward_auth" "$caddy_on" "fo
 assert_contains "login: forward_auth targets the dashboard check endpoint" "$caddy_on" "uri /api/auth/check"
 assert_contains "login: forward_auth copies the actor from the session" "$caddy_on" "copy_headers X-Auth-User X-Pithead-Session-Refresh"
 assert_contains "login: basic auth still gates scripts and API clients" "$caddy_on" "route @pithead_basic {"
-assert_contains "login: the basic-auth actor reaches the dashboard" "$caddy_on" "        request_header X-Auth-User {http.auth.user.id}"
+assert_contains "login: the basic-auth actor reaches the dashboard" "$caddy_on" $'\t\t\trequest_header X-Auth-User {http.auth.user.id}'
 assert_contains "login: client-supplied actor header is stripped first" "$caddy_on" "request_header -X-Auth-User"
 assert_contains "login: the sign-in endpoints skip the gate" "$caddy_on" "@pithead_public path /login /api/auth/login /api/auth/logout"
 public_line=$(printf '%s\n' "$caddy_on" | grep -F "@pithead_public path")
 assert_eq "login: the public list is the sign-in paths and static assets only, so every export route sits behind the gate" \
-    "$public_line" "    @pithead_public path /login /api/auth/login /api/auth/logout /static/login.js /static/dashboard.css /static/styles/* /static/theme-init.js /static/pithead-mark.svg"
+    "$public_line" $'\t\t@pithead_public path /login /api/auth/login /api/auth/logout /static/login.js /static/dashboard.css /static/styles/* /static/theme-init.js /static/pithead-mark.svg'
 assert_not_contains "login: no export route is on the public list" "$public_line" "support-bundle"
 assert_contains "login: basic auth is matched case-insensitively (RFC 7617)" "$caddy_on" "header_regexp Authorization (?i)^basic\\s"
 assert_contains "login: a session cookie wins over cached basic credentials" "$caddy_on" "not header_regexp Cookie (^|;\\s*)pithead_session="

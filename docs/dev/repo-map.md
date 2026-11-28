@@ -412,6 +412,9 @@ The opt-in KVM `monerod-redial` phase streams `monerod-redial-guest.sh` into a g
 monerod re-dial after a Tor restart, the peerless restart, its cooldown and daily cap through the appliance control path.
 The restrictive-checkout image probe is `tests/stack/standalone/test_image_permissions.sh`,
 run by image CI and the lifecycle phase through `run-source-image.sh`.
+The wrapper-entrypoint probe is `tests/stack/standalone/test_entrypoint_drain.sh`, run by the
+P2Pool and XMRig Proxy image build jobs. It checks that the daemon's last lines, exit status and
+`docker stop` shutdown reach the container log through the retry-line filter.
 The offline image assertion is `tests/stack/standalone/test_tor_saturated_image.sh`,
 run by the Tor image build job. It verifies either startup repair of all 1000 abandoned
 observations and an empty persisted history, or the legacy warning and shutdown-write

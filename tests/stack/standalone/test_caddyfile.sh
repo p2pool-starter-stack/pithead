@@ -68,6 +68,11 @@ generate_caddyfile() {
         printf '%s\n' "$target" >>"$CADDY_TEST_FAILURE_LOG"
         return 1
     }
+    "$CADDY_TEST_DOCKER" run --rm -i "$CADDY_TEST_IMAGE" caddy fmt - <"$target" | cmp -s - "$target" || {
+        echo "Caddy would reformat $target" >&2
+        printf '%s\n' "$target" >>"$CADDY_TEST_FAILURE_LOG"
+        return 1
+    }
     printf '%s\n' "$target" >>"$CADDY_TEST_ADAPT_LOG"
 }
 EOF

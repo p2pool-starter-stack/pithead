@@ -47,7 +47,7 @@ dashboard_exposure_verdict() { # <Caddyfile> <ss> <curl-rc> <doctor-json> <lan-v
             return 1
         }
     done
-    binds=$(printf '%s\n' "$caddy" | grep '^    bind ' || true)
+    binds=$(printf '%s\n' "$caddy" | grep '^[[:space:]]bind ' || true)
     for address in "$lan" "$ula"; do
         case " $binds " in *" $address "*) ;; *)
             echo "Caddyfile bind lines omit $address"

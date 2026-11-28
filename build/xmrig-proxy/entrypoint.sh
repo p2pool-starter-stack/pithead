@@ -19,4 +19,56 @@ if [ "${PROXY_STRATUM_TLS:-false}" = "true" ] && [ -f "$TLS_MOUNT/cert.pem" ] &&
     set -- "$@" "--tls-cert=$TLS_MOUNT/cert.pem" "--tls-cert-key=$TLS_MOUNT/key.pem"
 fi
 
-exec xmrig-proxy "$@"
+_quiet_repeats() {
+    _qr_last=0 _qr_hidden=0
+    while IFS= read -r _qr_line || [ -n "$_qr_line" ]; do
+        case $_qr_line in
+        *"$1"*) ;;
+        *)
+            printf '%s\n' "$_qr_line"
+            continue
+            ;;
+        esac
+        _qr_now=$(date +%s 2>/dev/null) || _qr_now=$((_qr_last + 60))
+        [ "$_qr_now" -ge "$_qr_last" ] || _qr_last=$((_qr_now - 60))
+        if [ $((_qr_now - _qr_last)) -ge 60 ]; then
+            [ "$_qr_hidden" -eq 0 ] || printf '[%s] %s similar lines hidden in the last minute\n' "$2" "$_qr_hidden"
+            printf '%s\n' "$_qr_line"
+            _qr_last=$_qr_now _qr_hidden=0
+        else
+            _qr_hidden=$((_qr_hidden + 1))
+        fi
+    done
+    [ "$_qr_hidden" -eq 0 ] || printf '[%s] %s similar lines hidden in the last minute\n' "$2" "$_qr_hidden"
+}
+
+_exec_quiet() {
+    _qr_pat=$1 _qr_name=$2
+    shift 2
+    _qr_fifo="/tmp/$_qr_name-log.fifo"
+    rm -f "$_qr_fifo"
+    mkfifo "$_qr_fifo" 2>/dev/null || {
+        echo "[$_qr_name-entrypoint] cannot create the log fifo: retry lines are not rate-limited" >&2
+        ln -sfn "/proc/$$" "/tmp/$_qr_name.proc" 2>/dev/null || :
+        exec "$@"
+    }
+    _qr_pid='' _qr_stop=''
+    trap '_qr_stop=1; [ -z "$_qr_pid" ] || kill -TERM "$_qr_pid" 2>/dev/null' TERM INT
+    _quiet_repeats "$_qr_pat" "$_qr_name" <"$_qr_fifo" &
+    _qr_filter=$!
+    "$@" >"$_qr_fifo" 2>&1 &
+    _qr_pid=$!
+    ln -sfn "/proc/$_qr_pid" "/tmp/$_qr_name.proc" 2>/dev/null || :
+    [ -z "$_qr_stop" ] || kill -TERM "$_qr_pid" 2>/dev/null || :
+    while :; do
+        _qr_rc=0
+        wait "$_qr_pid" || _qr_rc=$?
+        if [ "$_qr_rc" -le 128 ] || ! kill -0 "$_qr_pid" 2>/dev/null; then break; fi
+    done
+    while kill -0 "$_qr_filter" 2>/dev/null; do
+        wait "$_qr_filter" || :
+    done
+    exit "$_qr_rc"
+}
+
+_exec_quiet 'connect error: "connection refused"' xmrig-proxy xmrig-proxy "$@"
