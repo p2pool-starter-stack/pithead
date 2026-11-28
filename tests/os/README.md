@@ -67,6 +67,23 @@ the `tor-heal` ladder alone consumes about three and a half hours of the 240-min
 window, and both legs must run to their own bounded end. `selftest-tor-heal-exhausted.sh`
 exercises its wrapper without a guest.
 
+The opt-in `tor-guard` phase (#4342) provisions a local-node guest and grafts a private Tor network onto it: one
+authority, a middle, an exit that reaches a guest-local web server, four ordinary guards and one guard whose torrc enables
+`DoSCircuitCreation*` with defence type 2 and a one-connection threshold. The stack's Tor image is unchanged; its torrc
+comes from the entrypoint's `TORRC_TEMPLATE` seam and the dashboard's two probe URLs from the `TOR_HEAL_PROBE_URL` and
+`TOR_HEAL_SECOND_PROBE_URL` environment values, both set by a guest-only compose override that the leg removes on exit.
+Every relay identity is generated before the authority starts, so the authority forces the Guard flag on the five guard
+fingerprints and the Exit flag on the exit (`TestingDirAuthVote*`, strict), and every relay sets `AssumeReachable 1`. A
+fixture gate waits up to seven minutes for the authority's consensus to list each relay `Running` with its forced flag;
+on any failure the leg prints that consensus (nickname and flags) and a filtered log from every node.
+Each of two legs starts the client with only the refusing guard in the consensus, requires Tor stuck at bootstrap 95 with
+`circuit-established=0`, the guard `up`, the TCP channel `ESTABLISHED` and the guard's own heartbeat counting rejected
+circuits, then adds the good guards. With the healer off it records how long the untouched Tor takes to recover (bounded
+at 40 minutes; the defence period is 20). With the healer on it requires a `tor-dropguards` audit record, working egress
+through the probe and an unchanged Tor `StartedAt`, and records the verdict. Rotation picks among five guards at random,
+so a rotation that lands on the refusing guard again waits for the healer's next cooldown. Submit with `--timeout-minutes 240`.
+`tests/os/selftest-run-modules.sh` pins the phase's wiring; the guest script is proved only by the KVM job.
+
 The provision LAN-guard leg writes the three-switch `./pithead apply -y` output to `lan-guard-apply.log` in the guest's `/data/pithead` and, when the apply fails, prints its last 60 lines (redacted) with the exit code (#4281). `selftest-lan-guard-apply-output.sh` covers that branch without a guest.
 
 Submitting `tor-heal` to bench-ci needs `--timeout-minutes 240`: the ladder runs about three

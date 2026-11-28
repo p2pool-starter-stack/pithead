@@ -16,11 +16,10 @@ from mining_dashboard.helper.http import bounded_get, proxy_map, purpose_proxy
 from mining_dashboard.service import control_service
 from mining_dashboard.service.health.monerod_redial import MonerodRestartBudget
 from mining_dashboard.service.health.tor_heal_history import TorHistoryMixin
+from mining_dashboard.service.health.tor_probe_targets import PROBE_URL, SECOND_PROBE_URL
 
 logger = logging.getLogger("TorHeal")
 
-PROBE_URL = "https://www.google.com/generate_204"
-SECOND_PROBE_URL = "https://www.cloudflare.com/cdn-cgi/trace"
 PROBE_TIMEOUT_SEC = 15
 
 PROBE_INTERVAL_SEC = 5 * 60  # active probe cadence (only while the heal is enabled)
