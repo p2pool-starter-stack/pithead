@@ -22,7 +22,8 @@ assert_xvb_off_no_dwell_churn() {
         return 0
     fi
     identity="$(rx "timeout 15 docker inspect --format '{{.Id}} {{.State.StartedAt}}' dashboard" 2>/dev/null)" || identity=""
-    started="$(rx "date -d $(quote_arg "${identity#* }") +%s" 2>/dev/null)" || started=""
+    started="${identity#* }"
+    started="$(rx "date -d $(quote_arg "${started% [A-Z]*}") +%s" 2>/dev/null)" || started=""
     now="$(rx 'date +%s' 2>/dev/null)" || now=""
     if [ -z "$identity" ] || ! [[ "$started $now" =~ ^[0-9]{1,12}\ [0-9]{1,12}$ ]] || [ "$now" -lt "$started" ]; then
         it_fail "$row" "could not establish dashboard uptime"
