@@ -50,6 +50,8 @@ class DataGateMixin:
     _rejected_at = None
     _readmit_wait = None
     _stop_logged = False
+    _restop_logged = False
+    container_snapshot = {}
     _start_failed = False
     _persisted_logged = False
 
@@ -84,7 +86,8 @@ class DataGateMixin:
         health = monero_sync.get("health") or {}
         triggers = monero_triggers(health, monero_sync)
         triggers.update(p2pool_triggers(p2pool_stats.get("p2p") or {}))
-        triggers.update(container_triggers(await _runtime().get_container_health()))
+        self.container_snapshot = await _runtime().get_container_health()
+        triggers.update(container_triggers(self.container_snapshot))
         triggers.update(
             log_triggers(await pools.get_p2pool_log_signals(), health.get("advance_age_sec"))
         )
@@ -131,6 +134,16 @@ class DataGateMixin:
                     f"{container} was already stopped when this dashboard started (persisted "
                     f"workers_rejected); still held by: {self._rejection_reasons(monero_down, tari_down)}."
                 )
+            if self.workers_rejected and (self.container_snapshot.get(container) or {}).get(
+                "running"
+            ):
+                if not self._restop_logged:
+                    self._restop_logged = True
+                    logger.warning(
+                        f"{container} was found running while workers are rejected — stopping it again."
+                    )
+                if await self.docker_control.stop(container, quiet=True):
+                    self._restop_logged = False
             if not self.workers_rejected:
                 if not self._stop_logged:
                     self._stop_logged = True
@@ -182,10 +195,12 @@ class DataGateMixin:
         for container in _runtime().SYNC_GATE_CONTAINERS:
             await self.docker_control.stop(container, quiet=quiet)
 
-    async def _start_gate_containers(self):
+    async def _start_gate_containers(self, hold_proxy=False):
         """Start every ``SYNC_GATE_CONTAINERS`` container; True only if every start succeeded."""
         ok = True
         for container in _runtime().SYNC_GATE_CONTAINERS:
+            if hold_proxy and container == _runtime().REJECT_WORKERS_CONTAINER:
+                continue
             ok = (await self.docker_control.start(container)) and ok
         return ok
 
@@ -281,9 +296,13 @@ class DataGateMixin:
                 )
             return
 
-        if self.fail_closed_held and await self._start_gate_containers():
+        hold_proxy = self.workers_rejected or bool(self.mining_guard.active)
+        if self.fail_closed_held and await self._start_gate_containers(hold_proxy):
             self.fail_closed_held = False
             logger.info(
-                f"Unrecoverable health failure cleared — starting "
+                f"Unrecoverable health failure cleared; {_runtime().REJECT_WORKERS_CONTAINER} stays "
+                "stopped until workers are readmitted."
+                if hold_proxy
+                else f"Unrecoverable health failure cleared — starting "
                 f"{', '.join(_runtime().SYNC_GATE_CONTAINERS)}; mining can resume."
             )
