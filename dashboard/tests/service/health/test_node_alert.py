@@ -79,7 +79,7 @@ def test_spent_attempt_cap_says_it_realerts():
     healer, clock = _healer()
     healer.decide(False, clock.t)
     for _ in range(MAX_ATTEMPTS):
-        clock.t += BROKEN_AFTER_SEC if healer._attempts == 0 else COOLDOWN_SEC
+        clock.t += BROKEN_AFTER_SEC if healer._attempts == 0 else 2 * COOLDOWN_SEC
         assert healer.decide(False, clock.t) == "heal"
     alert = build_node_alert(_data(RED, tor_heal_status(healer)))
     assert alert["heal"][0].startswith("Tor auto-heal last action: recovery attempt")
@@ -87,3 +87,13 @@ def test_spent_attempt_cap_says_it_realerts():
         f"Tor auto-heal is past its cap after {MAX_ATTEMPTS} attempts"
     )
     assert "./pithead doctor" in alert["heal"][1]
+
+
+def test_next_disruptive_rung_names_the_sixty_minute_spacing():
+    healer, clock = _healer()
+    healer.decide(False, clock.t)
+    healer._attempts = 3
+    healer._last_attempt = clock.t
+    clock.t += COOLDOWN_SEC
+    alert = build_node_alert(_data(heal=tor_heal_status(healer)))
+    assert alert["heal"][1] == f"Next action after a {COOLDOWN_SEC // 60} min cooldown."

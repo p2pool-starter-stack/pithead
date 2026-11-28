@@ -16,7 +16,7 @@ class TorHistoryMixin:
 
     def _request_history(self):
         """Ask the host for the saturated-history reading; one request in flight, never raises."""
-        if self._pending_history is not None:
+        if self._pending_history is not None or self._disruptive_round:
             return
         try:
             if not self._clear_history and self._history_outage is None:
@@ -49,6 +49,9 @@ class TorHistoryMixin:
             if result.get("status") == "applied":
                 self._clear_history = False
             return
+        if result.get("status") == "lock_refused":
+            logger.warning("Tor circuit-history read was refused by the host mutation lock")
+            return
         if result.get("status") != "applied":
             self.circuits_wedged = False
             logger.warning("Tor circuit-history reading was refused or unavailable")
@@ -59,6 +62,13 @@ class TorHistoryMixin:
             and not isinstance(pending, bool)
             and pending >= PENDING_CIRCUIT_LIMIT
         )
+        built = result.get("built_circuits")
+        if isinstance(built, list) and all(type(i) is int for i in built):
+            ids = set(built)
+            self.circuits_completing = self._built_seen is not None and bool(ids - self._built_seen)
+            self._built_seen = ids
+        else:
+            self.circuits_completing = False
         saturated = result.get("saturated") is True
         self.saturated_history = saturated
         if not saturated:

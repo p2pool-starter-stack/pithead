@@ -34,7 +34,7 @@ tor_recovery_state_saturated() { # <state file>
 
 # Read-only saturated-history reading for the dashboard's heal (#3052); it never changes state.
 control_tor_history() ( # <control-dir> <id> <actor> <outage> <observed-at>
-    local cdir="$1" id="$2" actor="$3" dir saturated=false record="$1/results/tor-heal-outage.json" old='{}' next now status est='' pend=''
+    local cdir="$1" id="$2" actor="$3" dir saturated=false record="$1/results/tor-heal-outage.json" old='{}' next now status est='' pend='' built=''
     PITHEAD_LOCK_TIMEOUT=0 mutation_lock_acquire tor-history || return 1
     [ "${_PITHEAD_LOCK_OWNED:-0}" = 1 ] || return 1
     now=$(date +%s)
@@ -56,10 +56,17 @@ control_tor_history() ( # <control-dir> <id> <actor> <outage> <observed-at>
     fi
     tor_recovery_state_saturated "$dir/state" && saturated=true
     status=$(tor_recovery_circuit_status) || status=
-    [[ "$status" =~ ^circuit-established=([01])\ pending=([0-9]+)$ ]] && est=${BASH_REMATCH[1]} pend=${BASH_REMATCH[2]}
-    control_write_result "$cdir/results" "$id" "$(jq -n --argjson s "$saturated" --arg est "$est" --arg pend "$pend" '{status:"applied",action:"tor-history",saturated:$s,circuit_established:(if $est == "" then null else $est == "1" end),pending_circuits:(if $pend == "" then null else ($pend | tonumber) end),ts:(now|floor)}')"
+    [[ "$status" =~ ^circuit-established=([01])\ pending=([0-9]+)(\ built=([0-9,]*))?$ ]] && est=${BASH_REMATCH[1]} pend=${BASH_REMATCH[2]} built=${BASH_REMATCH[4]}
+    control_write_result "$cdir/results" "$id" "$(jq -n --argjson s "$saturated" --arg est "$est" --arg pend "$pend" --arg built "$built" '{status:"applied",action:"tor-history",saturated:$s,circuit_established:(if $est == "" then null else $est == "1" end),pending_circuits:(if $pend == "" then null else ($pend | tonumber) end),built_circuits:($built | split(",") | map(select(. != "") | tonumber)),ts:(now|floor)}')"
     control_audit "$cdir/audit/control.log" "$id" "$actor" tor-history applied
 )
+
+control_tor_history_refusal() {
+    local state=failed error="history observation unavailable"
+    [ "$4" != "${PITHEAD_EX_LOCK_TIMEOUT:-75}" ] || { state=lock_refused error="host mutation lock held"; }
+    control_write_result "$1/results" "$2" "$(jq -n --arg s "$state" --arg e "$error" '{status:$s,error:$e,ts:(now|floor)}')"
+    control_audit "$1/audit/control.log" "$2" "$3" tor-history "$state"
+}
 
 # Third class: two failed heal rounds from the SAME sustained outage. The host records its own
 # times, independent of the persistent NEWNYM budget, and recovery invalidates the evidence.

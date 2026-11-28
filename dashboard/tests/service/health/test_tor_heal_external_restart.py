@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 from mining_dashboard.service.health.tor_heal import (
     BROKEN_AFTER_SEC,
-    COOLDOWN_SEC,
+    DISRUPTIVE_SPACING_SEC,
     EXHAUSTED_PROBE_SEC,
     FIRST_ACTION_AFTER_SEC,
     MAX_ATTEMPTS,
@@ -86,9 +86,9 @@ class _Rig:
     async def exhaust(self):
         await self.spend_newnyms()
         await self.spend_reset()
-        await self.step(False, COOLDOWN_SEC)
+        await self.step(False, DISRUPTIVE_SPACING_SEC)
         self.tor_started += 3600
-        await self.step(False, COOLDOWN_SEC)
+        await self.step(False, DISRUPTIVE_SPACING_SEC)
         assert self.healer._attempts == MAX_ATTEMPTS
         assert self.healer._warned_exhausted is True
 
@@ -96,12 +96,12 @@ class _Rig:
         await self.step(False)
         await self.step(False, BROKEN_AFTER_SEC)
         await self.step(False)
-        await self.step(False, COOLDOWN_SEC)
+        await self.step(False, DISRUPTIVE_SPACING_SEC)
         await self.step(False)
         assert self.healer._attempts == NEWNYM_ATTEMPTS
 
     async def spend_reset(self):
-        await self.step(False, COOLDOWN_SEC)
+        await self.step(False, DISRUPTIVE_SPACING_SEC)
         assert self.healer._pending_recovery == "tor-recover"
         await self.step(False)
 
@@ -128,7 +128,7 @@ async def test_external_restart_lifts_the_post_rotation_restart_ban():
     rig = _Rig()
     rig.newnym_result = {"status": "applied", "action": "tor-dropguards"}
     await rig.spend_newnyms()
-    await rig.step(False, COOLDOWN_SEC)
+    await rig.step(False, DISRUPTIVE_SPACING_SEC)
     assert rig.healer._guard_rotated is True
     assert rig.docker.calls == []
     rig.tor_started += 3600
@@ -136,7 +136,7 @@ async def test_external_restart_lifts_the_post_rotation_restart_ban():
     assert rig.healer._guard_rotated is False
     rig.newnym_result = {"status": "applied"}
     await rig.spend_newnyms()
-    await rig.step(False, COOLDOWN_SEC)
+    await rig.step(False, DISRUPTIVE_SPACING_SEC)
     assert rig.healer._pending_recovery == "tor-recover"
 
 
@@ -154,7 +154,7 @@ async def test_healer_restart_keeps_counting():
     rig = _Rig()
     await rig.spend_newnyms()
     await rig.spend_reset()
-    await rig.step(False, COOLDOWN_SEC)
+    await rig.step(False, DISRUPTIVE_SPACING_SEC)
     assert ("stop", "tor") in rig.docker.calls
     rig.tor_started += 3600
     await rig.step(False)
@@ -166,7 +166,7 @@ async def _recover_submitted(recover_result):
     rig = _Rig()
     rig.recover_result = recover_result
     await rig.spend_newnyms()
-    await rig.step(False, COOLDOWN_SEC)
+    await rig.step(False, DISRUPTIVE_SPACING_SEC)
     assert rig.healer._pending_recovery == "tor-recover"
     assert rig.healer._attempts == NEWNYM_ATTEMPTS + 1
     return rig
@@ -196,7 +196,7 @@ async def test_external_restart_after_an_adopted_healer_restart_still_resets():
     rig = _Rig()
     await rig.spend_newnyms()
     await rig.spend_reset()
-    await rig.step(False, COOLDOWN_SEC)
+    await rig.step(False, DISRUPTIVE_SPACING_SEC)
     assert ("stop", "tor") in rig.docker.calls
     rig.tor_started += 3600
     await rig.step(True)

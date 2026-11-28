@@ -1002,7 +1002,12 @@ on each such round, sent once per outage to the alert sinks (failed delivery ret
 Tor (`status/circuit-established` and the number of pending circuits). No established circuit, or
 64 or more pending circuits (the `MaxClientCircuitsPending` Pithead sets), is named in the failed-probe
 evidence and is one of the reasons the host accepts a state reset; an answering probe is never
-overridden by it, because a busy Tor can sit at that ceiling while egress works. The action budget is four per outage, and the reset and
+overridden by it, because a busy Tor can sit at that ceiling while egress works. The reading also lists the circuits that are built;
+a circuit that was not in the previous reading means circuits are completing, and the state reset and the restart are held until a
+reading shows none. The reset and the restart are at least 60 minutes apart. When the host's mutation lock is held, the reading
+comes back as `lock_refused` and is logged as such; the monitor does not request a reading in a round that restarts Tor. A refused
+NEWNYM submit is refunded once per outage, so an unwritable control spool still reaches the exhausted alert, and the Docker restart
+does not need the spool. The action budget is four per outage, and the reset and
 restart together are capped at four per rolling 24 hours, a count held in the dashboard's memory
 (a dashboard restart clears it; the host's six-hour reset cooldown persists); at either limit the monitor logs once,
 asks the host to write a `tor-heal-exhausted` entry to its audit log, then keeps probing at most

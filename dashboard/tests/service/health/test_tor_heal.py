@@ -114,7 +114,7 @@ class TestDecide:
         _break_egress(h, clock)
         for _ in range(MAX_ATTEMPTS):
             assert h.decide(False, clock.t) == "heal"
-            clock.t += COOLDOWN_SEC
+            clock.t += 2 * COOLDOWN_SEC
         # Budget spent: from here on it's warn-only, forever, no matter how much time passes.
         assert h.decide(False, clock.t) == "exhausted"
         clock.t += 100 * COOLDOWN_SEC
@@ -150,7 +150,7 @@ class TestDecide:
             clock.t += PROBE_INTERVAL_SEC
             # One lucky probe succeeds, then egress drops again before recovery is confirmed.
             assert h.decide(True, clock.t) is None  # provisional, budget preserved
-            clock.t += COOLDOWN_SEC
+            clock.t += 2 * COOLDOWN_SEC
         # Budget is spent and a lone OK never refilled it: warn-only, not another heal.
         assert h.decide(False, clock.t) == "exhausted"
 
