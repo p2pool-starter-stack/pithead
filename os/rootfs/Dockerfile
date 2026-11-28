@@ -1,4 +1,4 @@
-FROM golang:1.27.4-trixie@sha256:f18c3d73a184fb0582828510722e723b63a93f7188d11dd223d9be6f6880e65d AS gobuild
+FROM golang:1.27.4-trixie@sha256:430985542100b871e108ccc00e8dcc5eef08ca14ee5825e98ebf563d8ffec4ee AS gobuild
 
 ARG COMPOSE_COMMIT=ed25575984c8dbd1ad137c93002d782f52478809
 ARG COSIGN_COMMIT=0e48502cf5ef34e2e60bbd3617aa19945712f705
@@ -46,7 +46,7 @@ RUN COMPOSE_VERSION="$(/tools/module-version.sh /tools/compose/go.mod github.com
 # Pinned by digest (#135) so the debian:trixie-slim tag can't be silently re-pointed. The digest
 # bump is how base-distro CVE fixes reach the appliance (#833): there is no apt on the running
 # box — every Debian package here is frozen until the next bake.
-FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
+FROM debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0
 
 ENV DEBIAN_FRONTEND=noninteractive
 

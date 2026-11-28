@@ -85,7 +85,7 @@ config = json.loads(sys.argv[3])
 source = ast.parse((root / "client/xmrig_client.py").read_text())
 nodes = [node for node in source.body
          if isinstance(node, (ast.FunctionDef, ast.ClassDef))
-         and node.name in {"_safe_probe_host", "_worker_override", "XMRigWorkerClient"}]
+         and node.name in {"_safe_probe_host", "_rig_id_agrees", "_worker_override", "XMRigWorkerClient"}]
 nodes += [node for node in source.body if isinstance(node, ast.Assign)
           and any(isinstance(target, ast.Name) and target.id in
                   {"_MAX_NAME_TOKEN", "_WARN_INTERVAL_S"} for target in node.targets)]

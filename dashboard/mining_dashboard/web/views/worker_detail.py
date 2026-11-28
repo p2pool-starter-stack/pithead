@@ -290,6 +290,7 @@ def build_worker_detail(name, data, state_mgr, range_arg="all", window=None):
             name, (rig_meta or {}).get("revision")
         ),
         "history": history,
+        "rig_id": (worker.get("rigforge") or {}).get("rig_id") if worker else None,
         "hashrate_by_config": hashrate_by_config,
         "hashrate_history": build_worker_hashrate_history(state_mgr, name, range_arg, window),
     }

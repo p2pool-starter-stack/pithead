@@ -229,10 +229,10 @@ Release notes, where operators actually read it. The branch model itself is in
 
 ### Forward merges into release-line branches
 
-Work for upcoming releases integrates on release-line branches named `develop-vX.Y.Z`: the
-patch line while a patch cut is in flight (for example `develop-v2.0.3`) and the next feature
-line (`develop-v2.1.0`). After every patch release is published, forward-merge `develop` into
-each open release-line branch, so the cut commit and every fix on `develop` reach those lines.
+`develop` carries the next patch release, and every security and bug fix lands there. A
+release-line branch named `develop-vX.Y.Z`, for example `develop-v2.1.0`, takes feature work for a
+later release only. After every patch release is published, forward-merge `develop` into each open
+release-line branch, so the cut commit and every fix on `develop` reach those lines.
 
 The `develop-v*` branches carry the same protection as `develop`: the same required checks and
 `adversarial-review` status, one approving review, stale approvals dismissed, admins included,
@@ -263,21 +263,51 @@ gh pr merge <n> --merge
 
 This is the one PR that is not squashed. A squash or rebase mints new commits, so `develop`
 never becomes an ancestor of the release line, and every later forward merge conflicts again on
-changes that were already merged. Merge commits are enabled on the repository for this case only.
+changes that were already merged. Merge commits are enabled on the repository for this case and
+the fold below only.
 
 [#3664]: https://github.com/p2pool-starter-stack/pithead/issues/3664
+
+### Folding a release line back into develop
+
+When a release line's work moves onto `develop`, fold the line back with a merge commit, as
+`develop-v2.0.3` was in [#3959]. First forward-merge `develop` into the line, so both sides carry
+the same version metadata and the line's `[Unreleased]` changelog entries already include
+`develop`'s. Then cut a `fold/` branch from `develop`, merge the line into it, and open the PR into
+`develop`:
+
+```bash
+git fetch origin develop develop-v2.0.5
+git switch -c fold/develop-v2.0.5-into-develop origin/develop
+git merge --no-ff origin/develop-v2.0.5
+git push origin fold/develop-v2.0.5-into-develop
+```
+
+The result keeps `develop`'s `VERSION`. Merge the PR with `gh pr merge <n> --merge`. The line then
+becomes an ancestor of `develop`, so the open PRs into the line retarget to `develop` with no
+rebase. Retarget them after the merge. The line branch is protected against deletion, so removing
+it is the owner's decision.
+
+[#3959]: https://github.com/p2pool-starter-stack/pithead/pull/3959
 
 ### Pipeline: stage → smoke-test → promote
 
 Ahead of stage 1, and outside the numbered pipeline the tool prints, `release.sh` runs one
-additional preflight check: it requires a successful `bench-ci/tier4` commit status on the exact
-release SHA from the dedicated bench-ci GitHub App. Both `BENCH_CI_APP_ID` (that App's numeric id)
-and `BENCH_CI_APP_SLUG` (`pithead-bench-ci`) are required on the release box, with no defaults. They
-may come from the [release env file](release-server.md#the-lintrelease-toolchain). Dry runs enforce
-the lint/test toolchain on the run's effective PATH, just as a real cut does. A dry run still does
-not run `make test` or the integration matrix: it prints their commands. The
+additional preflight check: the release status gate. When enabled it requires a successful
+commit status, under the context named by `RELEASE_REQUIRED_STATUS_CONTEXT`, on the exact
+release SHA, published by the GitHub App identified by `RELEASE_REQUIRED_STATUS_APP_ID` (that
+App's numeric id) and `RELEASE_REQUIRED_STATUS_APP_SLUG` (its slug). All three are settings with
+no defaults and may come from the
+[release env file](release-server.md#the-lintrelease-toolchain); when any one is set, all three
+are required. The gate is optional: with all three unset it skips with a log message, for a
+release lane that has not provisioned its status-publishing App yet. That skip is attested, not
+assumed — the manual attestation is then the only gate: before the cut, read the exact release
+SHA's status and job evidence by hand and record it in the release issue, as the e2e step below
+does. This repo's lane sets all three: context `bench-ci/tier4`, App `pithead-bench-ci`. The
 bench publishes that status only after its full tier-4 suite completes; a missing, failed,
-unreadable, or wrong-App status aborts the cut before anything is built. Under `--dry-run` the
+unreadable, or wrong-App status aborts the cut before anything is built. Dry runs enforce the
+lint/test toolchain on the run's effective PATH, just as a real cut does. A dry run still does
+not run `make test` or the integration matrix: it prints their commands. Under `--dry-run` the
 verdict is printed as a warning and the rehearsal continues, so a preview still runs end to end.
 
 1. Preflight: check the clean working tree, then build the git-ignored `pithead` executable from
@@ -354,7 +384,7 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
 
 Set `PITHEAD_REHEARSAL=1` and `PITHEAD_REGISTRY` to a non-production registry namespace.
 Rehearsal refuses the production namespace even with `--dry-run`. It runs every normal gate
-(preflight including signing, tier-4 status, the test gate and smoke), promotes and signs the
+(preflight including signing, the release status gate, the test gate and smoke), promotes and signs the
 scratch images, then stops before `publish`: no git tag, GitHub Release or install bundle is
 published. Release runs, including draft releases, require the owner's sign-off.
 
@@ -579,8 +609,8 @@ rerun the boot group, the four rig-group splits, provision, crossupdate and real
 SHA and read them again before submitting e2e. Crossupdate, provision and realupgrade rerun after
 any post-battery change, because the update path they prove is the one a digest re-pin or
 version bump alters. `release.sh` refuses to publish unless the tag SHA itself carries a successful
-`bench-ci/tier4` status from the bench-ci App, but that check reads only the status on the
-release commit and never the KVM jobs' `commit` fields (`require_bench_tier4` in
+`bench-ci/tier4` status from the configured App, but that check reads only the status on the
+release commit and never the KVM jobs' `commit` fields (`require_release_status_gate` in
 `scripts/release/preflight.sh`). Confirming the rerun before publishing is therefore a
 procedural step the operator verifies, not a tool enforcement. The
 2.0.2 release shipped one commit after the commit its crossupdate and provision jobs proved
@@ -633,7 +663,7 @@ jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$E2E_KEY" --arg mode "$E2E_MO
 Read the completed e2e job's full status, log, artifacts and evidence. All nine jobs must carry
 the same SHA and ref. A failed or cancelled leg cannot yield a
 successful aggregate status. Confirm the exact commit's newest `bench-ci/tier4` status is
-`success` and its creator is the configured bench-ci App before running `release.sh`; record all
+`success` and its creator is the configured App before running `release.sh`; record all
 nine job IDs and the SHA in the release issue. Remove a rehearsal branch after confirming its
 status with `git push origin --delete "$REF"`. If a submission is refused, stop and report it to
 bench-ci; retain its printed idempotency key for a retry.

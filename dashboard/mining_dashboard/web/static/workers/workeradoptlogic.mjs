@@ -12,19 +12,12 @@ import { editableCandidate } from "../config/configlogic.mjs";
 
 const HOST_RE = /^[A-Za-z0-9._-]{1,253}$/;
 const TOKEN_RE = /^[!-~]{1,128}$/;
+const RIG_ID_RE = /^[0-9a-f]{32}$/;
 
-/** RigForge's read and control API defaults — the form's port prefills. */
 export const DEFAULT_API_PORT = "8081";
 export const DEFAULT_CONTROL_PORT = "8082";
 
-/**
- * Refuse an adopt submission before it ever reaches the network. ``host`` is the field the
- * operator confirmed or edited (the observed IP is only ever a PREFILL, never auto-submitted
- * unread) — this only checks its SHAPE, the same SSRF-motivated charset guard the host applies:
- * no port, path, or userinfo can ride into a probe URL. Returns an error string, or "" when every
- * field is well-formed.
- */
-export function validateAdoptFields(host, apiPort, controlPort, token) {
+export function validateAdoptFields(host, apiPort, controlPort, token, rigId) {
   const h = (host || "").trim();
   if (!h) return "Enter the rig's control address (a hostname or IP).";
   if (!HOST_RE.test(h)) {
@@ -44,6 +37,10 @@ export function validateAdoptFields(host, apiPort, controlPort, token) {
   }
   if (t.length < 32) {
     return "Use a cryptographically random token of at least 32 ASCII characters (run: openssl rand -hex 16).";
+  }
+  const rid = (rigId || "").trim();
+  if (rid && !RIG_ID_RE.test(rid)) {
+    return "rig_id must be the rig's 32-character lowercase hex identity id.";
   }
   return "";
 }
@@ -114,23 +111,28 @@ export function hostIsInternal(host, subnet) {
   return !!bridge && `${a}.${b}.${c}` === bridge.slice(1, 4).join(".");
 }
 
-/**
- * The proposed config a successful adopt submits: ``liveConfig`` (as fetched from /api/config)
- * with one new descriptor appended to ``workers.list[]``. Every other key rides through untouched
- * — the host's append-only check requires every already-live entry to reappear byte-for-byte, so this
- * never touches an existing element, only pushes a new one onto the end.
- */
-export function buildAdoptedConfig(liveConfig, workerName, host, apiPort, controlPort, token) {
+export function buildAdoptedConfig(
+  liveConfig,
+  workerName,
+  host,
+  apiPort,
+  controlPort,
+  token,
+  rigId,
+) {
   const cfg = editableCandidate(liveConfig || {});
   const workers = cfg.workers && typeof cfg.workers === "object" ? cfg.workers : {};
   const list = Array.isArray(workers.list) ? workers.list.slice() : [];
-  list.push({
+  const entry = {
     name: workerName,
     host: host.trim(),
     port: Number(apiPort),
     control_port: Number(controlPort),
     token: token.trim(),
-  });
+  };
+  const rid = (rigId || "").trim().toLowerCase();
+  if (RIG_ID_RE.test(rid)) entry.rig_id = rid;
+  list.push(entry);
   cfg.workers = { ...workers, list };
   return cfg;
 }

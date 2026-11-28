@@ -208,3 +208,29 @@ test("buildAdoptedConfig: trims stray whitespace off host and token", () => {
   assert.equal(cfg.workers.list[0].host, "10.0.0.9");
   assert.equal(cfg.workers.list[0].token, "tok");
 });
+
+test("validateAdoptFields: rig_id is optional but must be 32-char lowercase hex when given", () => {
+  const tok = "0123456789abcdef0123456789abcdef";
+  assert.equal(validateAdoptFields("10.0.0.9", "8081", "8082", tok, ""), "");
+  assert.equal(validateAdoptFields("10.0.0.9", "8081", "8082", tok, undefined), "");
+  assert.equal(
+    validateAdoptFields("10.0.0.9", "8081", "8082", tok, "0a1b2c3d4e5f60718293a4b5c6d7e8f9"),
+    "",
+  );
+  assert.match(validateAdoptFields("10.0.0.9", "8081", "8082", tok, "0A1B2C3D4E5F60718293A4B5C6D7E8F9"), /rig_id/);
+  assert.match(validateAdoptFields("10.0.0.9", "8081", "8082", tok, "not-hex"), /rig_id/);
+  assert.match(validateAdoptFields("10.0.0.9", "8081", "8082", tok, "0a1b2c3d4e5f60718293a4b5c6d7e8f"), /rig_id/);
+});
+
+test("buildAdoptedConfig: a valid rig_id rides on the new entry, trimmed and lowercased", () => {
+  const cfg = buildAdoptedConfig({}, "rig1", "10.0.0.9", "8081", "8082", "tok", " 0A1B2C3D4E5F60718293A4B5C6D7E8F9 ");
+  assert.equal(cfg.workers.list[0].rig_id, "0a1b2c3d4e5f60718293a4b5c6d7e8f9");
+});
+
+test("buildAdoptedConfig: an absent or malformed rig_id never lands in the config", () => {
+  const absent = buildAdoptedConfig({}, "rig1", "10.0.0.9", "8081", "8082", "tok").workers.list[0];
+  assert.equal(Object.hasOwn(absent, "rig_id"), false);
+  const malformed = buildAdoptedConfig({}, "rig1", "10.0.0.9", "8081", "8082", "tok", "not-hex").workers
+    .list[0];
+  assert.equal(Object.hasOwn(malformed, "rig_id"), false);
+});

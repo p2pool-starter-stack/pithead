@@ -157,7 +157,7 @@ rehearsal_main() {
         check_registry_policy
         printf 'preflight\n' >>"$REHEARSAL_TEST/calls"
     }
-    require_bench_tier4() { printf 'tier4\n' >>"$REHEARSAL_TEST/calls"; }
+    require_release_status_gate() { printf 'gate\n' >>"$REHEARSAL_TEST/calls"; }
     test_gate() { printf 'test\n' >>"$REHEARSAL_TEST/calls"; }
     build_images() { printf 'build\n' >>"$REHEARSAL_TEST/calls"; }
     stage_push() { printf 'stage\n' >>"$REHEARSAL_TEST/calls"; }
@@ -171,7 +171,7 @@ rehearsal_main() {
 }
 rehearsal_out="$(rehearsal_case rehearsal_main 1 2>&1)"
 assert_rc "rehearsal main completes" "$?" 0
-assert_eq "rehearsal runs every stage through signing" "$(cat "$REHEARSAL_TEST/calls")" $'preflight\ntier4\ntest\nbuild\nstage\nsmoke\ncapture\npromote\nsign'
+assert_eq "rehearsal runs every stage through signing" "$(cat "$REHEARSAL_TEST/calls")" $'preflight\ngate\ntest\nbuild\nstage\nsmoke\ncapture\npromote\nsign'
 assert_contains "rehearsal announces its stop point" "$rehearsal_out" 'Rehearsal complete: nothing was tagged or published'
 rehearsal_out="$(rehearsal_case rehearsal_main 0 2>&1)"
 assert_rc "ordinary custom-registry main completes" "$?" 0
