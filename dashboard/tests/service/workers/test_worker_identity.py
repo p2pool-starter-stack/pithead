@@ -6,6 +6,7 @@ import pytest
 
 from mining_dashboard.client import xmrig_client
 from mining_dashboard.service import control_service
+from mining_dashboard.service.data_helpers import _merge_direct_stats
 from mining_dashboard.service.data_service import DataService
 from mining_dashboard.service.storage_service import StateManager
 from mining_dashboard.service.workers import worker_identity, worker_identity_poll
@@ -20,7 +21,7 @@ HINTS_B = {"mac": "bb:bb", "board_uuid": None, "cpu_model": "A72"}
 
 
 def _row(ip, name="rig1"):
-    return {"name": name, "ip": ip, "status": "online"}
+    return {"name": name, "ip": ip, "status": "online", "uptime": 5}
 
 
 def _reply(hints=None, rig_id=RIG):
@@ -41,8 +42,8 @@ def svc(monkeypatch):
 
 def _poll(svc, rows, replies, now):
     asyncio.run(worker_identity_poll.observe_poll(svc, rows, replies, now=now))
-    marked = [dict(r, rigforge=r.get("rigforge") or {"rig_id": RIG}) for r in rows]
-    return worker_identity.mark_duplicates(svc, marked, now=now)
+    merged = _merge_direct_stats([dict(r) for r in rows], replies, "3333")
+    return worker_identity.mark_duplicates(svc, merged, now=now)
 
 
 class TestTracker:
@@ -117,6 +118,12 @@ class TestPoll:
             ("rig-identity", "moved-hardware", "info")
         ]
         _poll(svc, [_row("10.0.0.1")], [_reply(HINTS_B)], 1002)
+        assert len(svc.state_manager.get_audit_events()) == 1
+
+    def test_moved_hardware_events_are_rate_limited_per_rig_id(self, svc):
+        flips = [HINTS_A, HINTS_B] * 4
+        for i, hints in enumerate(flips):
+            _poll(svc, [_row("10.0.0.1")], [_reply(hints)], 1000 + i)
         assert len(svc.state_manager.get_audit_events()) == 1
 
 

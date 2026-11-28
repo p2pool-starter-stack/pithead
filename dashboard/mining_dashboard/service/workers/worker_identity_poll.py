@@ -29,7 +29,7 @@ async def observe_poll(svc, workers, results, now=None):
         moved = tracker.observe(
             rig_id, w.get("ip"), _fingerprint(rf), _credential_key(name, rig_id), now
         )
-        if moved and svc._rig_edit_within_cap(name, now)[0]:
+        if moved:
             await svc._record_audit_event(
                 "rig-identity",
                 name,

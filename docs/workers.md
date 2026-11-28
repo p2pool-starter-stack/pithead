@@ -435,16 +435,18 @@ answered with it.
 
 | Situation | What you see | What to do |
 | --- | --- | --- |
-| **Clone** — two machines boot from copies of one stick, so both carry the same name, token and rig id | Two online rows answer with the same id within three poll intervals (90 seconds at the default `UPDATE_INTERVAL`). The workers carry a **duplicate identity** fault, and Worker Inspect's apply and upgrade refuse before anything is sent to either rig: *shares its rig id with another machine … re-key one copy*. | Re-key one copy: change its access token, then adopt it again. The fault clears the moment the id is served from one source only. |
-| **Moved stick** — the same stick in different hardware | One IP keeps answering with the same id while the display hints (MAC prefix, board UUID, CPU model) change. It is recorded once as an info event, `rig-identity` / `moved-hardware`, in the Security panel's event log. Nothing is blocked. | Nothing: the record, history and token follow the id. |
-| **Dead stick** — the machine is gone or off | The row goes offline and stops answering. No fault is raised, and a replacement booted from a copy is not a clone while the original stays off. | Adopt the replacement; remove the dead entry once the replacement is live. |
+| **Clone** — two machines boot from copies of one stick, so both carry the same name, token and rig id | Two online rows answer with the same id within three poll intervals (90 seconds at the default `UPDATE_INTERVAL`). The workers carry a **duplicate identity** fault, and Worker Inspect's apply and upgrade refuse before anything is sent to either rig: *shares its rig id with another machine … re-key one copy*. | Re-key one copy: change its access token, then adopt it again. The fault clears once the id has been served from one source only for a full window, or when you re-key a copy. |
+| **Moved stick** — the same stick in different hardware | One IP keeps answering with the same id while the display hints (MAC prefix, board UUID, CPU model) change. It is recorded as an info event, `rig-identity` / `moved-hardware`, in the Security panel's event log, at most once an hour per rig id. Nothing is blocked. | Nothing: the record, history and token follow the id. |
+| **Dead stick** — the machine is gone or off | The row goes offline and stops answering. No fault is raised by the dead stick alone; a replacement booted from a copy counts as a clone only while the original's last answer is still inside the window. | Adopt the replacement; remove the dead entry once the replacement is live. |
 
 A clone shares the token, so rotating the token on one rig (the Remove rig action, tracked in
 #4016) reaches only the copy that answers the rotation; the other copy keeps the old token until it
 is re-keyed, which is why the fault stays up until one copy is re-keyed. The fault state is held in
 memory: a dashboard restart forgets it and raises it again within the window if both copies still
 answer. A stick whose DHCP address changes can raise the fault for up to one window while the old
-row lingers online, then it clears on its own.
+row lingers online, then it clears on its own. The id authenticates nothing, so any machine on the
+LAN that connects as a worker and serves the same id raises the fault too, and it stays until that
+machine stops answering.
 
 #### RigForge new-release badge
 

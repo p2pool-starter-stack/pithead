@@ -6,6 +6,7 @@ IDENTITY_WINDOW_POLLS = 3
 IDENTITY_WINDOW_S = IDENTITY_WINDOW_POLLS * config.UPDATE_INTERVAL
 _MAX_TRACKED_RIGS = 1024
 _MAX_SOURCES_PER_RIG = 8
+MOVED_EVENT_INTERVAL_S = 3600
 
 _faulted_names = frozenset()
 
@@ -44,6 +45,9 @@ class RigIdentityTracker:
         if prev is None and len(rec["sources"]) >= _MAX_SOURCES_PER_RIG:
             return False
         moved = bool(prev and prev[1] and fingerprint and prev[1] != fingerprint)
+        moved = moved and now - rec.get("moved_at", float("-inf")) >= MOVED_EVENT_INTERVAL_S
+        if moved:
+            rec["moved_at"] = now
         rec["sources"][source] = (now, fingerprint or (prev[1] if prev else None))
         return moved
 
