@@ -115,12 +115,6 @@ generate_caddyfile() {
             }
         }
     }'
-    # Caddy LAN listen port (#740). An empty HOST_PORT — or a value that equals the scheme's own
-    # default (443 for HTTPS, 80 for HTTP) — keeps the standard port and renders today's Caddyfile
-    # verbatim. A custom port is appended to the site address so an existing reverse proxy on the
-    # host can keep 80/443 (co-hosting, #181). In HTTPS mode a custom port also disables Caddy's
-    # automatic :80 -> HTTPS redirect (a global option emitted once at the top of the file) so port
-    # 80 is left free for that proxy; the fronting proxy owns any http->https bounce instead.
     local dport="${HOST_PORT:-}" port_suffix="" global_block="" own_plain_port=0
     if [ "$DASHBOARD_SECURE" == "true" ]; then
         [ "$dport" == "443" ] && dport=""
