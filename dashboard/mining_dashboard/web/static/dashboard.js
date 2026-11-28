@@ -100,10 +100,10 @@ export function initDashboard({
     doc.documentElement.setAttribute("data-theme", theme);
   }
 
-  let state = null; // latest /api/state payload, or null before the first response
-  let connected = true; // false after a failed fetch (we keep showing the last snapshot)
+  let state = null;
+  let connected = true;
   let disconnectedSince = null;
-  let inflight = false; // guard against overlapping fetches if one is slow
+  let inflight = false;
   const freshness = installFreshness({ reload, store, fetchFn, now, sleep, onChange: () => rerender() });
 
   const paint =
