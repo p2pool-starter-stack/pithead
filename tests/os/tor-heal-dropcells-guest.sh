@@ -52,8 +52,8 @@ stage=install-drop-rules
 ip=$(tor_ip)
 [ -n "$ip" ]
 nft add table inet "$table"
-nft add chain inet "$table" fwd '{ type filter hook forward priority -10; policy accept; }'
-nft add rule inet "$table" fwd ip saddr "$ip" tcp flags '& syn == 0' ct state established meta length gt 400 counter drop
+nft add chain inet "$table" dropcells '{ type filter hook forward priority -10; policy accept; }'
+nft add rule inet "$table" dropcells ip saddr "$ip" tcp flags '& syn == 0' ct state established meta length gt 400 counter drop
 started=$(date +%s)
 echo "start $started" >"$work/timeline"
 last_start=$(tor_started)
@@ -68,7 +68,7 @@ while [ "$(date +%s)" -lt $((started + FAULT_SEC)) ]; do
     fi
     if [ "$open_seen" = 0 ] && [ "$now" -ge $((started + 600)) ]; then
         established=$(docker exec tor sh -c 'netstat -tn 2>/dev/null | grep -c ESTABLISHED' || true)
-        dropped=$(nft list chain inet "$table" fwd | sed -n 's/.*counter packets \([0-9]*\).*/\1/p' | head -1)
+        dropped=$(nft list chain inet "$table" dropcells | sed -n 's/.*counter packets \([0-9]*\).*/\1/p' | head -1)
         printf 'open-channel-sample established=%s dropped_packets=%s\n' "${established:-0}" "${dropped:-0}" >>"$work/timeline"
         if [ "${established:-0}" -ge 1 ] && [ "${dropped:-0}" -ge 1 ]; then open_seen=1; fi
     fi
