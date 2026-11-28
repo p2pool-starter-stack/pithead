@@ -50,7 +50,8 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
                 echo 'carry apply failed before health wait'
                 return 1
             } ;;
-            backup-fails:backup | apply-fails:apply | down-fails:down | restore-fails:restore) return 1 ;;
+            backup-fails:backup | apply-fails:apply | down-fails:down) return 1 ;;
+            restore-fails:restore) echo 'restore refused: Stratum password: fixture-secret' && return 1 ;;
             up-fails:up) echo "Error response from daemon: pull access denied" && return 1 ;;
             up-long-fails:up)
                 echo 'Stratum password: fixture-secret'
@@ -178,6 +179,10 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         fi
         printf '%s|%s' "$lifecycle_rc" "$IT_FAIL"
         [ "$RESTORE_CASE" != carry-apply-fails ] || printf '|%s' "$(cat "$OUT_DIR/dashboard-carry.apply.log")"
+        [ "$RESTORE_CASE" != restore-fails ] || {
+            timeout 5 bash -c 'until [ -s "$1" ]; do sleep 0.1; done' _ "$OUT_DIR/lifecycle-restore.log"
+            printf '|%s' "$(cat "$OUT_DIR/lifecycle-restore.log")"
+        }
         if [ "$RESTORE_CASE" = cleanup-record ]; then
             printf '|archive=%s|marker=%s' "$([ -e "$OUT_DIR/backups/pithead-backup-test.tar.gz" ] && echo yes || echo no)" "$([ -e "$OUT_DIR/backups/.pithead-e2e-safety/pithead-backup-test.tar.gz" ] && echo yes || echo no)"
         fi
@@ -231,7 +236,7 @@ assert_eq "a missing backup archive fails lifecycle" "$(drive_restore yes archiv
 assert_eq "a failed config push fails lifecycle" "$(drive_restore yes push-config-fails)" "1|1"
 assert_eq "a failed apply fails lifecycle" "$(drive_restore yes apply-fails)" "1|1"
 assert_eq "a failed down fails lifecycle" "$(drive_restore yes down-fails)" "1|1"
-assert_eq "a failed restore fails lifecycle" "$(drive_restore yes restore-fails)" "1|1"
+assert_eq "a failed restore fails lifecycle" "$(drive_restore yes restore-fails)" "1|1|restore refused: Stratum password: <redacted>"
 assert_eq "a failed up fails lifecycle" "$(drive_restore yes up-fails)" "1|1"
 assert_eq "a failed restore verification fails lifecycle" "$(drive_restore yes verify-fails)" "1|1"
 assert_eq "a failed restored-secret assertion fails lifecycle" "$(drive_restore yes secret-fails)" "1|1"

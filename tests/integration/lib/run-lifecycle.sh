@@ -146,10 +146,10 @@ _run_lifecycle() {
             elif backed_pool="$(pool_label "$backed_key")" &&
                 revert_from="$([ "$backed_key" = main ] && printf mini || printf main)" &&
                 push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$revert_from")" &&
-                pithead apply -y >/dev/null 2>&1 &&
-                pithead down >/dev/null 2>&1 &&
-                pithead restore -y "$arch" >/dev/null 2>&1 &&
-                pithead up >/dev/null 2>&1; then
+                pithead apply -y > >(redact >>"$OUT_DIR/lifecycle-restore.log") 2>&1 &&
+                pithead down > >(redact >>"$OUT_DIR/lifecycle-restore.log") 2>&1 &&
+                pithead restore -y "$arch" > >(redact >>"$OUT_DIR/lifecycle-restore.log") 2>&1 &&
+                pithead up > >(redact >>"$OUT_DIR/lifecycle-restore.log") 2>&1; then
                 if wait_status_ok 240; then
                     it_pass "status OK after restore"
                     post_op_invariants "after restore"
@@ -221,8 +221,8 @@ _run_lifecycle() {
                     lifecycle_ok=0
                 fi
             fi
-            if pithead down >/dev/null 2>&1 && rx "rm -rf -- $(quote_arg "$carry_new")" >/dev/null 2>&1 &&
-                push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1 && wait_status_ok 180; then
+            if pithead down > >(redact >>"$OUT_DIR/dashboard-carry.cleanup.log") 2>&1 && rx "rm -rf -- $(quote_arg "$carry_new")" >/dev/null 2>&1 &&
+                push_config "$BASELINE_CONFIG" && pithead apply -y > >(redact >>"$OUT_DIR/dashboard-carry.cleanup.log") 2>&1 && wait_status_ok 180; then
                 it_pass "dashboard carry cleanup restored its baseline safely"
             else
                 it_fail "dashboard carry cleanup restored its baseline safely" "the stack was not stopped, its test copy was not removed, or the baseline did not return healthy"
