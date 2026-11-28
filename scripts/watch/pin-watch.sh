@@ -260,6 +260,9 @@ finish_report() {
     fi
     return 1
 }
+static_binary_gap_note() {
+    printf '%s' "The monerod, p2pool and xmrig-proxy pins are sha256-verified static binaries with no package metadata: Trivy reports no CVEs for them and this report tracks newer versions, not advisories. Bump any of the three only after checking the upstream release notes and security advisories for the new version, and record that check in the bump PR."
+}
 
 if [ "${1:-}" = "--self-test" ]; then
     # shellcheck source=tests/watch/test-pin-watch.sh
@@ -293,12 +296,10 @@ if [ -f "$ROOT/os/rootfs/Dockerfile" ]; then
     lane="the product stack and the appliance rootfs"
 fi
 
-# release.sh's pin() is the one place pins are read from the tree; the three rootfs `ARG`s have no
-# case there because a release does not bundle them.
 tree_pin() {
     case "$1" in
-    compose) sed -n 's/^ARG COMPOSE_VERSION=//p' "$ROOT/os/rootfs/Dockerfile" ;;
-    cosign) sed -n 's/^ARG COSIGN_VERSION=//p' "$ROOT/os/rootfs/Dockerfile" ;;
+    compose) "$ROOT/os/rootfs/tools/module-version.sh" "$ROOT/os/rootfs/tools/compose/go.mod" github.com/docker/compose/v5 ;;
+    cosign) "$ROOT/os/rootfs/tools/module-version.sh" "$ROOT/os/rootfs/tools/cosign/go.mod" github.com/sigstore/cosign/v3 ;;
     rigforge) sed -n 's/^ARG RIGFORGE_REF=//p' "$ROOT/os/rootfs/Dockerfile" ;;
     *) pin "$1" ;;
     esac
@@ -379,6 +380,7 @@ else
     printf '%s\n' "The appliance rootfs's own pins (its docker-compose, cosign and baked RigForge tree, all built from \`ARG\` values that no dependabot ecosystem can read) are NOT in this table because this checkout has no \`os/rootfs/Dockerfile\`. A run on \`develop\`, which carries the appliance tree, lists them (#1146)."
 fi
 printf '%s\n' "Also NOT checked: whether each image pin's digest still corresponds to its tag. The digest is what actually runs, so a half-done bump is invisible to the table above."
+printf '%s\n' "$(static_binary_gap_note)"
 if [ "$failed" -gt 0 ]; then
     printf '\n%s\n' "**$failed lookup(s) could not run — those rows are unchecked, not current.**"
 fi

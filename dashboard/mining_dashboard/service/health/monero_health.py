@@ -105,6 +105,7 @@ class MoneroChainHealth:
             "peerless": peerless,
             "stalled": stalled,
             "height": self._best,
+            "target_height": sync.get("target"),
             "peers_in": sync.get("peers_in"),
             "peers_out": peers_out,
             "advance_age_sec": None if age is None else int(age),

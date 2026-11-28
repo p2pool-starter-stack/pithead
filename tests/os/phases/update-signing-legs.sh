@@ -49,7 +49,7 @@ chmod +x bin/rauc
 res=$(cd /data/pithead && PATH="$w/bin:$PATH" ./pithead os-update "$w/lx.raucb" --yes </dev/null 2>&1)
 echo "SIGNING_UPDATER_RC $?"
 printf '%s\n' "$res" | grep -q "signing certificate expired" && echo "SIGNING_UPDATER_MSG yes" || echo "SIGNING_UPDATER_MSG no: $(printf '%s' "$res" | tail -2 | tr '\n' ' ')"
-door=$(cd /data/pithead && PATH="$w/bin:$PATH" bash -c 'source ./pithead; os_verify_bundle_reason "$1" v0.0.1; echo "rc=$?"' _ "$w/lx.raucb" 2>&1 </dev/null)
+door=$(cd /data/pithead && PATH="$w/bin:$PATH" bash -c 'source ./pithead; set +e; os_verify_bundle_reason "$1" v0.0.1; echo "rc=$?"' _ "$w/lx.raucb" 2>&1 </dev/null)
 case "$door" in *"signing certificate expired"*"rc=3") echo "SIGNING_DOOR yes" ;; *) echo "SIGNING_DOOR no: $door" ;; esac
 reason=$(cd /data/pithead && bash -c 'source ./pithead; os_rauc_clock_reason "$1"' _ "$(cat "$w/expired_leaf.out")" 2>&1)
 case "$reason" in *"signing certificate expired"*) echo "SIGNING_MAPPED yes" ;; *) echo "SIGNING_MAPPED no: $reason" ;; esac
@@ -66,7 +66,7 @@ GUEST
     printf '%s\n' "$out" | grep -qx 'SIGNING_EXPIRED_TEXT yes' && ok "leg 8: RAUC reports an expired certificate in the text the updater recognises" || bad "leg 8: RAUC's expired-certificate text is not 'certificate has expired'"
     printf '%s\n' "$out" | grep -q '^SIGNING_UPDATER_RC [1-9]' && ok "leg 8: os-update refuses the expired-certificate bundle with a correct clock" || bad "leg 8: os-update did not refuse the expired-certificate bundle ($(printf '%s' "$out" | tail -3 | tr '\n' ' '))"
     printf '%s\n' "$out" | grep -qx 'SIGNING_UPDATER_MSG yes' && ok "leg 8: the os-update refusal names the expired signing certificate" || bad "leg 8: the os-update refusal lacks the expired-certificate message"
-    printf '%s\n' "$out" | grep -qx 'SIGNING_DOOR yes' && ok "leg 8: the dashboard verify door keeps the bundle and names the expired certificate" || bad "leg 8: the dashboard verify door gave the wrong verdict for the expired certificate"
+    printf '%s\n' "$out" | grep -qx 'SIGNING_DOOR yes' && ok "leg 8: the dashboard verify door keeps the bundle and names the expired certificate" || bad "leg 8: the dashboard verify door gave the wrong verdict for the expired certificate ($(printf '%s' "$out" | grep SIGNING_DOOR | cut -c1-300))"
     printf '%s\n' "$out" | grep -qx 'SIGNING_MAPPED yes' && ok "leg 8: the updater turns RAUC's real expired verdict into the clock and rotation message" || bad "leg 8: the updater did not map RAUC's real expired verdict"
 }
 _update_wrong_clock_leg() {

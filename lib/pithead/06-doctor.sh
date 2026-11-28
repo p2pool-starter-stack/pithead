@@ -148,6 +148,7 @@ doctor() {
     check_stratum_listening
     check_tor_running
     check_egress_firewall_installed
+    check_host_egress_audit
     check_lan_guard
     check_tor_clearnet_egress
     check_tor_circuit_history
