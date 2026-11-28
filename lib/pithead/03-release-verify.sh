@@ -8,8 +8,6 @@ compose_pinned_digest() {
 
 readonly COSIGN_IMAGE="@COSIGN_IMAGE@"
 
-# Verification is possible at all — i.e. we can run the verifier. Kept as its own predicate so the
-# callers' fail-closed refusals read the same as they did when this was `command -v cosign`.
 cosign_available() {
     command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
 }
@@ -117,31 +115,21 @@ verify_release_images() {
 }
 
 wait_services_healthy() {
-    local profiles svc health timeout_s elapsed=0
-    profiles=",$(env_get COMPOSE_PROFILES),"
-    local -a check=()
-    check+=(dashboard p2pool tor)
-    [[ "$profiles" == *,local_node,* ]]     && check+=(monerod)
-    [[ "$profiles" == *,local_tari,* ]]     && check+=(tari)
-    [[ "$profiles" == *,payout_confirm,* ]] && check+=(wallet-rpc)
-    [[ "$profiles" == *,tari_payout_confirm,* ]] && check+=(tari-wallet)
-    [ "${#check[@]}" -eq 0 ] && return 0
-    timeout_s=120
-    for svc in "${check[@]}"; do
-        local cid
+    local line svc health sp timeout_s elapsed cid
+    for svc in dashboard p2pool tor; do
         cid=$(docker compose ps -a -q "$svc" 2>/dev/null) || continue
         [ -n "$cid" ] || continue
         elapsed=0
         while true; do
-            health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$cid" 2>/dev/null) || {
+            line=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}} {{if .Config.Healthcheck}}{{.Config.Healthcheck.StartPeriod.Seconds}}{{else}}0{{end}}' "$cid" 2>/dev/null) ||
                 break
-            }
+            health=${line%% *}
+            sp=${line##* }
+            case "$sp" in '' | *[!0-9]*) sp=0 ;; esac
+            timeout_s=$((sp + 60))
+            [ "$timeout_s" -lt 120 ] && timeout_s=120
             case "$health" in
-                healthy) break ;;
-                ""|"none")
-                    break ;;
-                unhealthy|starting)
-                    ;;
+                healthy | running | "" | none) break ;;
             esac
             sleep 2
             elapsed=$((elapsed + 2))
@@ -248,20 +236,7 @@ stack_upgrade() {
         error "Upgrade aborted: one or more services failed to become healthy."
         return 1
     fi
-    update_current_symlink # #455: only a SUCCESSFUL upgrade moves the `current ->` pointer
-    # #33: converge the control-runner units on the current toggle — LAST, and deliberately after
-    # update_current_symlink. #1070: a fresh-dir one-click deploy runs this function from the NEW
-    # version dir while `current ->` still points at the old one, so provisioning it early (where it
-    # used to sit, before the image gate) pointed the units at a directory that had not become the
-    # install yet. Any abort in between — the image gate, a failed pull, a health-gate failure —
-    # then left the path unit watching a spool the running dashboard never writes to, silently
-    # killing the control channel and with it the one-click upgrade that would have fixed it. The
-    # units are host-global and name an absolute path, so the only safe moment to repoint them is
-    # after this dir IS `current`. A failure before here now leaves the old install's units intact
-    # and still serving. Do not move this back above the pull.
-    # `steal`: this dir just became `current`, so repointing the units here is the definition of a
-    # legitimate takeover — the old versioned dir still exists (it is the rollback), and without
-    # the escape the ownership guard would refuse and leave the units on the previous install.
+    update_current_symlink
     provision_control_runner steal
     provision_egress_check_units steal
     provision_lan_guard_check_units steal
