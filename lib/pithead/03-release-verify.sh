@@ -8,8 +8,6 @@ compose_pinned_digest() {
 
 readonly COSIGN_IMAGE="@COSIGN_IMAGE@"
 
-# Verification is possible at all — i.e. we can run the verifier. Kept as its own predicate so the
-# callers' fail-closed refusals read the same as they did when this was `command -v cosign`.
 cosign_available() {
     command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
 }
@@ -116,6 +114,50 @@ verify_release_images() {
     log "All 5 release images verify against their pinned digest (cosign.pub)."
 }
 
+wait_services_healthy() {
+    local line svc health sp iv rt timeout_s elapsed cid
+    for svc in dashboard p2pool tor; do
+        cid=$(docker compose ps -a -q "$svc" 2>/dev/null) || continue
+        [ -n "$cid" ] || continue
+        elapsed=0
+        while true; do
+            line=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}} {{if .Config.Healthcheck}}{{.Config.Healthcheck.StartPeriod.Seconds}} {{.Config.Healthcheck.Interval.Seconds}} {{.Config.Healthcheck.Retries}}{{else}}0 0 0{{end}}' "$cid" 2>/dev/null) ||
+                break
+            read -r health sp iv rt <<<"$line"
+            case "$sp" in '' | *[!0-9]*) sp=0 ;; esac
+            case "$iv" in '' | *[!0-9]*) iv=0 ;; esac
+            case "$rt" in '' | *[!0-9]*) rt=0 ;; esac
+            timeout_s=$((sp + iv * rt + 60))
+            [ "$timeout_s" -lt 120 ] && timeout_s=120
+            case "$health" in
+            healthy | running | "" | none) break ;;
+            esac
+            sleep 2
+            elapsed=$((elapsed + 2))
+            if [ "$elapsed" -ge "$timeout_s" ]; then
+                warn "Upgrade: $svc did not become healthy within ${timeout_s}s (status: ${health:-unknown})."
+                return 1
+            fi
+        done
+    done
+    log "All enabled services healthy."
+    return 0
+}
+
+restore_previous_stack() {
+    local name parent prev
+    name=$(basename "$PWD")
+    [[ "$name" =~ ^pithead-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
+    parent=$(dirname "$PWD")
+    [ -L "$parent/current" ] || return 0
+    prev=$(basename "$(readlink "$parent/current")")
+    case "$prev" in '' | "$name") return 0 ;; esac
+    [ -d "$parent/$prev" ] || return 0
+    log "Restoring the previous stack in $prev (current -> still points there)."
+    (cd "$parent/$prev" && docker compose up -d) ||
+        warn "Could not restart the previous stack; $prev holds the rollback images — run ./pithead upgrade there to retry, or fix the new release and run it here."
+}
+
 reconcile_compose_images() {
     local config services svc image cid declared running
     config=$(docker compose config --format json) || return 1
@@ -205,20 +247,11 @@ stack_upgrade() {
             docker compose restart caddy
         fi
     fi
-    update_current_symlink # #455: only a SUCCESSFUL upgrade moves the `current ->` pointer
-    # #33: converge the control-runner units on the current toggle — LAST, and deliberately after
-    # update_current_symlink. #1070: a fresh-dir one-click deploy runs this function from the NEW
-    # version dir while `current ->` still points at the old one, so provisioning it early (where it
-    # used to sit, before the image gate) pointed the units at a directory that had not become the
-    # install yet. Any abort in between — the image gate, a failed pull, a health-gate failure —
-    # then left the path unit watching a spool the running dashboard never writes to, silently
-    # killing the control channel and with it the one-click upgrade that would have fixed it. The
-    # units are host-global and name an absolute path, so the only safe moment to repoint them is
-    # after this dir IS `current`. A failure before here now leaves the old install's units intact
-    # and still serving. Do not move this back above the pull.
-    # `steal`: this dir just became `current`, so repointing the units here is the definition of a
-    # legitimate takeover — the old versioned dir still exists (it is the rollback), and without
-    # the escape the ownership guard would refuse and leave the units on the previous install.
+    if ! wait_services_healthy; then
+        restore_previous_stack
+        error "Upgrade aborted: services failed to become healthy — see the warning above."
+    fi
+    update_current_symlink
     provision_control_runner steal
     provision_egress_check_units steal
     provision_lan_guard_check_units steal

@@ -1811,8 +1811,10 @@ the host, with no SSH:
    [versioned deploy layout](operations.md#the-deploy-box-layout) — a `pithead-vX.Y.Z` install
    dir with its data directories outside it — the bundle is extracted into a fresh sibling
    `pithead-v<new>/`, `config.json`, `.env`, and the control spool are carried over, and the new
-   dir's `./pithead upgrade` runs; on success `current ->` repoints there and the previous dir
-   stays intact as the rollback copy. Any other layout (a plain `pithead/` extract, or data
+   dir's `./pithead upgrade` runs; it waits until the restarted services report healthy, and only
+   then does `current ->` repoint — an image that never becomes healthy aborts the upgrade with the
+   service named, restarts the previous release's stack, and leaves `current ->` where it was, the
+   previous dir intact as the rollback copy. Any other layout (a plain `pithead/` extract, or data
    directories living inside the install dir) gets the bundle extracted in place instead — and
    because no previous dir survives there, the runner first copies `config.json` and `.env` to
    timestamped `.bak-upgrade-*` siblings, refusing to proceed if it cannot; the newest three
