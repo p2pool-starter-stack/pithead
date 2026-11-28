@@ -399,7 +399,9 @@ through `caddy-failure-evidence.sh` for a bounded, allowlisted guest snapshot;
 The opt-in KVM `tor-heal` phase streams `tor-heal-guest.sh` into an isolated guest
 to prove saturated-history recovery and the disabled control with production timers. The
 opt-in KVM `tor-heal-exhausted` phase streams `tor-heal-exhausted-guest.sh` into its own guest
-to prove a spent NEWNYM budget still reaches the state reset on an unsaturated history.
+to prove a spent NEWNYM budget still reaches the state reset on an unsaturated history. The opt-in
+KVM `tor-heal-dropcells` phase streams `tor-heal-dropcells-guest.sh` into its own guest to prove the
+ladder's 60-minute disruptive spacing while circuit-create cells are dropped on an open channel.
 The opt-in KVM `p2pool-heal` phase streams `pool-heal-guest.sh` into a guest to prove the dashboard's
 zero-peer P2Pool restart through the appliance control path; `run-pool-peer-loss.sh` is the `fault-injection` leg that
 cuts a live P2Pool's peers.

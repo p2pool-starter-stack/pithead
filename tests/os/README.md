@@ -67,6 +67,15 @@ the `tor-heal` ladder alone consumes about three and a half hours of the 240-min
 window, and both legs must run to their own bounded end. `selftest-tor-heal-exhausted.sh`
 exercises its wrapper without a guest.
 
+The opt-in `tor-heal-dropcells` phase provisions its own local-node guest and drops the Tor
+container's established-connection data packets with an `nft` forward rule (packets longer than
+400 bytes, so circuit-create cells are lost while keep-alive acknowledgements still pass and the
+guard channel stays open) for 150 minutes (#4280). It requires an open channel and a non-zero drop
+counter, a NEWNYM round, and every pair of disruptive rungs (state reset or Tor restart) at least 60
+minutes apart, then Tor healthy within 30 minutes of lifting the rule. The rule and Tor state are
+restored on exit. Submit it with `--timeout-minutes 240`. `selftest-tor-heal-dropcells.sh`
+exercises its wrapper without a guest.
+
 The provision LAN-guard leg writes the three-switch `./pithead apply -y` output to `lan-guard-apply.log` in the guest's `/data/pithead` and, when the apply fails, prints its last 60 lines (redacted) with the exit code (#4281). `selftest-lan-guard-apply-output.sh` covers that branch without a guest.
 
 Submitting `tor-heal` to bench-ci needs `--timeout-minutes 240`: the ladder runs about three
