@@ -194,6 +194,41 @@ for failures in 1 2; do
 done
 jq -e '.blocking | index("Health probe exceeded its time budget: doctor") != null and index("container dashboard: UNHEALTHY") != null and index("container caddy: certificate restart failed") != null' \
     "$scratch/inflight.json" >/dev/null || fail 'fallback lost its retained cause'
+printf '{"to":"fault"}\n' >"$scratch/inflight.json"
+: >"$BOOT_STATUS_LOG"
+cat >"$scratch/stack/pithead" <<'STUB'
+#!/usr/bin/env bash
+case "$1" in
+doctor) printf '{"checks":[]}\n' ;;
+status) printf '  ⚠ dashboard UNHEALTHY\n' ;;
+esac
+STUB
+(
+    cd "$scratch/stack"
+    BOOT_FAIL_COUNT="$scratch/refused-count"
+    OS_INFLIGHT="$scratch/inflight.json"
+    gate_deadline=$SECONDS
+    gate_timeout_reason=''
+    PITHEAD_REBOOT_CMD=true
+    fail_boot 'the stack never became healthy (serving + doctor + status)' || true
+) >"$scratch/refused.log" 2>&1 || true
+jq -e '.blocking | index("container dashboard: UNHEALTHY") != null' "$scratch/inflight.json" >/dev/null ||
+    fail 'a refused dashboard fault boot recorded no cause'
+(
+    cd "$scratch/stack"
+    gate_deadline=$SECONDS
+    gate_timeout_reason=''
+    gate_probe_header() { :; }
+    gate_url() { printf 'https|localhost|443\n'; }
+    gate_target_url() { printf 'https://localhost/\n'; }
+    gate_resolve_spec() { :; }
+    curl() { printf '200 10'; }
+    gate_tor_transport_verdict() { printf 'wedged\n'; }
+    rauc() { touch "$scratch/late-commit"; }
+    gate_network_advisory_commit && fail 'a late network advisory committed past an unhealthy container'
+    [ ! -e "$scratch/late-commit" ] || fail 'a late network advisory marked the slot good'
+    [ -s "$BOOT_STATUS_LOG" ] || fail 'a late network advisory lost the status log'
+)
 sed -n "/journalctl -u pithead-boot.*| awk '\$/,/^    '; then/p" "$HERE/phases/update-healthgate-leg.sh" | sed '1d;$d' >"$scratch/timing.awk"
 [ -s "$scratch/timing.awk" ] || fail 'the KVM timing verdict was not selected'
 for finish in 970 975 976 9 missing; do
