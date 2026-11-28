@@ -107,7 +107,11 @@ sed -i.bak '/CircuitBuildTimeBin/d' "$WORK/tor/state"
 rm -f "$WORK/tor/state.bak"
 ln -s state "$WORK/tor/linked"
 if tor_recovery_signature "$WORK/tor/linked" "$bad" "$bad"; then exit 1; fi
+sudo() { printf x >>"$WORK/sudo-calls"; "$@"; }
+: >"$WORK/sudo-calls"
 tor_recovery_state_saturated "$WORK/tor/state"
+[ "$(wc -c <"$WORK/sudo-calls" | tr -d ' ')" = 1 ]
+sudo() { "$@"; }
 mkdir -p "$WORK/sat/folder"
 mkfifo "$WORK/sat/fifo" "$WORK/sat/fed"
 for path in tor/linked sat/folder sat/missing; do if tor_recovery_state_saturated "$WORK/$path"; then exit 1; fi; done
