@@ -130,6 +130,19 @@ build_rootfs_image() {
     fi
 }
 
+capture_packages() {
+    [ "$DRY_RUN" -eq 1 ] && return 0
+    local suffix ref out="$WORKDIR/os-packages.txt"
+    : >"$out"
+    for suffix in "${PUBLISHED_IMAGES[@]}"; do
+        ref="$(get_digest "$suffix")"
+        log "Recording installed OS packages of $ref"
+        bash "$RELEASE_LIB_DIR/capture-packages.sh" "$suffix" "$ref" >>"$out" ||
+            die "Could not record the installed OS packages of $ref."
+    done
+    ok "Recorded $(wc -l <"$out" | tr -d ' ') installed OS packages across ${#PUBLISHED_IMAGES[@]} images."
+}
+
 # --- Stage 4: stage (push to the RC tag, capture digests) -----------------------------------------
 
 stage_push() {

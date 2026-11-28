@@ -86,6 +86,17 @@ to `data/control/results/egress-status.json`. The dashboard reads that file:
   badge warn that the state is unverified, and no alert goes out. A malformed file never reads as
   enforced.
 
+The same file carries the log-only host egress audit counters. The dashboard serves them at
+`GET /api/system/egress-audit` and in `/api/state` as `egress_audit`:
+`{loaded, would_drop, counters, host_violations, unmonitored}`. `loaded` is true only when the audit
+table is present and the check is fresh. `host_violations` equals `would_drop`, the packets that hit the
+audit gate outside the allowlist in `data/egress-map.tsv`. When the table is not loaded (a DIY host
+without it, a missing file, or a check older than six minutes) `unmonitored` is true and the panel says
+host traffic is not observed. The **Stack Topology & Egress** panel draws three host-OS nodes (time
+sync, OS and release fetches, image pulls) outside the stack. Their edges show as allowlisted clearnet
+when the audit is loaded and as Unverified otherwise, never as Tor. A violation count above zero shows a
+warning and does not change the summary line.
+
 Opting out with `network.tor_egress_firewall: false` removes the timer. If a removal step fails
 (stopping the timer, deleting its unit files, or reloading systemd), `apply` names the step and
 does not report the timer removed, and `uninstall` exits non-zero instead of printing
@@ -203,12 +214,21 @@ What the running stack sends to the internet, connection by connection.
 | Dashboard **Healthchecks** ping (#79) | `hc-ping.com` (or self-hosted) | nothing about you — the endpoint sees a **Tor exit**, not your IP | ✅ **always** Tor (`socks5h`) | opt-in (set `healthchecks.ping_url`; off until set) | the ping URL must be Tor-reachable (hosted, public, or an onion self-hosted instance) — there is no clearnet mode |
 | Dashboard **price feed** (#520) | `api.coingecko.com` | nothing about you — CoinGecko sees a **Tor exit**, not your IP | ✅ **always** Tor (`socks5h`) | **off** | opt-in (`dashboard.energy.price_feed: true`); fetches the XMR + XTM spot prices every 15 min; fails silently, static config prices are the fallback |
 | Dashboard **Tor egress probe** (#424) | `www.google.com/generate_204` and `www.cloudflare.com/cdn-cgi/trace` | No account identifier; each endpoint sees a distinct Tor exit circuit, not your IP | ✅ **always** Tor (`socks5h` with a fresh SOCKS username) | **off** | Opt-in (`tor.auto_heal: true`); failed egress is corroborated on a second circuit and target. Bounded NEWNYM requests precede a host-gated state reset and then one possible Tor restart. The reset backs up state and resets guards only with a reset reason, corroborating evidence, onion identity checks, the mutation lock and a six-hour cooldown. DIY stays opt-in; appliances enable auto-heal when absent. |
-| Dashboard **Tari explorer reference** (#2464) | `textexplore.tari.com` (or `tari.explorer_url`) | nothing about you — the explorer sees a **Tor exit**, not your IP, and the request carries no address or height | ✅ **always** Tor (`socks5h`) | **on** while Tari is local or remote | once an hour; the explorer's tip is the one height that is not your node's own opinion, so it is what catches a node on a dead fork. A blank `tari.explorer_url` turns it off; a failed fetch contributes nothing to the verdict |
+| Dashboard **Tari explorer reference** (#2464) | `textexplore.tari.com` (or `tari.explorer_url`) | nothing about you — the explorer sees a **Tor exit**, not your IP, and the request carries no address or height | ✅ **always** Tor (`socks5h`) | **on** while Tari is local or remote | once an hour; the explorer's tip is the one height that is not your node's own opinion, so it is what catches a node on a dead fork. A blank `tari.explorer_url` turns it off; a failed fetch keeps the last good tip for up to two intervals (then drops it), so a retained tip still contributes but never produces a false red |
 | **Webhook / ntfy** alert sinks (#380) | your configured URLs | alert texts; the endpoint sees a **Tor exit**, not your IP | ✅ Tor (`socks5h`) by default | opt-in (set `notifications.webhooks` / `notifications.ntfy.url`; off until set) | `notifications.tor: false` is the LAN carve-out (Tor exits can't reach private addresses) — with it, a **clearnet** endpoint sees your host IP on every alert |
 
 `socks5h` (used for the XvB stats fetch) routes DNS resolution through Tor too, so the hostname isn't
 resolved on the clearnet either. The host-networked dashboard reaches the bridge's Tor SOCKS at
 `172.28.0.25:9050`.
+
+The shared HTTP helper refuses to connect directly (#4146): unless the URL's host is a private IP
+literal — loopback, RFC 1918, link-local, CGNAT `100.64.0.0/10`, IPv6 `::1`, or ULA `fc00::/7` — the
+request must carry a usable proxy for its scheme, and the refusal raises before any socket opens. A
+hostname is never a private literal; it can't be proven private without a DNS lookup. An IPv4-mapped
+IPv6 literal is judged by its embedded IPv4 address. A call without a proxy for both `http` and `https`
+never follows redirects, so a redirect cannot leave the proxy. `TOR_SOCKS_PROXY`
+is a required setting: with it empty or unset the dashboard refuses to start, and every Tor-routed
+fetch above reports a failure instead of silently reaching the endpoint over the host IP.
 
 A remote node given as a hostname (`monero.remote.host` or `tari.remote.host`) is the exception:
 p2pool's socat bridge (above) only moves the TCP connection itself off the SOCKS5 proxy, so the

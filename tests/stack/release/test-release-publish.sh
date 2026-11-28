@@ -161,6 +161,7 @@ gate_order="$SANDBOX/gate-order"
     build_images() { printf 'build\n' >>"$gate_order"; }
     stage_push() { :; }
     smoke_test() { :; }
+    capture_packages() { :; }
     promote() { printf 'promote\n' >>"$gate_order"; }
     sign_images() { :; }
     publish() { :; }

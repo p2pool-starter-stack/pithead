@@ -15,14 +15,9 @@ from mining_dashboard.config.config import (
     TIER_DEFAULTS,
 )
 from mining_dashboard.service.mining_store import MiningStoreMixin
+from mining_dashboard.service.row_order import RowOrder
 from mining_dashboard.service.storage_schema import StorageSchemaMixin
-
-# The append-only telemetry series lives in telemetry_store.py (#1369) — a MIXIN, so StateManager
-# below keeps one DB handle, one lock and one transaction scope. Both retention constants are
-# re-exported here rather than merely moved: `storage_service.XVB_HISTORY_RETENTION_SEC` and
-# `...NETWORK_HISTORY_RETENTION_SEC` were public module attributes before the split and importers
-# (tests included) bind them from this module, so the import surface must not change.
-from mining_dashboard.service.telemetry_store import (  # noqa: F401 — re-export, see above
+from mining_dashboard.service.telemetry_store import (  # noqa: F401
     NETWORK_HISTORY_RETENTION_SEC,
     XVB_HISTORY_RETENTION_SEC,
     TelemetryStoreMixin,
@@ -89,10 +84,10 @@ class StateManager(
 
     def __init__(self, db_path: str = None):
         self.logger = logging.getLogger("StateManager")
-        # Default to the configured path; tests inject a temp file or ":memory:".
         self.db_path = db_path if db_path is not None else DB_FILE_PATH
+        self._order = RowOrder()
         self._lock = threading.Lock()
-        self._db_lock = threading.Lock()  # Lock for serializing DB access
+        self._db_lock = threading.Lock()
         self.state = {
             "hashrate_history": deque(),
             "shares": [],
@@ -302,13 +297,10 @@ class StateManager(
             self.add_share(round(latest_ts - 0.001 * (count - 1 - i), 3), difficulty)
 
     def get_shares(self) -> list[dict[str, Any]]:
-        """Returns a copy of the shares history."""
         with self._lock:
-            return list(self.state.get("shares", []))
+            return self._order.view("shares", "ts", self.state.get("shares", []))
 
     def add_event(self, ts: float, event_type: str, detail: str = "") -> None:
-        """Record a chart event marker (#99) — a degradation/recovery point the chart draws and the
-        history window prunes, mirroring shares. Persisted so it survives a dashboard restart."""
         with self._lock:
             self.state.setdefault("events", []).append(
                 {"ts": ts, "type": event_type, "detail": detail}
@@ -373,17 +365,10 @@ class StateManager(
             self._db_error("Share Stats Insert Error", e)
 
     def get_share_stats(self) -> list[dict[str, Any]]:
-        """Returns a copy of the per-poll share-health deltas (#116)."""
         with self._lock:
-            return list(self.state.get("share_stats", []))
+            return self._order.view("share_stats", "ts", self.state.get("share_stats", []))
 
     def _recover_corrupt_db(self, reason: str):
-        """Quarantine a corrupt DB file and rebuild an empty schema so persistence resumes (#489).
-
-        The bad file is renamed to ``<db>.corrupt-<UTC>`` (kept for post-mortem, oldest pruned) rather
-        than deleted, and a fresh DB takes its place. Bumps ``db_reset_count`` so the alerter tells the
-        operator history was reset. A ``:memory:`` DB has no file to quarantine — it just rebuilds. On
-        any failure here the DB stays flagged unhealthy (the #131 badge) rather than crashing."""
         stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
         quarantine = None
         try:
@@ -763,12 +748,10 @@ class StateManager(
             return None
 
     def get_history(self) -> list[dict[str, Any]]:
-        """Returns a copy of the hashrate history."""
         with self._lock:
-            return list(self.state["hashrate_history"])
+            return self._order.view("hashrate_history", "timestamp", self.state["hashrate_history"])
 
     def get_tiers(self) -> dict[str, Any]:
-        """Returns a copy of the donation tiers configuration."""
         with self._lock:
             return self.state["tiers"].copy()
 

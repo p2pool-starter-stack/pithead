@@ -24,6 +24,7 @@ from mining_dashboard.config.config import (
     monero_is_local,
     tari_is_local,
 )
+from mining_dashboard.helper.time_rows import window_rows
 from mining_dashboard.helper.utils import (
     DEFAULT_PPLNS_WINDOW,
     get_tier_info,
@@ -265,20 +266,13 @@ def build_metrics(latest_data, state_mgr, history=None):
 
 
 def _avg_p2pool_over_window(history, window_seconds):
-    """Time-weighted P2Pool hashrate over the trailing window, from DB history.
-
-    Averages the per-sample ``v_p2pool`` for samples within the window. Samples are written at
-    a fixed cadence, so a simple mean approximates a time-weighted average. Mirrors the chart's
-    legacy-data fallback: rows predating the p2pool/xvb split (v_p2pool == v_xvb == 0 but
-    v > 0) count as P2Pool. (Issue #27)
-    """
     if not history:
         return 0.0
 
     cutoff = time.time() - window_seconds
     total = 0.0
     count = 0
-    for x in history:
+    for x in window_rows(history, "timestamp", cutoff):
         if x.get("timestamp", 0) < cutoff:
             continue
         vp = x.get("v_p2pool", 0) or 0
@@ -293,20 +287,13 @@ def _avg_p2pool_over_window(history, window_seconds):
 
 
 def _avg_xvb_over_window(history, window_seconds):
-    """Time-weighted XvB *routed* hashrate over the trailing window, from DB history (#156).
-
-    Mirrors :func:`_avg_p2pool_over_window` but sums ``v_xvb`` — what the proxy actually routed to
-    XvB per sample — over the same in-window samples, so XvB-routed + P2Pool-routed average to the
-    total. No legacy fallback: rows predating the p2pool/xvb split count as P2Pool (their ``v_xvb``
-    is 0), which correctly reads XvB-routed as 0 for that old data.
-    """
     if not history:
         return 0.0
 
     cutoff = time.time() - window_seconds
     total = 0.0
     count = 0
-    for x in history:
+    for x in window_rows(history, "timestamp", cutoff):
         if x.get("timestamp", 0) < cutoff:
             continue
         total += x.get("v_xvb", 0) or 0
@@ -349,15 +336,9 @@ def _monero_mode():
 
 
 def share_reject_pct(rows, window_sec, now=None):
-    """Trailing reject rate (percent) from the per-poll share-health deltas (#116).
-
-    ``rows`` are StateManager.get_share_stats() rows (per-interval deltas, ts-keyed). Sums the
-    accepted/rejected deltas over the trailing ``window_sec`` and returns
-    ``rejected / (accepted + rejected) * 100``, or ``None`` when the window has no submitted
-    shares (proxy idle or held) — callers must not read that as 0% healthy."""
     cutoff = (now if now is not None else time.time()) - window_sec
     accepted = rejected = 0
-    for r in rows:
+    for r in window_rows(rows, "ts", cutoff):
         if r["ts"] >= cutoff:
             accepted += r.get("accepted", 0) or 0
             rejected += r.get("rejected", 0) or 0

@@ -7,7 +7,13 @@ from typing import Any
 import requests
 
 from mining_dashboard.config.config import TOR_SOCKS_PROXY, XVB_SUBMIT_URL
-from mining_dashboard.helper.http import bounded_get, request_failure_class
+from mining_dashboard.helper.http import (
+    PROXY_PURPOSE_DASHBOARD,
+    bounded_get,
+    proxy_map,
+    purpose_proxy,
+)
+from mining_dashboard.helper.http import request_failure_class as failure_class
 from mining_dashboard.helper.utils import parse_hashrate, plausible_rate
 
 # The four donor tiers XvB publishes an expected per-player reward for. These are exactly the tier
@@ -207,9 +213,7 @@ class XvbClient:
 
         params = {"address": self.wallet_address}
 
-        # Route through Tor (socks5h) so xmrvsbeast sees a Tor exit, not the operator's home IP —
-        # the request carries the wallet, so a clearnet fetch would correlate IP <-> wallet (#163).
-        proxies = {"http": self.tor_proxy, "https": self.tor_proxy} if self.tor_proxy else None
+        proxies = self._proxies()
         try:
             response = bounded_get(self.url, params=params, timeout=20, proxies=proxies)
             if response.status_code == 200:
@@ -220,10 +224,10 @@ class XvbClient:
                 )
                 return None
         except requests.RequestException as e:
-            self.logger.error(f"Network error while fetching XvB stats: {request_failure_class(e)}")
+            self.logger.error(f"Network error while fetching XvB stats: {failure_class(e)}")
             return None
         except Exception as e:
-            self.logger.error(f"Unexpected error in XvB client: {e}")
+            self.logger.error(f"Unexpected error in XvB client: {failure_class(e)}")
             return None
 
     def get_reward_estimates(self) -> dict[str, float] | None:
@@ -234,7 +238,7 @@ class XvbClient:
         contract as ``get_stats`` (the caller writes nothing on None, so a stale/failed fetch can be
         detected via a frozen ``last_update`` and never implied fresh, #311).
         """
-        proxies = {"http": self.tor_proxy, "https": self.tor_proxy} if self.tor_proxy else None
+        proxies = self._proxies()
         try:
             response = bounded_get(self.reward_estimate_url, timeout=20, proxies=proxies)
             if response.status_code != 200:
@@ -251,11 +255,11 @@ class XvbClient:
             return estimates
         except requests.RequestException as e:
             self.logger.error(
-                f"Network error while fetching XvB reward estimates: {request_failure_class(e)}"
+                f"Network error while fetching XvB reward estimates: {failure_class(e)}"
             )
             return None
         except Exception as e:
-            self.logger.error(f"Unexpected error fetching XvB reward estimates: {e}")
+            self.logger.error(f"Unexpected error fetching XvB reward estimates: {failure_class(e)}")
             return None
 
     def get_recent_wins(self) -> dict[str, Any] | None:
@@ -274,7 +278,7 @@ class XvbClient:
             self.logger.warning("Configuration Error: MONERO_WALLET_ADDRESS is missing or invalid.")
             return None
 
-        proxies = {"http": self.tor_proxy, "https": self.tor_proxy} if self.tor_proxy else None
+        proxies = self._proxies()
         try:
             response = bounded_get(self.winners_url, timeout=20, proxies=proxies)
             if response.status_code != 200:
@@ -287,12 +291,10 @@ class XvbClient:
                 "round_stats": parse_round_stats(response.text),
             }
         except requests.RequestException as e:
-            self.logger.error(
-                f"Network error while fetching XvB winners: {request_failure_class(e)}"
-            )
+            self.logger.error(f"Network error while fetching XvB winners: {failure_class(e)}")
             return None
         except Exception as e:
-            self.logger.error(f"Unexpected error fetching XvB winners: {e}")
+            self.logger.error(f"Unexpected error fetching XvB winners: {failure_class(e)}")
             return None
 
     def register(self):
@@ -330,10 +332,7 @@ class XvbClient:
 
         params = {"address": self.wallet_address}
 
-        # Same Tor routing as the stats fetch: socks5h so xmrvsbeast sees a Tor exit (not the
-        # operator's home IP) and the host is resolved over Tor too. The request carries the full
-        # wallet, so a clearnet call would correlate IP <-> wallet (#163).
-        proxies = {"http": self.tor_proxy, "https": self.tor_proxy} if self.tor_proxy else None
+        proxies = self._proxies()
         try:
             response = bounded_get(self.submit_url, params=params, timeout=20, proxies=proxies)
             body = (response.text or "").strip()
@@ -364,13 +363,14 @@ class XvbClient:
             )
             return REG_ERROR
         except requests.RequestException as e:
-            self.logger.error(
-                f"Network error while registering with XvB: {request_failure_class(e)}"
-            )
+            self.logger.error(f"Network error while registering with XvB: {failure_class(e)}")
             return REG_ERROR
         except Exception as e:
-            self.logger.error(f"Unexpected error during XvB registration: {e}")
+            self.logger.error(f"Unexpected error during XvB registration: {failure_class(e)}")
             return REG_ERROR
+
+    def _proxies(self):
+        return proxy_map(self.tor_proxy and purpose_proxy(self.tor_proxy, PROXY_PURPOSE_DASHBOARD))
 
     def _average(self, regex, html_text):
         match = regex.search(html_text)
