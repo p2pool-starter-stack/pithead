@@ -75,7 +75,7 @@ CFG='{"tari":{"view_key":"k","payout_scan_birthday":"1425"}}'
 ST='{"earnings":{"tari_confirmed":{"enabled":true,"count":0}}}'
 LOCAL_ARGV="minotari_console_wallet --birthday 1425 -p wallet.http_server_url=http://172.28.0.27:9000 -p wallet.fallback_http_server_url=http://172.28.0.27:9000"
 
-run_leg() { # <argv> -> "<pass> <fail> <skipped>" added by one leg run
+run_leg() {
     local p0=$IT_PASS f0=$IT_FAIL s0=$IT_SKIPPED_LEGS
     STUB_ARGV="$1"
     assert_tari_payout_scan "$CFG" "$ST" >"$STUB_OUT" 2>&1
