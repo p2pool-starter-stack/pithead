@@ -124,6 +124,7 @@ check_has "another signature failure still returns the delete verdict" "$out" "r
 
 out=$(run_cli PITHEAD_RAUC_KEYRING_FILE="$tmp/missing.pem" PITHEAD_CLOCK_EPOCH="$PAST")
 check_lacks "an unreadable keyring sets no floor and leaves the verdict to rauc" "$out" "clock reads"
+check_lacks "an unreadable keyring does not trip the abort trap" "$out" "aborted unexpectedly"
 
 mkdir -p "$tmp/ca/new"
 : >"$tmp/ca/index.txt"
