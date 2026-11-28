@@ -62,9 +62,19 @@ em_overlap="$(awk -F '\t' '
 assert_eq "no port is both allowlisted and an operator choice, so the host counters never double-subtract" "$em_overlap" ""
 
 em_keys="$(awk -F '\t' 'NR > 1 && NF == 8 && $8 ~ /choice:/ { split($8, a, " "); sub(/^choice:/, "", a[1]); print a[1] }' "$EGRESS_MAP" | sort -u)"
-em_switches="$(sed -n '/^tor_egress_choice_active()/,/^    esac/p' "$ROOT/lib/pithead/02b-tor-egress-apply.sh" | grep -oE '^    [a-z]+\)' | tr -cd 'a-z\n' | sort -u)"
+em_holes="$(
+    awk '/^tor_egress_choice_active\(\)/ { arm = 1 }
+        arm && /^    [a-z0-9]+\)/ { s = $1; sub(/\)/, "", s); print s }
+        arm && /^    esac/ { arm = 0 }' "$ROOT/lib/pithead/02b-tor-egress-apply.sh"
+    awk '/^host_egress_audit_choices\(\)/ { on = 1 }
+        on && /c="/ { n = split($0, q, "\""); m = split(q[n - 1], t, " "); if (m >= 1 && t[m] ~ /^[a-z0-9]+$/) print t[m] }
+        on && /^}/ { on = 0 }' "$ROOT/lib/pithead/02f-host-egress-audit.sh"
+)"
+em_holes="$(printf '%s\n' "$em_holes" | grep . | sort -u)"
 assert_eq "every clearnet hole the firewall can open has a choice row, so a chosen path can never read as a leak" \
-    "$(comm -23 <(printf '%s\n' "$em_switches") <(printf '%s\n' "$em_keys"))" ""
+    "$(comm -23 <(printf '%s\n' "$em_holes") <(printf '%s\n' "$em_keys"))" ""
+assert_eq "every choice row names a hole the firewall can open, so no row hides a class nothing counts" \
+    "$(comm -23 <(printf '%s\n' "$em_keys") <(printf '%s\n' "$em_holes"))" ""
 
 em_missing="$(awk -F '\t' 'NR > 1 && NF == 8 && $7 != "none" { print $7 }' "$EGRESS_MAP" 2>/dev/null | sort -u | while IFS= read -r em_path; do
     [ -n "$em_path" ] && [ ! -e "$ROOT/$em_path" ] && printf '%s\n' "$em_path"
