@@ -115,18 +115,19 @@ verify_release_images() {
 }
 
 wait_services_healthy() {
-    local line svc health sp timeout_s elapsed cid
+    local line svc health sp iv rt timeout_s elapsed cid
     for svc in dashboard p2pool tor; do
         cid=$(docker compose ps -a -q "$svc" 2>/dev/null) || continue
         [ -n "$cid" ] || continue
         elapsed=0
         while true; do
-            line=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}} {{if .Config.Healthcheck}}{{.Config.Healthcheck.StartPeriod.Seconds}}{{else}}0{{end}}' "$cid" 2>/dev/null) ||
+            line=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}} {{if .Config.Healthcheck}}{{.Config.Healthcheck.StartPeriod.Seconds}} {{.Config.Healthcheck.Interval.Seconds}} {{.Config.Healthcheck.Retries}}{{else}}0 0 0{{end}}' "$cid" 2>/dev/null) ||
                 break
-            health=${line%% *}
-            sp=${line##* }
+            read -r health sp iv rt <<<"$line"
             case "$sp" in '' | *[!0-9]*) sp=0 ;; esac
-            timeout_s=$((sp + 60))
+            case "$iv" in '' | *[!0-9]*) iv=0 ;; esac
+            case "$rt" in '' | *[!0-9]*) rt=0 ;; esac
+            timeout_s=$((sp + iv * rt + 60))
             [ "$timeout_s" -lt 120 ] && timeout_s=120
             case "$health" in
             healthy | running | "" | none) break ;;
@@ -134,13 +135,27 @@ wait_services_healthy() {
             sleep 2
             elapsed=$((elapsed + 2))
             if [ "$elapsed" -ge "$timeout_s" ]; then
-                error "Upgrade: $svc did not become healthy within ${timeout_s}s (status: ${health:-unknown})."
+                warn "Upgrade: $svc did not become healthy within ${timeout_s}s (status: ${health:-unknown})."
                 return 1
             fi
         done
     done
     log "All enabled services healthy."
     return 0
+}
+
+restore_previous_stack() {
+    local name parent prev
+    name=$(basename "$PWD")
+    [[ "$name" =~ ^pithead-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
+    parent=$(dirname "$PWD")
+    [ -L "$parent/current" ] || return 0
+    prev=$(basename "$(readlink "$parent/current")")
+    case "$prev" in '' | "$name") return 0 ;; esac
+    [ -d "$parent/$prev" ] || return 0
+    log "Restoring the previous stack in $prev (current -> still points there)."
+    (cd "$parent/$prev" && docker compose up -d) ||
+        warn "Could not restart the previous stack; $prev holds the rollback images — run ./pithead upgrade there to retry, or fix the new release and run it here."
 }
 
 reconcile_compose_images() {
@@ -233,8 +248,8 @@ stack_upgrade() {
         fi
     fi
     if ! wait_services_healthy; then
-        error "Upgrade aborted: one or more services failed to become healthy."
-        return 1
+        restore_previous_stack
+        error "Upgrade aborted: services failed to become healthy — see the warning above."
     fi
     update_current_symlink
     provision_control_runner steal
