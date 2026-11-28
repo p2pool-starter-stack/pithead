@@ -338,7 +338,7 @@ export class WorkerInspect extends Component {
             ${!busy && this.isDirty() ? html`<p class="text-muted text-xs">Unsaved — Apply before closing, or the change is lost.</p>` : null}
             <${StatusLine} result=${result} />`
                 : detail.control_enabled
-                  ? html`<${AdoptRigForm} name=${this.props.name} ip=${detail.ip} onAdopted=${() => this.load()} />`
+                  ? html`<${AdoptRigForm} name=${this.props.name} ip=${detail.ip} rigId=${detail.rig_id} onAdopted=${() => this.load()} />`
                   : html`<p class="text-muted text-small">Config editing is off. Enable dashboard.control (which needs a dashboard password) to edit a rig's config.</p>`
             }
 

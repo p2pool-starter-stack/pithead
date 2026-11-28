@@ -86,6 +86,13 @@ def test_populated_legacy_workers_replace_an_empty_canonical_default_and_drop_un
     ]
 
 
+def test_prepare_config_keeps_the_rig_id_descriptor_field():
+    entry = {"name": "shed", "host": "rig.local", "rig_id": "0a1b2c3d4e5f60718293a4b5c6d7e8f9"}
+    prepared, changes = prepare_config({"workers": {"list": [entry]}}, REFERENCE)
+    assert prepared["workers"]["list"] == [entry]
+    assert changes == []
+
+
 @pytest.mark.parametrize("malformed", [{}, 0])
 def test_malformed_legacy_workers_reach_the_host_type_guard(malformed):
     prepared, _changes = prepare_config(

@@ -273,13 +273,13 @@ carries a control token:
 — its API is on a different port, on another interface than the address it mines from (NAT,
 multi-homed), or carries its own read-only probe credential — override just that rig with
 [`workers.list`](configuration.md#configuration-reference), a list of
-`{name, host?, port?, api_token?, token?, watts?, control_port?}` objects. Every field but `name` is optional:
+`{name, host?, port?, api_token?, token?, watts?, control_port?, rig_id?}` objects. Every field but `name` is optional:
 
 ```jsonc
 // config.json — the rest of the fleet keeps the workers.* defaults
 "workers": {
     "list": [
-        { "name": "rig-01", "port": 18080 },
+        { "name": "rig-01", "port": 18080, "rig_id": "0a1b2c3d4e5f60718293a4b5c6d7e8f9" },
         { "name": "rig-02", "host": "10.0.0.9", "api_token": "read-only-probe-secret" }
     ]
 }
@@ -351,11 +351,16 @@ pointed at a pool with no IPv4 address (an onion address) renders with control o
 on. The appliance's built-in miner (the **Pithead + RigForge** choice) still ships without
 control: it sits on the same machine as the dashboard.
 
-Entries are matched by `name` — the rig's stratum worker name (the part before any `+` suffix).
-On a name miss the dashboard falls back to matching by the rig's connecting IP against an
-operator-set `host`, which covers a rig that renamed itself but still connects from its declared
-address. Duplicate names are legal but only the first-declared entry wins, so **renaming a rig means
-updating its entry** here.
+Entries are matched by `rig_id` first, then `name`, then IP. A match on `rig_id` — the rig's
+32-character lowercase hex identity id, which the rig's RigForge feed reports and adoption records —
+wins over the other two whenever both the feed and the entry carry an id, so a renamed rig keeps its
+record. `name` is the rig's stratum worker name (the part before any `+` suffix); on a miss the
+dashboard falls back to matching the rig's connecting IP against an operator-set `host`. A name or IP
+match whose id differs from the entry's never adopts that record: the row surfaces as an *identity
+change* instead of being silently taken over. The id is a lookup hint only — it authenticates
+nothing, and a rig claiming an unknown id answers exactly like a rig whose feed carries none.
+Duplicate names are legal but only the first-declared entry wins, so **renaming a rig means
+updating its entry** here — unless adoption recorded its `rig_id`, which survives the rename.
 
 `host` exists for the case where a rig's API isn't reachable at the address it mines from. It must
 be set by you in `config.json` and is never taken from anything a miner advertises: the dashboard
@@ -372,7 +377,9 @@ at all.
 A [RigForge](https://github.com/p2pool-starter-stack/rigforge) rig also serves an enriched read API
 on port `8081`: the same `/1/summary` the dashboard already polls, plus a `rigforge` block carrying
 the rig's RigForge version, tuning state, power draw and efficiency, CPU/firmware health, and
-watchdog temperatures. Point that rig's descriptor `port` at it to pick the block up:
+watchdog temperatures — and, on current RigForge, the appliance `os_version`, the rig's identity
+`rig_id`, and display-only hardware hints (MAC prefix, board UUID, CPU model) on authenticated
+reads. Point that rig's descriptor `port` at it to pick the block up:
 
 ```jsonc
 "workers": {
@@ -386,7 +393,13 @@ Nothing else changes — the enriched feed is a superset, so uptime and per-mine
 the same response. The dashboard then shows attention and live chips (alarm states, power, temperature) in the list and
 the full health/power/tune/watchdog detail in Worker Inspect for that rig (see
 [Dashboard › Workers Alive](dashboard.md#workers-alive)). A plain-xmrig rig
-on `8080` sends no `rigforge` block and reads exactly as before — no chips, no error. The feed is
+on `8080` sends no `rigforge` block and reads exactly as before — no chips, no error. The same is
+true of any of the new fields individually: an older RigForge reports no `rig_id` or `os_version`,
+and an identity probe that found nothing reports a null hint (the hints are display-only — nothing
+authenticates from them); each absence is *unknown*, never an error. Each worker response is read
+under a fixed 1 MiB ceiling — measured well above the largest legitimate `/1/summary` — so an
+out-sized reply fails that one worker's probe (with one rate-limited log line) instead of the
+whole poll. The feed is
 open when the rig has no `ACCESS_TOKEN`. For an adopted token-protected rig, RigForge 1.17.2 or
 newer accepts the read-only bearer Pithead derives; an older release needs a RigForge upgrade before
 it can enrich (through Worker Inspect where remote upgrades are enabled, or locally otherwise). The

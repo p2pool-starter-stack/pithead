@@ -20,6 +20,7 @@ from mining_dashboard.service.workers.worker_adopt import (
     FLEET_API_PORT_ERROR,
     HOST_RE,
     NAME_RE,
+    RIG_ID_RE,
     TOKEN_RE,
     host_is_internal,
     new_worker_entries,
@@ -55,6 +56,17 @@ def test_regexes_have_no_intra_repo_drift():
     assert NAME_RE.pattern == r"^[!-~]{1,128}$"
     assert TOKEN_RE.pattern == r"^[!-~]{1,128}$"
     assert HOST_RE.pattern == r"^[A-Za-z0-9._-]{1,253}$"
+
+
+def test_rig_id_regex_has_no_intra_repo_drift():
+    from pathlib import Path
+
+    here = Path(__file__).resolve()
+    pithead_path = next((p / "pithead" for p in here.parents if (p / "pithead").is_file()), None)
+    if pithead_path is None:
+        pytest.skip("pithead CLI not present in this test context (dashboard-only image)")
+    assert 'test("^[0-9a-f]{32}$")' in pithead_path.read_text()
+    assert RIG_ID_RE.pattern == r"^[0-9a-f]{32}$"
 
 
 class TestValidateWorkerDescriptor:
@@ -363,3 +375,21 @@ class TestFleetApiPort:
     )
     def test_invalid_refused(self, port):
         assert validate_fleet_api_port({"workers": {"api_port": port}}) == FLEET_API_PORT_ERROR
+
+
+class TestRigIdEntry:
+    RIG_ID = "0a1b2c3d4e5f60718293a4b5c6d7e8f9"
+
+    def test_valid_rig_id_accepted(self):
+        assert validate_worker_descriptor({**VALID_ENTRY, "rig_id": self.RIG_ID}) == ""
+
+    @pytest.mark.parametrize("bad", ["", "   ", "0" * 31, "0" * 33, "A" * 32, "g" * 32, None, 123])
+    def test_malformed_rig_id_refused(self, bad):
+        assert "rig_id" in validate_worker_descriptor({**VALID_ENTRY, "rig_id": bad})
+
+    def test_bad_rig_id_refused_through_the_fleet_gate(self):
+        rig2 = {"name": "rig2", "host": "10.0.0.10", "token": "tok-456", "rig_id": "nope"}
+        live = {"workers": {"list": [VALID_ENTRY]}}
+        staged = {"workers": {"list": [VALID_ENTRY, rig2]}}
+        err = validate_new_worker_entries(live, staged)
+        assert "rig_id" in err and "rig2" in err

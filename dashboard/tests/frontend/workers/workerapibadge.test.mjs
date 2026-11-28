@@ -92,3 +92,33 @@ test("the neutral variant the badge asks for is a real stylesheet rule, not an i
   const css = readStylesheet(new URL("../../../mining_dashboard/web/static/dashboard.css", import.meta.url));
   assert.match(css, /^\.badge-outline \{$/m);
 });
+
+function withIdentity({ identity_change, control = false }) {
+  const s = clone();
+  Object.assign(s.workers[0], { api_ok: true, adopted: false, identity_change });
+  s.control_enabled = control;
+  return renderApp({ state: s });
+}
+
+test("a rig reporting a rig_id that differs from its record badges identity changed", () => {
+  const html = withIdentity({ identity_change: true, control: true });
+  assert.match(html, /identity changed/);
+  assert.doesNotMatch(html, /not adopted/);
+  assert.doesNotMatch(html, /api ⚠/);
+  const m = html.match(
+    /<button type="button" class="badge badge-bad" title="([^"]*)">identity changed<\/button>/,
+  );
+  assert.ok(m, "control on: an identity change must be a keyboard-reachable button");
+  assert.match(m[1], /rig_id/);
+  assert.match(m[1], /lookup hint only/);
+});
+
+test("with control OFF the identity change still surfaces, as a span", () => {
+  const html = withIdentity({ identity_change: true });
+  assert.match(html, /<span class="badge badge-bad" title="[^"]*">identity changed<\/span>/);
+});
+
+test("a matching identity changes nothing about the badge", () => {
+  const html = withIdentity({ identity_change: false, control: true });
+  assert.doesNotMatch(html, /identity changed/);
+});

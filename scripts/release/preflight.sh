@@ -2,52 +2,57 @@
 
 LINT_TOOLCHAIN=(shellcheck shfmt node npx uv uvx go)
 GO_MIN_MINOR=21
-BENCH_TIER4_CONTEXT="bench-ci/tier4"
 
-bench_tier4_reject() {
+fail_release_status_gate() {
     [ "$DRY_RUN" -eq 1 ] || die "$@"
     warn "$* [--dry-run: continuing]"
 }
 
-require_bench_tier4() {
-    local app_id statuses state slug="${BENCH_CI_APP_SLUG:-}" expected="${BENCH_CI_APP_ID:-}"
+require_release_status_gate() {
+    local context="${RELEASE_REQUIRED_STATUS_CONTEXT:-}" app_id statuses state
+    local slug="${RELEASE_REQUIRED_STATUS_APP_SLUG:-}" expected="${RELEASE_REQUIRED_STATUS_APP_ID:-}"
+    if [ -z "$context" ] && [ -z "$expected" ] && [ -z "$slug" ]; then
+        log "Release status gate skipped: RELEASE_REQUIRED_STATUS_CONTEXT, RELEASE_REQUIRED_STATUS_APP_ID and RELEASE_REQUIRED_STATUS_APP_SLUG are not set."
+        return 0
+    fi
+    if [ -z "$context" ]; then
+        fail_release_status_gate "RELEASE_REQUIRED_STATUS_CONTEXT must name the required commit-status context when the gate is enabled."
+        return 0
+    fi
     if ! command -v gh >/dev/null 2>&1; then
-        bench_tier4_reject "gh is required to read the $BENCH_TIER4_CONTEXT status for release commit $GIT_COMMIT."
+        fail_release_status_gate "gh is required to read the $context status for release commit $GIT_COMMIT."
         return 0
     fi
     if ! [[ "$expected" =~ ^[1-9][0-9]*$ ]]; then
-        bench_tier4_reject "BENCH_CI_APP_ID must be the numeric id of the installed bench-ci GitHub App."
-        expected="" # dry run only: the id cannot be checked, but the status lookup still previews
+        fail_release_status_gate "RELEASE_REQUIRED_STATUS_APP_ID must be the numeric id of the installed GitHub App."
+        expected=""
     fi
     if ! [[ "$slug" =~ ^[a-z0-9-]+$ ]]; then
-        bench_tier4_reject "BENCH_CI_APP_SLUG must be the slug of the installed bench-ci GitHub App (pithead-bench-ci)."
-        return 0 # without a slug there is nothing left to look up
+        fail_release_status_gate "RELEASE_REQUIRED_STATUS_APP_SLUG must be the slug of the installed GitHub App."
+        return 0
     fi
     if ! app_id="$(gh api "apps/$slug" | jq -r '.id // empty')"; then
-        bench_tier4_reject "Could not resolve GitHub App $slug."
+        fail_release_status_gate "Could not resolve GitHub App $slug."
         return 0
     fi
     if [ -n "$expected" ] && [ "$app_id" != "$expected" ]; then
-        bench_tier4_reject "GitHub App $slug has id ${app_id:-missing}, expected $expected."
+        fail_release_status_gate "GitHub App $slug has id ${app_id:-missing}, expected $expected."
         return 0
     fi
-    # ponytail: reads only the first 100 statuses on the commit. A commit carrying more than that,
-    # with the bench-ci entry aged out of the page, reads as missing and REFUSES the release —
-    # it fails closed, never open. Paginate if a release SHA ever collects that many statuses.
     if ! statuses="$(gh api "repos/p2pool-starter-stack/pithead/commits/$GIT_COMMIT/statuses?per_page=100")"; then
-        bench_tier4_reject "Could not read the $BENCH_TIER4_CONTEXT status for release commit $GIT_COMMIT."
+        fail_release_status_gate "Could not read the $context status for release commit $GIT_COMMIT."
         return 0
     fi
-    if ! state="$(jq -r --arg context "$BENCH_TIER4_CONTEXT" --arg creator "${slug}[bot]" \
+    if ! state="$(jq -r --arg context "$context" --arg creator "${slug}[bot]" \
         'map(select(.context == $context and .creator.login == $creator)) | first | .state // empty' <<<"$statuses")"; then
-        bench_tier4_reject "Could not parse the $BENCH_TIER4_CONTEXT status for release commit $GIT_COMMIT."
+        fail_release_status_gate "Could not parse the $context status for release commit $GIT_COMMIT."
         return 0
     fi
     if [ "$state" != success ]; then
-        bench_tier4_reject "Release commit $GIT_COMMIT has no successful $BENCH_TIER4_CONTEXT status from GitHub App ${expected:-unset} (got: ${state:-missing})."
+        fail_release_status_gate "Release commit $GIT_COMMIT has no successful $context status from GitHub App ${expected:-unset} (got: ${state:-missing})."
         return 0
     fi
-    ok "Bench tier-4 gate passed for $GIT_COMMIT."
+    ok "Release status gate passed for $GIT_COMMIT."
 }
 
 load_release_env() {
@@ -72,7 +77,7 @@ load_release_env() {
         [[ "$line" == *=* && "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] ||
             die "Release env $label line $number: malformed assignment."
         case "$name" in
-        BENCH_CI_APP_ID | BENCH_CI_APP_SLUG | RELEASE_INTEGRATION_ARGS | RELEASE_TOOL_PATH) ;;
+        RELEASE_REQUIRED_STATUS_CONTEXT | RELEASE_REQUIRED_STATUS_APP_ID | RELEASE_REQUIRED_STATUS_APP_SLUG | RELEASE_INTEGRATION_ARGS | RELEASE_TOOL_PATH) ;;
         *) die "Release env $label line $number: name is not allowed." ;;
         esac
         value="${line#*=}"

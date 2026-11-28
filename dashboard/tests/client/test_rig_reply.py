@@ -207,4 +207,4 @@ async def test_a_redirect_from_a_rig_is_not_followed():
 async def test_get_stats_returns_the_checked_reply():
     session = _Session(_Response(200, {"uptime": float("inf"), "rigforge": "x", "kind": "proxy"}))
     reply = await XMRigWorkerClient(session).get_stats("10.0.0.1", "rig1")
-    assert reply == {"kind": "proxy", "api_ok": True, "adopted": False}
+    assert reply == {"kind": "proxy", "api_ok": True, "adopted": False, "identity_change": False}

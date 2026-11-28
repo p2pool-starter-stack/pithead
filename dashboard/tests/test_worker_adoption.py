@@ -129,10 +129,9 @@ async def test_a_renamed_rig_resolves_by_its_operator_set_host(monkeypatch):
 
 
 async def test_a_successful_probe_carries_the_same_adoption_fact(monkeypatch):
-    # The field rides both verdicts, so it cannot flip between two polls of one unchanged rig.
     entries = [{"name": "rig1", "token": {"__secret__": True}, "read_token": "read-only"}]
     ok = await _probe(monkeypatch, entries, "10.0.0.1", "rig1", status=200)
-    assert ok == {"ok": True, "api_ok": True, "adopted": True}
+    assert ok == {"ok": True, "api_ok": True, "adopted": True, "identity_change": False}
 
 
 async def test_a_worker_we_never_probe_claims_no_adoption_verdict(monkeypatch):
@@ -182,6 +181,30 @@ def test_the_row_serialises_the_adoption_fact(adopted):
 
 
 def test_an_absent_adoption_fact_serialises_as_unknown_not_as_false():
-    # None, never False: the client badges only on api_ok False, and a payload from before this
-    # shipped must not read as a fleet of un-adopted rigs.
     assert _row()["adopted"] is None
+
+
+def test_the_merge_carries_an_identity_change_on_a_successful_probe():
+    extra = {"api_ok": True, "adopted": False, "identity_change": True, "uptime": 9}
+    [w] = _merge_direct_stats([_worker()], [extra], "3333")
+    assert (w["api_ok"], w["adopted"], w["identity_change"]) == (True, False, True)
+
+
+def test_a_business_as_usual_probe_merges_no_identity_change():
+    extra = {"api_ok": True, "adopted": True, "uptime": 9}
+    [w] = _merge_direct_stats([_worker()], [extra], "3333")
+    assert w["identity_change"] is False
+
+
+def test_an_unprobed_worker_is_left_without_an_identity_claim():
+    [w] = _merge_direct_stats([_worker()], [{}], "3333")
+    assert "identity_change" not in w
+
+
+@pytest.mark.parametrize("flag", [True, False])
+def test_the_row_serialises_the_identity_change_fact(flag):
+    assert _row(api_ok=True, adopted=False, identity_change=flag)["identity_change"] is flag
+
+
+def test_an_absent_identity_change_fact_serialises_as_unknown_not_as_false():
+    assert _row()["identity_change"] is None
