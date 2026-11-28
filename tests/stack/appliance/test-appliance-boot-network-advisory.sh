@@ -221,6 +221,13 @@ _bnv_commit() {
         hold_chain=0
         migration_fingerprint=
         rauc() { printf 'rauc %s\n' "$*" >>"$_BNV/rauc.log"; }
+        timeout() {
+            case "$1" in
+            --kill-after=*) shift 2 ;;
+            *) shift ;;
+            esac
+            "$@"
+        }
         curl() {
             cat >/dev/null
             printf '%s %s' "$BNV_CODE" "$BNV_SIZE"
