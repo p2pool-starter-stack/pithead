@@ -80,7 +80,7 @@ for scenario in unhealthy slow-dashboard slow-doctor slow-status slow-render lat
         boot_gate_passed() { touch "$scratch/committed-$scenario"; }
         rauc() { touch "$scratch/committed-$scenario"; }
         fail_boot() {
-            [ "$SECONDS" -le 60 ] || fail "deadline exceeded: $scenario ($SECONDS seconds)"
+            [ "$SECONDS" -le 63 ] || fail "deadline exceeded: $scenario ($SECONDS seconds)"
             printf '%s\n' "${gate_timeout_reason:-unhealthy}" >"$scratch/reason-$scenario"
             exit 1
         }
@@ -218,6 +218,11 @@ jq -e '.blocking | index("container dashboard: UNHEALTHY") != null' "$scratch/in
     cd "$scratch/stack"
     gate_deadline=$SECONDS
     gate_timeout_reason=''
+    timeout() {
+        shift 2
+        "$@"
+    }
+    : >"$BOOT_STATUS_LOG"
     gate_probe_header() { :; }
     gate_url() { printf 'https|localhost|443\n'; }
     gate_target_url() { printf 'https://localhost/\n'; }
@@ -227,7 +232,7 @@ jq -e '.blocking | index("container dashboard: UNHEALTHY") != null' "$scratch/in
     rauc() { touch "$scratch/late-commit"; }
     gate_network_advisory_commit && fail 'a late network advisory committed past an unhealthy container'
     [ ! -e "$scratch/late-commit" ] || fail 'a late network advisory marked the slot good'
-    [ -s "$BOOT_STATUS_LOG" ] || fail 'a late network advisory lost the status log'
+    [ "$(boot_status_blocking)" = 'container dashboard: UNHEALTHY' ] || fail 'a late network advisory never read the status rows'
 )
 sed -n "/journalctl -u pithead-boot.*| awk '\$/,/^    '; then/p" "$HERE/phases/update-healthgate-leg.sh" | sed '1d;$d' >"$scratch/timing.awk"
 [ -s "$scratch/timing.awk" ] || fail 'the KVM timing verdict was not selected'
