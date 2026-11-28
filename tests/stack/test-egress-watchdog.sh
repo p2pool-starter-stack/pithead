@@ -54,3 +54,19 @@ EAU_NFT_TABLE_RC=1 eau_status egress_status >/dev/null
 assert_eq "an absent audit table is not-observed, never clean" "$(eau_wd .host_audit.watchdog)" '"not-observed"'
 SUDO_DENY=1 eau_status egress_status >/dev/null
 assert_eq "an unreadable audit table is not-observed too" "$(eau_wd .host_audit.watchdog)" '"not-observed"'
+printf 'appliance\tdonation\tallow\tallow\thost\tnone\tnone\tchoice:donation tcp 4247\n' >>"$EAU/map-nolan.tsv"
+assert_contains "the donation clearnet choice renders its own choice class on the port XvB shares" \
+    "$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-nolan.tsv" "" "donation")" 'tcp dport { 4247 } counter comment "choice"'
+assert_eq "donation and XvB both chosen render one choice rule, so no packet is counted in two classes" \
+    "$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-nolan.tsv" "" "xvb donation" | grep -c 'comment "choice"')" "1"
+assert_contains "the committed map labels the chosen donation path, so a donation the operator opted into never reads as a leak" \
+    "$(run_sourced "$ROOT" render_host_egress_audit_nft appliance data/egress-map.tsv "" "donation")" 'tcp dport { 4247 } counter comment "choice"'
+printf 'XVB_ENABLED=true\nXVB_TOR_ENABLED=false\nDONATION_ENABLED=true\nDONATION_TOR_ENABLED=false\n' >"$EAU/.env"
+assert_eq "the audit names a class per chosen clearnet path, donation beside XvB" \
+    "$(run_sourced "$EAU" host_egress_audit_choices)" " xvb donation"
+printf 'DONATION_ENABLED=true\nDONATION_TOR_ENABLED=false\n' >"$EAU/.env"
+assert_eq "donation chosen while XvB stays off renders donation alone" \
+    "$(run_sourced "$EAU" host_egress_audit_choices)" " donation"
+printf 'DONATION_ENABLED=true\nDONATION_TOR_ENABLED=true\n' >"$EAU/.env"
+assert_eq "a donation that stays on Tor is no choice" "$(run_sourced "$EAU" host_egress_audit_choices)" ""
+rm -f "$EAU/.env"

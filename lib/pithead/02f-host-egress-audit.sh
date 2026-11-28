@@ -18,6 +18,7 @@ host_egress_audit_choices() {
     [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" = true ] && c="$c tari"
     tor_egress_choice_active p2pool && c="$c p2pool"
     tor_egress_choice_active xvb && c="$c xvb"
+    tor_egress_choice_active donation && c="$c donation"
     printf '%s\n' "$c"
 }
 

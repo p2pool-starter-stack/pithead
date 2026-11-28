@@ -7,6 +7,7 @@ appliance	Monero clearnet initial sync (opt-in, sync window)	allow	allow	host	to
 appliance	Tari clearnet initial sync (opt-in, sync window)	allow	allow	host	tor-egress-fence	tests/stack/test-clearnet-firewall.sh	choice:tari tcp 18189
 appliance	P2Pool sidechain peers over clearnet (opt-in, p2pool.clearnet)	allow	allow	host	tor-egress-fence	tests/stack/test-clearnet-firewall.sh	choice:p2pool tcp 37888-37890
 appliance	na.xmrvsbeast.com:4247 XvB donation mining direct (opt-in, xvb.tor false)	allow	allow	host	tor-egress-fence	tests/stack/test-clearnet-firewall.sh	choice:xvb tcp 4247
+appliance	na.xmrvsbeast.com:4247 project donation mining direct (opt-in, donation.tor false)	allow	allow	host	tor-egress-fence	tests/stack/test-clearnet-firewall.sh	choice:donation tcp 4247
 appliance	api.github.com CLI release and OS update fetches	allow	allow	host	none	tests/stack/control/test-control-upgrade.sh	allowlisted tcp 443
 appliance	api.github.com dashboard update check and RigForge badge (via the tor container SOCKS)	allow	allow	tor	none	dashboard/tests/service/network/	-
 appliance	xmrvsbeast.com XvB stats, raffle and winners (via the tor container SOCKS)	allow	allow	tor	none	none	-

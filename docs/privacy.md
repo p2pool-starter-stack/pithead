@@ -105,7 +105,7 @@ kept in `data/control/results/.egress-audit-prev`, and writes the watchdog verdi
 | `watchdog` | Meaning |
 | --- | --- |
 | `leaking` | `outside` rose since the last check: traffic left the box outside the map and outside Tor. |
-| `operator-choice` | Only a path the operator chose rose (`monero`/`tari.clearnet_initial_sync`, `p2pool.clearnet`, `xvb.tor: false`). |
+| `operator-choice` | Only a path the operator chose rose (`monero`/`tari.clearnet_initial_sync`, `p2pool.clearnet`, `xvb.tor`/`donation.tor: false`). |
 | `allowlisted` | Only flows listed for the host in `data/egress-map.tsv` rose (time sync, release fetches, image pulls). |
 | `clean` | No counter rose. |
 | `not-observed` | No audit table, an unreadable table, or a counter that is not a number. |

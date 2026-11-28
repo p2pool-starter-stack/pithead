@@ -45,7 +45,7 @@ em_audit="$(awk -F '\t' '
     NR == 1 || NF != 8 || $8 == "-" { next }
     {
         n = split($8, a, " ")
-        if (n != 3 || a[2] != "tcp" || a[1] !~ /^(allowlisted|choice:(monero|tari|p2pool|xvb))$/ || a[3] !~ /^[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*$/) print "line " NR " audit \"" $8 "\" is outside the fixed form"
+        if (n != 3 || a[2] != "tcp" || a[1] !~ /^(allowlisted|choice:(monero|tari|p2pool|xvb|donation))$/ || a[3] !~ /^[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*$/) print "line " NR " audit \"" $8 "\" is outside the fixed form"
         if ($5 != "host") print "line " NR " has an audit match but route " $5 ": only host-route rows are counted by the host table"
     }
 ' "$EGRESS_MAP" 2>/dev/null)"
@@ -60,6 +60,11 @@ em_overlap="$(awk -F '\t' '
     }
 ' "$EGRESS_MAP" 2>/dev/null)"
 assert_eq "no port is both allowlisted and an operator choice, so the host counters never double-subtract" "$em_overlap" ""
+
+em_keys="$(awk -F '\t' 'NR > 1 && NF == 8 && $8 ~ /choice:/ { split($8, a, " "); sub(/^choice:/, "", a[1]); print a[1] }' "$EGRESS_MAP" | sort -u)"
+em_switches="$(sed -n '/^tor_egress_choice_active()/,/^    esac/p' "$ROOT/lib/pithead/02b-tor-egress-apply.sh" | grep -oE '^    [a-z]+\)' | tr -cd 'a-z\n' | sort -u)"
+assert_eq "every clearnet hole the firewall can open has a choice row, so a chosen path can never read as a leak" \
+    "$(comm -23 <(printf '%s\n' "$em_switches") <(printf '%s\n' "$em_keys"))" ""
 
 em_missing="$(awk -F '\t' 'NR > 1 && NF == 8 && $7 != "none" { print $7 }' "$EGRESS_MAP" 2>/dev/null | sort -u | while IFS= read -r em_path; do
     [ -n "$em_path" ] && [ ! -e "$ROOT/$em_path" ] && printf '%s\n' "$em_path"
