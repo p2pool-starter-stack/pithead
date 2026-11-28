@@ -15,6 +15,11 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 - The **Stack Topology & Egress** panel shows the host's own traffic: a scope pill, host-OS nodes for time sync, OS and release fetches and image pulls, a warning when the host audit counted flows outside the allowlist, and a not-observed notice when the audit table is not loaded. `GET /api/system/egress-audit` and `egress_audit` in `/api/state` expose the counters (#4415, #4416, #4417).
 - With `tor.auto_heal`, a Tor stuck at 95% bootstrap with no circuit and an up guard (a relay refusing circuit creation) is cured by a guard rotation (`DROPGUARDS`) on the NEWNYM budget instead of a refresh that keeps the guards, and the heal never restarts Tor after one (#4121).
+- Rigs take OS updates themselves: `pithead rig-update check` reads the release channel through the
+  image's on-demand Tor client, and `pithead rig-update install` downloads the signed bundle over Tor,
+  verifies it against the baked keyring with every shared refusal, writes the spare slot and reboots;
+  the intent lands in `rig-update.json` on `/data` and the boot settles the verdict — self-commit and
+  `updated`, or fallback with the failed slot marked bad and a `rolled_back` record (#4013).
 
 ### Fixed
 

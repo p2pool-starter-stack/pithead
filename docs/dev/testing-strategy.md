@@ -358,6 +358,7 @@ the situations above; `missing` means nothing does yet, with the issue that owns
 | `firstboot-wizard` | covered | KVM (`pithead-firstboot.service`) |
 | `local-miner` | covered | KVM rig phase, via `pithead-boot` |
 | `os-update` | covered | KVM (appliance-only verb) |
+| `rig-update` | covered | KVM rig phase, its own leg (#4013) |
 | `factory-reset` | covered | KVM (appliance-only verb) |
 | `control-run-pending` | covered | DIY bench |
 | `egress-run-pending` | covered | firewall-on clearnet sync on the DIY bench |

@@ -289,7 +289,7 @@ if [ -f machine-role ] && [ "$(tr -d '[:space:]' <machine-role)" = "rig" ]; then
     for _ in $(seq 12); do
         if systemctl is-active --quiet xmrig.service; then
             rauc status mark-good && sync || fail_boot "the booted slot could not be committed"
-            boot_gate_passed
+            boot_gate_passed; ./pithead rig-update boot-record || echo "pithead-boot: the rig-update verdict could not be settled" >&2
             if [ "$hold_chain" = 1 ]; then clear_migration_hold "$migration_fingerprint"; else restore_data_floor_after_fallback "$migration_fingerprint"; fi ||
                 echo "pithead-boot: FAULT — migration protection could not be reconciled after commitment" >&2
             echo "pithead-boot: the rig's miner is running — booted slot committed"

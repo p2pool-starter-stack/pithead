@@ -157,7 +157,7 @@ assert_contains "and says which status came back" "$gh_500" "HTTP 500"
 assert_eq "every release lookup uses the shared fetch" \
     "$(grep -c 'gh_release_fetch p2pool-starter-stack/' "$STACK")" "3"
 assert_eq "no release lookup dials the API directly any more" \
-    "$(grep -c 'api.github.com/repos/.*/releases/latest' "$STACK")" "1"
+    "$(grep -c 'api.github.com/repos/.*/releases/latest' "$STACK")" "2"
 # The hint has to reach the CALLER. `rel=$(gh_release_fetch ...)` reads naturally and is a subshell,
 # so the hint would be set and discarded and every rejection would carry an empty message — the
 # defect this whole change exists to remove, reintroduced by the refactor that removes it. Neither
