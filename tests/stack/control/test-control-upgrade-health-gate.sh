@@ -43,7 +43,10 @@ health_wait_stubbed() {
         set +e
         sleep() { :; }
         log() { :; }
-        error() { echo "ERR: $*"; return 1; }
+        error() {
+            echo "ERR: $*"
+            return 1
+        }
         TOR_SP="$1"
         TOR_UNTIL="$2"
         OTHER="$3"
@@ -56,7 +59,7 @@ health_wait_stubbed() {
             fi
             local svc="${4#cid-}" st sp
             if [ "$svc" = tor ]; then
-                echo $(( $(cat "$TORCNT") + 1 )) >"$TORCNT"
+                echo $(($(cat "$TORCNT") + 1)) >"$TORCNT"
                 if [ "$(cat "$TORCNT")" -le "$TOR_UNTIL" ]; then st=starting; else st=healthy; fi
                 sp="$TOR_SP"
             else
@@ -64,8 +67,8 @@ health_wait_stubbed() {
                 sp=60
             fi
             case "$3" in
-                *Healthcheck*) echo "$st $sp" ;;
-                *) echo "$st" ;;
+            *Healthcheck*) echo "$st $sp" ;;
+            *) echo "$st" ;;
             esac
         }
         wait_services_healthy

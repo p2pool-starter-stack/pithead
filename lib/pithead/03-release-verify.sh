@@ -129,7 +129,7 @@ wait_services_healthy() {
             timeout_s=$((sp + 60))
             [ "$timeout_s" -lt 120 ] && timeout_s=120
             case "$health" in
-                healthy | running | "" | none) break ;;
+            healthy | running | "" | none) break ;;
             esac
             sleep 2
             elapsed=$((elapsed + 2))

@@ -5,7 +5,6 @@
 # Usage: tests/stack/run.sh [BLOCK]
 #   (none)  every block in turn, each in its own bash process, then the summed verdict
 #   BLOCK   one block, 1..STACK_BLOCKS: what each leg of the Shell workflow's matrix runs
-#
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STACK_BLOCKS=5
@@ -70,7 +69,6 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-onions.sh" && domain_ran test-doctor-onions.sh "$_d0" "$?" || domain_ran test-doctor-onions.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-upgrade.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade.sh" && domain_ran test-control-upgrade.sh "$_d0" "$?" || domain_ran test-control-upgrade.sh "$_d0" "$?"
-    # shellcheck source=tests/stack/control/test-control-upgrade-health-gate.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade-health-gate.sh" && domain_ran test-control-upgrade-health-gate.sh "$_d0" "$?" || domain_ran test-control-upgrade-health-gate.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-upgrade-lock.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade-lock.sh" && domain_ran test-control-upgrade-lock.sh "$_d0" "$?" || domain_ran test-control-upgrade-lock.sh "$_d0" "$?"
