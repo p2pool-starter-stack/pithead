@@ -28,6 +28,9 @@ pithead/
 └── .github/              CI, templates, and ownership
 ```
 
+The [project donation planner](project-donation-planner.md) defines the pure
+cycle planner, simulator and provisional policy for the dark feature.
+
 ## Product entry points
 
 | Area | Start here | Change and verify |
@@ -36,7 +39,9 @@ pithead/
 | Dashboard | `dashboard/mining_dashboard/main.py`, `dashboard/README.md` | Python services and HTTP routes; `make test-dashboard`. |
 | Browser UI | `dashboard/mining_dashboard/web/static/dashboard.js` | Feature modules and styles below; `make test-frontend`. |
 | Compose | `docker-compose.yml`, `config.reference.json` | Runtime service graph and configuration contract; `make test-compose`. |
-| Containers | `build/<daemon>/` | Dockerfiles, entrypoints, healthchecks, and Monero's bounded archive downloader; CI builds the images, and `make test-tools` checks download recovery. |
+| Egress map | `data/egress-map.tsv` | One row per outbound path, both roles; the single input the egress firewall generation, proof gate and docs are being built against. `tests/stack/test-egress-map.sh` checks shape and anchors. |
+| Host egress audit | `lib/pithead/02f-host-egress-audit.sh` | Log-only `inet` output table rendered role-filtered from the egress map: counts and logs would-be-dropped host flows, drops nothing; loaded by apply, by `pithead-egress-audit.service` on the appliance image and by the boot unit on DIY hosts; counters via `pithead egress-status` and doctor. |
+| Containers | `build/<daemon>/` | `build/cosign/Dockerfile` is the release verifier's single image pin; Dockerfiles, entrypoints, healthchecks, and Monero's bounded archive downloader; CI builds the images, and `make test-tools` checks download recovery. |
 | Appliance | `os/README.md`, `os/build-image.sh` | Rootfs, RAUC slots, installer, and host services; `tests/os/run.sh`. The rig share leg (`tests/os/rig-share-leg.sh`) adds the M11 hashrate floor and calls the adopt leg (`tests/os/rig-adopt-leg.sh`, `selftest-rig-adopt.sh`), which pushes a reversible config change through the coordinator control routes; `tests/os/require-complete-verdict.sh` (`selftest-require-complete.sh`) fails a `--require-complete` run on any missing-input skip. `os/rootfs/fetch-archive.sh` bounds the baked RigForge archive fetch; `tests/os/selftest-archive-fetch.sh` runs its local transport regression. |
 | Release | `scripts/release/release.sh`, [release guide](releasing.md) | Stage, verify, promote, and publish; `make release ARGS="--dry-run"` previews the plan. |
 | Manual QA | [Start here](manual-qa/README.md), `docs/dev/manual-qa/` | DIY, appliance and release guides retain the checklist step IDs; the start page holds the run sheet, result rules and glossary. |
@@ -130,6 +135,9 @@ Appliance reset leg 0 is `tests/os/phases/reset-config.sh`. Its guest-only
 `tests/os/reset-config-probe.sh` records the real Compose shutdown status and output before
 configuration removal, including suppressed RC4 diagnostics. `tests/os/selftest-reset-config-probe.sh`
 checks that failed or unrecorded stops cannot pass from reset's final exit 0.
+The probe retries `compose down` once on a storage-unmount error, and the selftest covers a failure that clears on the retry.
+`tests/os/appliance-recovery-bundle-leg.sh` stops the container units, then waits up to 30 s for `podman ps` to empty; `selftest-recovery-bundle.sh` covers a 6 s stop.
+`tests/os/rig-failure-evidence.sh` is called from the rig share leg against the coordinator guest: it prints the guest journal from the backup apply, the xmrig-proxy and p2pool logs, the proxy summary and the container list when the leg's share or backup-recovery rows fail, and records a row that those sections came back when the backup trial passes (`selftest-rig-failure-evidence.sh`).
 
 Coordinator setup-again runs before those resets in `tests/os/coordinator-setup-again-leg.sh`;
 `tests/os/selftest-coordinator-setup-again.sh` drives safe-prefill and preservation failure controls.
@@ -335,6 +343,10 @@ both local-miner toggles converge without rebooting.
 The appliance-only `os/overlay/pithead-miner-recovery` timer recovers a disconnected active
 local miner, restarting at once when the proxy container was recreated since its last reading;
 `tests/os/selftest-miner-recovery.sh` covers its decision window, recreation fast restart and refusals.
+On a rig the same timer reads the rig's own XMRig `/2/summary` and restarts `xmrig.service` after 120 seconds
+without a pool connection or with zero hashrate and no share progress, at most once per 300 seconds;
+`tests/os/selftest-miner-recovery-rig.sh` covers it. The rig share leg's strand injection is also removed
+90 seconds after the strand is witnessed, so a stranded rig cannot hold the coordinator's miner blocked.
 `tests/os/appliance-miner-recovery{,-leg}.sh` proves per-worker accepted-share progress after
 dashboard backup on the stack phase’s synced guest, using a reversible loopback strand.
 Trial receipts distinguish backup completion, strand detection, unchanged proxy identity with
@@ -390,6 +402,14 @@ to prove a spent NEWNYM budget still reaches the state reset on an unsaturated h
 The opt-in KVM `p2pool-heal` phase streams `pool-heal-guest.sh` into a guest to prove the dashboard's
 zero-peer P2Pool restart through the appliance control path; `run-pool-peer-loss.sh` is the `fault-injection` leg that
 cuts a live P2Pool's peers.
+`tests/os/netwatch-window.sh` wraps the battery's passive netwatch capture windows (#4196) around first boot
+and reboot, the update cycle, one hour of mining per role and both set-up-again legs; the recorder runs on
+the KVM host at the virbr0 vantage and the `tests/netwatch/` classifier's verdict lands as a non-required
+row, so a silent or dead capture reads as a failure without ever gating a phase. A phase that returns
+before its window closes leaves nothing running: the run's `cleanup` calls `netwatch_window_abort`, which
+tears the recorder container down and prints a red row for the unclosed window.
+The opt-in KVM `monerod-redial` phase streams `monerod-redial-guest.sh` into a guest to prove the dashboard's
+monerod re-dial after a Tor restart, the peerless restart, its cooldown and daily cap through the appliance control path.
 The restrictive-checkout image probe is `tests/stack/standalone/test_image_permissions.sh`,
 run by image CI and the lifecycle phase through `run-source-image.sh`.
 The offline image assertion is `tests/stack/standalone/test_tor_saturated_image.sh`,
@@ -444,6 +464,7 @@ For test tiers and placement, read [testing strategy](testing-strategy.md) and
 
 Dashboard receipt identities live in `dashboard/mining_dashboard/service/payout_identity.py`.
 `dashboard/mining_dashboard/service/mining_store.py` scopes receipt reads, inserts and cursors;
+`dashboard/mining_dashboard/service/payout_alert_store.py` queues failed payout alerts for retry, driven by `payout_sync.py`.
 `dashboard/mining_dashboard/service/storage_schema.py` migrates legacy receipts to `unknown`.
 The wallet-switch regressions are
 `dashboard/tests/service/test_payout_wallet_identity.py` and

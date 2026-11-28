@@ -1,13 +1,20 @@
 import logging
 import re
+import time
 from datetime import UTC, datetime
 from typing import Any
 
 import requests
 
 from mining_dashboard.config.config import TOR_SOCKS_PROXY, XVB_SUBMIT_URL
-from mining_dashboard.helper.http import bounded_get
-from mining_dashboard.helper.utils import parse_hashrate
+from mining_dashboard.helper.http import (
+    PROXY_PURPOSE_DASHBOARD,
+    bounded_get,
+    proxy_map,
+    purpose_proxy,
+)
+from mining_dashboard.helper.http import request_failure_class as failure_class
+from mining_dashboard.helper.utils import parse_hashrate, plausible_rate
 
 # The four donor tiers XvB publishes an expected per-player reward for. These are exactly the tier
 # keys in TIER_DEFAULTS, so build_xvb_calc maps a tier straight to its estimate by key (#118).
@@ -51,6 +58,10 @@ _WINNERS_FIELD_COUNT = 9
 # fabricated rows for our (publicly derivable) masked wallet in a single sync.
 _WINNERS_MAX_LINES = 5000
 _WINNERS_MAX_WINS = 200
+_WINNERS_MAX_FUTURE_S = 3600
+_WINNERS_MAX_HEIGHT = 10**12
+_XVB_MAX_FAIL_COUNT = 1000
+_XVB_MAX_HASHRATE = 1e12
 
 # The hashrate token in a winners row, e.g. "4203.5kH/s" — value and unit, no space between them.
 _REGEX_WINNER_HASHRATE = re.compile(r"([\d.]+)\s*([kKmMgG]?H/s)?$")
@@ -87,8 +98,11 @@ def parse_winners(text, wallet_address):
             height = int(fields[4])
         except ValueError:
             continue
+        if ts > time.time() + _WINNERS_MAX_FUTURE_S or not 0 <= height <= _WINNERS_MAX_HEIGHT:
+            continue
         hr_match = _REGEX_WINNER_HASHRATE.match(fields[3])
         hashrate = parse_hashrate(hr_match.group(1), hr_match.group(2)) if hr_match else 0.0
+        hashrate = plausible_rate(hashrate, _XVB_MAX_HASHRATE) or 0.0
         wins.append(
             {
                 "ts": ts,
@@ -181,8 +195,9 @@ class XvbClient:
 
         # Pre-compile regex patterns
         self.REGEX_FAIL_COUNT = re.compile(r"Fail Count:\s*(\d+)", re.IGNORECASE)
-        self.REGEX_HR_1H = re.compile(r"1hr avg:\s*([\d\.]+)\s*([kKmMgG]?H/s)?", re.IGNORECASE)
-        self.REGEX_HR_24H = re.compile(r"24hr avg:\s*([\d\.]+)\s*([kKmMgG]?H/s)?", re.IGNORECASE)
+        number = r"(\d+(?:\.\d+)?)(?!\d|\.[\d.eE]|[eE])\s*([kKmMgG]?H/s)?"
+        self.REGEX_HR_1H = re.compile(r"1hr avg:\s*" + number, re.IGNORECASE)
+        self.REGEX_HR_24H = re.compile(r"24hr avg:\s*" + number, re.IGNORECASE)
 
     def get_stats(self) -> dict[str, Any] | None:
         """
@@ -198,9 +213,7 @@ class XvbClient:
 
         params = {"address": self.wallet_address}
 
-        # Route through Tor (socks5h) so xmrvsbeast sees a Tor exit, not the operator's home IP —
-        # the request carries the wallet, so a clearnet fetch would correlate IP <-> wallet (#163).
-        proxies = {"http": self.tor_proxy, "https": self.tor_proxy} if self.tor_proxy else None
+        proxies = self._proxies()
         try:
             response = bounded_get(self.url, params=params, timeout=20, proxies=proxies)
             if response.status_code == 200:
@@ -211,10 +224,10 @@ class XvbClient:
                 )
                 return None
         except requests.RequestException as e:
-            self.logger.error(f"Network error while fetching XvB stats: {e}")
+            self.logger.error(f"Network error while fetching XvB stats: {failure_class(e)}")
             return None
         except Exception as e:
-            self.logger.error(f"Unexpected error in XvB client: {e}")
+            self.logger.error(f"Unexpected error in XvB client: {failure_class(e)}")
             return None
 
     def get_reward_estimates(self) -> dict[str, float] | None:
@@ -225,7 +238,7 @@ class XvbClient:
         contract as ``get_stats`` (the caller writes nothing on None, so a stale/failed fetch can be
         detected via a frozen ``last_update`` and never implied fresh, #311).
         """
-        proxies = {"http": self.tor_proxy, "https": self.tor_proxy} if self.tor_proxy else None
+        proxies = self._proxies()
         try:
             response = bounded_get(self.reward_estimate_url, timeout=20, proxies=proxies)
             if response.status_code != 200:
@@ -241,10 +254,12 @@ class XvbClient:
                 return None
             return estimates
         except requests.RequestException as e:
-            self.logger.error(f"Network error while fetching XvB reward estimates: {e}")
+            self.logger.error(
+                f"Network error while fetching XvB reward estimates: {failure_class(e)}"
+            )
             return None
         except Exception as e:
-            self.logger.error(f"Unexpected error fetching XvB reward estimates: {e}")
+            self.logger.error(f"Unexpected error fetching XvB reward estimates: {failure_class(e)}")
             return None
 
     def get_recent_wins(self) -> dict[str, Any] | None:
@@ -263,7 +278,7 @@ class XvbClient:
             self.logger.warning("Configuration Error: MONERO_WALLET_ADDRESS is missing or invalid.")
             return None
 
-        proxies = {"http": self.tor_proxy, "https": self.tor_proxy} if self.tor_proxy else None
+        proxies = self._proxies()
         try:
             response = bounded_get(self.winners_url, timeout=20, proxies=proxies)
             if response.status_code != 200:
@@ -276,10 +291,10 @@ class XvbClient:
                 "round_stats": parse_round_stats(response.text),
             }
         except requests.RequestException as e:
-            self.logger.error(f"Network error while fetching XvB winners: {e}")
+            self.logger.error(f"Network error while fetching XvB winners: {failure_class(e)}")
             return None
         except Exception as e:
-            self.logger.error(f"Unexpected error fetching XvB winners: {e}")
+            self.logger.error(f"Unexpected error fetching XvB winners: {failure_class(e)}")
             return None
 
     def register(self):
@@ -317,10 +332,7 @@ class XvbClient:
 
         params = {"address": self.wallet_address}
 
-        # Same Tor routing as the stats fetch: socks5h so xmrvsbeast sees a Tor exit (not the
-        # operator's home IP) and the host is resolved over Tor too. The request carries the full
-        # wallet, so a clearnet call would correlate IP <-> wallet (#163).
-        proxies = {"http": self.tor_proxy, "https": self.tor_proxy} if self.tor_proxy else None
+        proxies = self._proxies()
         try:
             response = bounded_get(self.submit_url, params=params, timeout=20, proxies=proxies)
             body = (response.text or "").strip()
@@ -351,40 +363,36 @@ class XvbClient:
             )
             return REG_ERROR
         except requests.RequestException as e:
-            self.logger.error(f"Network error while registering with XvB: {e}")
+            self.logger.error(f"Network error while registering with XvB: {failure_class(e)}")
             return REG_ERROR
         except Exception as e:
-            self.logger.error(f"Unexpected error during XvB registration: {e}")
+            self.logger.error(f"Unexpected error during XvB registration: {failure_class(e)}")
             return REG_ERROR
+
+    def _proxies(self):
+        return proxy_map(self.tor_proxy and purpose_proxy(self.tor_proxy, PROXY_PURPOSE_DASHBOARD))
+
+    def _average(self, regex, html_text):
+        match = regex.search(html_text)
+        return plausible_rate(parse_hashrate(*match.groups()), _XVB_MAX_HASHRATE) if match else None
 
     def _parse_html(self, html_text) -> dict[str, Any] | None:
         """
         Parses raw HTML content to extract mining statistics.
         """
         try:
-            stats = {"fail_count": 0, "avg_1h": 0.0, "avg_24h": 0.0}
-
-            # Extract Fail Count
             fail_match = self.REGEX_FAIL_COUNT.search(html_text)
-            if fail_match:
-                stats["fail_count"] = int(fail_match.group(1))
-
-            # Extract Hashrate Averages
-            hr1_match = self.REGEX_HR_1H.search(html_text)
-            hr24_match = self.REGEX_HR_24H.search(html_text)
-
-            if hr1_match:
-                stats["avg_1h"] = parse_hashrate(hr1_match.group(1), hr1_match.group(2))
-
-            if hr24_match:
-                stats["avg_24h"] = parse_hashrate(hr24_match.group(1), hr24_match.group(2))
-
-            if not fail_match and not hr1_match:
+            fail_count = int(fail_match.group(1).lstrip("0")[:9] or 0) if fail_match else 0
+            avg_1h = self._average(self.REGEX_HR_1H, html_text)
+            if not fail_match and avg_1h is None:
                 self.logger.warning(
                     "Parsing Warning: Critical stats not found in XvB response. HTML structure may have changed."
                 )
                 return None
-
+            stats = {"fail_count": min(fail_count, _XVB_MAX_FAIL_COUNT)}
+            if avg_1h is not None:
+                avg_24h = self._average(self.REGEX_HR_24H, html_text)
+                stats.update(avg_1h=avg_1h, avg_24h=avg_24h or 0.0)
             return stats
 
         except Exception as e:

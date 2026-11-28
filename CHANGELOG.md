@@ -11,7 +11,31 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
-## [2.0.4] - 2026-11-23
+### Added
+
+- The **Stack Topology & Egress** panel shows the host's own traffic: a scope pill, host-OS nodes for time sync, OS and release fetches and image pulls, a warning when the host audit counted flows outside the allowlist, and a not-observed notice when the audit table is not loaded. `GET /api/system/egress-audit` and `egress_audit` in `/api/state` expose the counters (#4415, #4416, #4417).
+- With `tor.auto_heal`, a Tor stuck at 95% bootstrap with no circuit and an up guard (a relay refusing circuit creation) is cured by a guard rotation (`DROPGUARDS`) on the NEWNYM budget instead of a refresh that keeps the guards, and the heal never restarts Tor after one (#4121).
+
+### Fixed
+
+- The dashboard's **Earnings — Expected vs Actual** card no longer compares this stack's expected
+  income with the whole wallet's payouts in silence. The payout side is now stated on the card as
+  wallet-wide (every stack or rig paying your configured address counts), a percent computed while
+  the payout history on record is shorter than the window reads as "at least N%", and a percent
+  withheld past 999% is explained in visible text — other stacks paying to the same address, or
+  this box idle or unrecorded for most of the window — instead of blaming an idle miner in a
+  tooltip (#4228).
+- The egress panel no longer calls Caddy firewalled. Caddy runs on the host network, so the
+  container egress fence never covered it; its per-service posture now says so, like the
+  host-networked dashboard's already did (#4197).
+
+### Security
+
+- The appliance rootfs builds Docker Compose and Cosign with Go 1.27.4, which Cosign v3.1.4 requires
+  and which carries the CVE-2026-97054 standard-library fix first shipped in Go 1.26.11 (#4265,
+  #4316), and builds Compose v5.7.2, whose containerd v2.4.2 clears CVE-2026-95839 (#4291).
+
+## [2.0.4] - 2026-11-24
 
 Pithead 2.0.4 is a patch release after 2.0.3. It bakes RigForge 1.19.0 into the appliance image
 (read the RigForge-only note below before updating such a rig), moves XvB donation mining to the EU
@@ -85,6 +109,11 @@ It adds and removes no Pithead configuration keys. It changes these defaults: `m
 
 ### Fixed
 
+- After an apply or restart that restarts monerod, the dashboard no longer stops `xmrig-proxy` about
+  90 seconds after monerod is synchronized again. The "P2Pool reports monerod is not synchronized"
+  guard now counts only a line from the last 30 seconds, instead of any line from the last 2 minutes
+  (#4138).
+- A rig whose miner stays at zero hashrate or without a pool connection for 120 seconds (for example after the coordinator's stratum port restarts) now has its XMRig restarted by `pithead-miner-recovery`, at most once every 300 seconds (#4387).
 - On the appliance, a built-in miner that lost its stratum connection because `xmrig-proxy` was
   recreated (an apply, a compose restart or a recovery-boot migration) is restarted at once instead
   of after five minutes of idle readings. The root cause of the stall is still not established
@@ -99,6 +128,9 @@ It adds and removes no Pithead configuration keys. It changes these defaults: `m
 - On the appliance, when the boot health gate cannot clear the chain-service migration hold it prints
   a FAULT line naming the recovery and releases the chain services anyway, instead of leaving node,
   P2Pool and proxy down with nothing in the boot journal (#3983).
+- A release now tags and bundles exactly the commit that was gated: publish refuses if HEAD moved or the
+  tree is dirty, a tag already on origin or an already-promoted registry tag stops the cut, and the
+  tag is created on the gated commit (release tooling only).
 - On the appliance, a wedged Tor — one whose boot never finishes because the circuit-build history
   on the data partition is saturated — no longer costs the committed slot its fallback. The boot
   health gate commits when the dashboard answers and every failing check is that network fault,
@@ -127,6 +159,13 @@ It adds and removes no Pithead configuration keys. It changes these defaults: `m
 - Rig upgrade, Adopt rig, Backup, the onion client-key request and the service diagnostics show the
   same stale-page message and reload instead of `HTTP 401`, `HTTP 403` or a browser network error, and
   show the server's text for other failures (#4059).
+- Payout confirmation skips a scan when the view-only wallet does not hold the configured payout address,
+  so an address change no longer files the old wallet's payouts under the new address or alerts on them.
+- XvB request failures no longer write the payout address or the submit URL into the dashboard log.
+- The setup wizard keeps a worker's `api_token` instead of dropping it.
+- The setup wizard's failed screen no longer breaks when the host's error text ends in a cut-off character.
+- A failed write when applying a configuration change from the dashboard returns a server error and is
+  logged, instead of reporting "Body must be JSON".
 - Tor's `MaxClientCircuitsPending` is raised to 64 and `monero.out_peers` now defaults to 24 (was 48),
   so monerod, Tari and P2Pool onion dials no longer sit at Tor's pending-circuit ceiling right after
   boot. A `config.json` without `monero.out_peers` re-renders at 24 on the next apply; an explicit value
@@ -145,6 +184,16 @@ It adds and removes no Pithead configuration keys. It changes these defaults: `m
   as an address change the apply's restart stands (#3987).
 - The Service diagnostics card's log and health-check controls are styled as buttons instead of plain
   text (#4109).
+- A configuration whose data directories are nested (for example `p2pool.data_dir` containing
+  `monero.data_dir`) is refused, naming both keys, instead of letting a reset of one wipe the other.
+- A data directory written with a trailing slash (`/srv/`, `/home/user/`) is held to the same system,
+  home and mount-root refusal as the same path without one.
+- `./pithead config-reset` now also removes the Tari wallet database volume, whose password lives only in
+  the removed `.env`, so Tari payout confirmation no longer breaks after a reset.
+- The `curl | bash` installer reattaches the terminal before `./pithead setup`, and stops with a clear
+  message when none is available.
+- A hand-edited `dashboard.secure` of `"TRUE"`, `1` or `"yes"` now renders the TLS Caddyfile, matching
+  `doctor`, instead of silently serving plain HTTP.
 
 ### Security
 

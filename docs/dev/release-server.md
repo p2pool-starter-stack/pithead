@@ -40,11 +40,18 @@ real chains can, and it is the blocking pre-release gate.
 
 ## Validating protected updates
 
-The dedicated server is not a GitHub Actions self-hosted runner. Tier 4 runs through bench-ci,
-which owns the reservation, runs the full suite against an exact SHA, and publishes
-`bench-ci/tier4` through its dedicated GitHub App. The release lane requires that status from the
-App's numeric id, and the `main` ruleset requires the same context pinned to that App's
-`integration_id`. Both were provisioned under
+`release.sh` enforces a release status gate: the exact release SHA must carry a successful
+commit status whose context, publishing App numeric id and publishing App slug are configured
+through `RELEASE_REQUIRED_STATUS_CONTEXT`, `RELEASE_REQUIRED_STATUS_APP_ID` and
+`RELEASE_REQUIRED_STATUS_APP_SLUG` (settable in the release env file below, or in the
+environment). The gate is optional — with all three unset it logs a skip and the cut relies on
+the operator's manual attestation
+([Releasing](releasing.md#which-gates-are-automated-and-which-are-not)). This repo's lane sets
+them to the `bench-ci/tier4` context published by the `pithead-bench-ci` App: the dedicated
+server is not a GitHub Actions self-hosted runner, so tier 4 runs through bench-ci, which owns
+the reservation, runs the full suite against an exact SHA, and publishes that status through its
+dedicated GitHub App. The `main` ruleset requires the same context pinned to that App's
+`integration_id`; both were provisioned under
 [#2237](https://github.com/p2pool-starter-stack/pithead/issues/2237); an identical context from
 any other App does not satisfy a pinned entry.
 
@@ -150,8 +157,9 @@ signing-key directory described below. A missing default file is ignored; a miss
 `PITHEAD_RELEASE_ENV` target stops the run. Keep the file owned by the invoking user and not
 writable by group or world (0600 is recommended; 0644 is accepted). Symlinks are refused.
 
-The file accepts only `BENCH_CI_APP_ID`, `BENCH_CI_APP_SLUG`, `RELEASE_INTEGRATION_ARGS`, and
-`RELEASE_TOOL_PATH`, one `NAME=value` per line. Blank lines, comments beginning with `#`, an optional
+The file accepts only `RELEASE_REQUIRED_STATUS_CONTEXT`, `RELEASE_REQUIRED_STATUS_APP_ID`,
+`RELEASE_REQUIRED_STATUS_APP_SLUG`, `RELEASE_INTEGRATION_ARGS`, and `RELEASE_TOOL_PATH`, one
+`NAME=value` per line. Blank lines, comments beginning with `#`, an optional
 `export` prefix followed by a space, and matching single or double quotes are accepted. Values are literal: `$`,
 backticks, and `~` are not expanded, so write absolute paths. Existing environment settings win,
 including empty values. Preflight logs names and counts, never values. Any other name or malformed
@@ -506,7 +514,7 @@ compose hardening, config rendering, dashboard tests.
 | Gap (not tested live) | Worth filling before release? |
 |---|---|
 | Full (unpruned) Monero live, which a pruned box can't exercise | Low. Stack paths don't differ by prune mode; fakes/config cover it. A multi-day full sync isn't justified. |
-| Protected pre-release gate | Wired, not yet exercised: `release.sh` and the `main` ruleset both require `bench-ci/tier4` from the pinned App id (provisioned under [#2237](https://github.com/p2pool-starter-stack/pithead/issues/2237)), but the bench has published no tier-4 status yet, so the gate has not run end to end. |
+| Protected pre-release gate | Wired: the release status gate requires the configured status (here `bench-ci/tier4`, from the pinned App id provisioned under [#2237](https://github.com/p2pool-starter-stack/pithead/issues/2237)) on the exact release SHA before stage 1, and the `main` ruleset pins the same context. |
 | Cross-version self-deploy upgrade | Medium. Run the upgrade proof tracked by [#1997](https://github.com/p2pool-starter-stack/pithead/issues/1997), which is blocked by its runnable-environment issue [#2057](https://github.com/p2pool-starter-stack/pithead/issues/2057). It proves authenticated manifest/image identity, mounts, captured chain anchors, durable state, secrets, workers/mining, derived state, and old-baseline restoration. |
 | Cross-version appliance/RAUC upgrade | Medium. The current KVM update builds both slots from one tree; [#2056](https://github.com/p2pool-starter-stack/pithead/issues/2056) tracks an upgrade from a real previous appliance release with provisioned state. |
 | N-1 encrypted backup restore on the appliance | Medium. Same-version restore is covered; [#2001](https://github.com/p2pool-starter-stack/pithead/issues/2001) tracks restoring a supported prior-release backup through the current wizard without a forced resync. |

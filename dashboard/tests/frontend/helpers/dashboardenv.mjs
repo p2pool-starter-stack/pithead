@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 
-export function makeEnv({ href = 'http://pithead.test/', stored = {}, responses = [], session = {} } = {}) {
+export function makeEnv({ href = 'http://pithead.test/', stored = {}, responses = [], session = {}, sleepFn } = {}) {
     const fetches = [];
     const paints = [];
     const urls = [];
@@ -36,6 +36,7 @@ export function makeEnv({ href = 'http://pithead.test/', stored = {}, responses 
             getItem: (k) => (k in session ? session[k] : null),
             setItem: (k, v) => { session[k] = String(v); },
         },
+        sleep: sleepFn ?? ((ms) => new Promise((r) => setTimeout(r, ms))),
         onWindowEvent: (fn) => windowHandlers.push(fn),
     };
     return {
@@ -47,4 +48,5 @@ export function makeEnv({ href = 'http://pithead.test/', stored = {}, responses 
 
 export const ok = (body) => () => Promise.resolve({ ok: true, json: async () => body });
 export const httpError = (status) => () => Promise.resolve({ ok: false, status });
+export const unauthorized = () => () => Promise.resolve({ ok: false, status: 401 });
 export const aborted = () => () => Promise.reject(new DOMException('signal timed out', 'TimeoutError'));

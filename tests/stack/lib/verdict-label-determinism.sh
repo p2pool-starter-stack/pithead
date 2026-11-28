@@ -133,6 +133,7 @@ test-backup-data-paths.sh|i
 test-backup-data-paths.sh|label
 test-cli.sh|first_run_case
 test-config-document.sh|raw
+test-config-document.sh|sec
 test-config-document.sh|verb
 test-config.sh|2
 test-config.sh|bad_port
@@ -171,6 +172,9 @@ test-release.sh|comp
 test-release.sh|pin_rel
 test-release.sh|svc
 test-render-quadlet.sh|f
+test-render-quadlet.sh|qk
+test-render-quadlet.sh|ql
+test-render-quadlet.sh|qvar
 test-restore-configless.sh|rcf_status
 test-rig-worker.sh|3
 test-secrets-masking.sh|1
@@ -179,6 +183,7 @@ test-secrets.sh|host_ram_mb
 test-secrets.sh|mem
 test-spool-audit.sh|audit_lines
 test-spool-audit.sh|audit_size
+test-spool-audit.sh|entry
 test-suite-blocks.sh|1
 test-suite-blocks.sh|arg
 test-tor-network.sh|v

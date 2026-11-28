@@ -33,6 +33,7 @@ export class AdoptRigForm extends Component {
     super(props);
     this.state = {
       host: props.ip || "",
+      rigId: props.rigId || "",
       apiPort: DEFAULT_API_PORT,
       controlPort: DEFAULT_CONTROL_PORT,
       token: "",
@@ -44,8 +45,8 @@ export class AdoptRigForm extends Component {
   }
 
   async adopt() {
-    const { host, apiPort, controlPort, token } = this.state;
-    const validation = validateAdoptFields(host, apiPort, controlPort, token);
+    const { host, apiPort, controlPort, token, rigId } = this.state;
+    const validation = validateAdoptFields(host, apiPort, controlPort, token, rigId);
     if (validation) {
       this.setState({ result: { status: "error", error: validation } });
       return;
@@ -73,6 +74,7 @@ export class AdoptRigForm extends Component {
         apiPort,
         controlPort,
         token,
+        rigId,
       );
       const res = await controlFetch("/api/control/preview", {
         method: "POST",
@@ -122,7 +124,8 @@ export class AdoptRigForm extends Component {
   }
 
   render() {
-    const { host, apiPort, controlPort, token, busy, result, preview, confirmText } = this.state;
+    const { host, apiPort, controlPort, token, rigId, busy, result, preview, confirmText } =
+      this.state;
     return html`
       <div class="adopt-rig">
         <p class="text-muted text-xs">
@@ -151,6 +154,17 @@ export class AdoptRigForm extends Component {
           <input type="password" disabled=${busy || !!preview} value=${token} placeholder="the rig's control token"
               onInput=${(e) => this.setState({ token: e.target.value })} />
         </label>
+        ${
+          this.props.rigId
+            ? html`
+          <label class="config-field">
+            <span class="config-field-name">rig_id</span>
+            <input type="text" disabled=${busy || !!preview} value=${rigId}
+                placeholder="the rig's identity id, from its feed"
+                onInput=${(e) => this.setState({ rigId: e.target.value })} />
+          </label>`
+            : null
+        }
         ${
           preview
             ? html`<${AdoptConfirm} preview=${preview} confirmText=${confirmText} busy=${busy}

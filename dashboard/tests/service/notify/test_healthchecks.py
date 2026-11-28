@@ -146,7 +146,36 @@ class TestTorRouting:
         c = _client(tor_proxy=proxy)
         with patch.object(hc_mod, "_fetch", return_value=_resp(200)) as get:
             assert c.ping() is True
-        assert get.call_args.kwargs["proxies"] == {"http": proxy, "https": proxy}
+        notify = "socks5h://notify:isolate@172.28.0.25:9050"
+        assert get.call_args.kwargs["proxies"] == {"http": notify, "https": notify}
+
+    def test_retry_uses_a_fresh_isolation_label_per_attempt(self):
+        c = _client(tor_proxy="socks5h://172.28.0.25:9050")
+        with patch.object(hc_mod, "_fetch", return_value=_resp(503)) as get:
+            c.ping()
+            c.ping()
+        retries = [call.kwargs["proxies"]["https"] for call in get.call_args_list[1::2]]
+        assert len(retries) == 2 and retries[0] != retries[1]
+        assert all(
+            r.startswith("socks5h://") and r.endswith(":isolate@172.28.0.25:9050") for r in retries
+        )
+        assert all("notify" not in r for r in retries)
+
+    def test_failure_logging_never_carries_the_credential(self, caplog):
+        c = _client(tor_proxy="socks5h://172.28.0.25:9050")
+        sent = []
+
+        def boom(cmd, input=None, **kwargs):
+            sent.append(input)
+            raise hc_mod.subprocess.TimeoutExpired(cmd, 1)
+
+        with (
+            patch.object(hc_mod.subprocess, "run", side_effect=boom),
+            caplog.at_level(logging.DEBUG),
+        ):
+            assert c.ping() is False
+        assert "notify:isolate@" in sent[0]
+        assert "isolate@" not in caplog.text
 
     def test_from_config_always_routes_over_tor(self):
         # from_config wires the bridge Tor SOCKS unconditionally — there is no clearnet mode.
@@ -157,7 +186,9 @@ class TestTorRouting:
             c = HealthchecksClient.from_config()
         with patch.object(hc_mod, "_fetch") as get:
             c.ping()
-        assert get.call_args.kwargs["proxies"]["https"] == "socks5h://172.28.0.25:9050"
+        assert get.call_args.kwargs["proxies"]["https"] == (
+            "socks5h://notify:isolate@172.28.0.25:9050"
+        )
 
 
 class TestPingAttempts:

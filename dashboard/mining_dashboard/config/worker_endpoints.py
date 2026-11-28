@@ -34,6 +34,7 @@ logger = logging.getLogger("Config")
 _WORKER_NAME_RE = re.compile(r"^[\x21-\x7e]{1,128}$")
 _WORKER_HOST_RE = re.compile(r"^[A-Za-z0-9._-]{1,253}$")
 _READ_TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")
+_WORKER_RIG_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
 
 def _valid_watts(v):
@@ -162,6 +163,11 @@ def load_worker_endpoints(path, read_tokens_path=None, tokens_env="") -> list[di
                 port,
             ):
                 entry["read_token"] = probe_token["token"]
+        if "rig_id" in item:
+            rig_id = item["rig_id"]
+            if not isinstance(rig_id, str) or not _WORKER_RIG_ID_RE.fullmatch(rig_id):
+                continue
+            entry["rig_id"] = rig_id
         seen.add(name)
         out.append(entry)
     return out

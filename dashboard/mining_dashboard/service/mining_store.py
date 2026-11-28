@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 from mining_dashboard.config.config import HISTORY_RETENTION_SEC
+from mining_dashboard.service.payout_alert_store import PayoutAlertRetryMixin
 from mining_dashboard.service.workers.worker_config_store import _bindable
 
 logger = logging.getLogger("StateManager")
@@ -27,11 +28,15 @@ def _raffle_wins_max_rows():
     return storage_service.RAFFLE_WINS_MAX_ROWS
 
 
-class MiningStoreMixin:
+class MiningStoreMixin(PayoutAlertRetryMixin):
     _payouts_have_wallet = True
 
     def add_payouts(
-        self, chain: str, wallet_id: str | None, rows: list[dict[str, Any]]
+        self,
+        chain: str,
+        wallet_id: str | None,
+        rows: list[dict[str, Any]],
+        queue_alert: bool = False,
     ) -> list[dict[str, Any]]:
         if not wallet_id or not rows:
             return []
@@ -63,6 +68,8 @@ class MiningStoreMixin:
                             )
                         if cur.rowcount == 1:
                             new_rows.append(r)
+                            if queue_alert:
+                                self._queue_payout_alert(chain, wallet_id, r["txid"], tail[2])
         except (sqlite3.Error, KeyError, ValueError, TypeError) as e:
             self._db_error("Payout Insert Error", e)
             return []
@@ -122,11 +129,11 @@ class MiningStoreMixin:
                     "(id, ts, source, actor, action, status, keys) VALUES (?, ?, ?, ?, ?, ?, ?) "
                     "ON CONFLICT(id) DO UPDATE SET ts=excluded.ts, source=excluded.source, "
                     "actor=excluded.actor, action=excluded.action, status=excluded.status, keys=excluded.keys "
-                    "WHERE excluded.source='control' AND audit_events.source='control'",
+                    "WHERE excluded.source='control' AND audit_events.source='control' "
+                    "AND (audit_events.status IS NOT excluded.status "
+                    "OR audit_events.keys IS NOT excluded.keys OR audit_events.ts IS NOT excluded.ts)",
                     (id, ts, source, actor, action, status, keys),
                 )
-                # Commit the row BEFORE pruning: the prune is best-effort maintenance and must
-                # never be able to roll back or strand the audit row it arrived with.
                 self._conn.commit()
                 if random.random() < 0.05:  # noqa: S311 — pruning sampler, not a security context
                     # ts is the "%Y-%m-%dT%H:%M:%SZ" shape _iso_now/control_audit both write, which

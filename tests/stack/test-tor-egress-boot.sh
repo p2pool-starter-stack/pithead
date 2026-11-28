@@ -57,6 +57,7 @@ eb_boot() { # <unit text> <chain file>
         case "$line" in ExecStart=*) ;; *) continue ;; esac
         cmd="${line#ExecStart=}" tolerant=0
         case "$cmd" in -*) tolerant=1 cmd="${cmd#-}" ;; esac
+        case "$cmd" in /bin/bash\ *) continue ;; esac
         read -r -a w <<<"$cmd"
         case "${w[1]}" in
         -N) ;;
@@ -114,6 +115,27 @@ printf 'NETWORK_SUBNET=172.29.0.0/24\nNETWORK_PREFIX=172.29.0\nTOR_EGRESS_FIREWA
 SYSTEMCTL_ENABLED=0 eb_run apply_tor_egress_firewall >/dev/null 2>&1
 assert_contains "a changed subnet rewrites the unit" "$(cat "$EB_UNIT")" "-s 172.29.0.0/24 -j DROP"
 printf 'NETWORK_SUBNET=172.28.0.0/24\nNETWORK_PREFIX=172.28.0\nTOR_EGRESS_FIREWALL=true\n' >"$EB/.env"
+
+echo "== unit: with the egress map present the boot unit also restores the log-only audit table (#4195) =="
+EB_AUD="$EB/auditmap"
+mkdir -p "$EB_AUD/data"
+printf 'role\tdestination\ttoday\ttarget\troute\tenforcer\ttest\nappliance\tpool lan\tallow\tallow\tlan\tlan-guard\tnone\n' >"$EB_AUD/data/egress-map.tsv"
+BUA=$(PATH="$EB/bin:$PATH" run_sourced "$EB_AUD" render_tor_egress_boot_unit /usr/sbin/iptables 172.28.0.0/24 172.28.0.25)
+assert_contains "the audit table is loaded by a tolerant line, so it can never block the fence" \
+    "$BUA" "ExecStart=-/bin/bash -c "
+assert_contains "the inline nft script carries the logged would_drop counter" "$BUA" "would_drop"
+assert_eq "exactly one bash loader line runs in this render" \
+    "$(printf '%s\n' "$BUA" | grep -c '/bin/bash -c ')" "1"
+assert_eq "the inline audit script carries no terminal drop or reject" \
+    "$(printf '%s\n' "$BUA" | grep '/bin/bash -c ' | grep -Ec '(^|[[:space:]])(drop|reject)([[:space:]]|$)')" "0"
+BUN=$(PATH="$EB/bin:$PATH" run_sourced "$SANDBOX" render_tor_egress_boot_unit /usr/sbin/iptables 172.28.0.0/24 172.28.0.25)
+assert_not_contains "no map means no audit line — never an invented table" "$BUN" "would_drop"
+
+mkdir -p "$EB/data"
+cp "$EB_AUD/data/egress-map.tsv" "$EB/data/egress-map.tsv"
+eb_run apply_tor_egress_firewall >/dev/null 2>&1
+assert_contains "apply bakes the map's audit table into the boot unit" "$(cat "$EB_UNIT")" "would_drop"
+rm -rf "$EB/data" "$EB_AUD"
 
 rm -f "$EB_UNIT"
 EB_APPLIANCE=1 eb_run apply_tor_egress_firewall >/dev/null 2>&1

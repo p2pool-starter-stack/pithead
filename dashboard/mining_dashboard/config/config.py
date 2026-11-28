@@ -164,19 +164,14 @@ XVB_DONOR_ID = os.environ.get("XVB_DONOR_ID", "")
 # Feature Flag: Toggles the XvB algorithmic switching logic
 ENABLE_XVB = os.environ.get("XVB_ENABLED", "true").lower() == "true"
 
-# The bridge container's Tor SOCKS proxy, shared by every dashboard call that must reach clearnet
-# without leaking the host IP: the XvB stats fetch + raffle registration (#163), the update check
-# (#224), and the Healthchecks.io ping (#79). socks5h resolves the target host via Tor too (no local
-# DNS leak). The host-networked dashboard reaches it at 172.28.0.25:9050 (tracks the subnet, #180).
-TOR_SOCKS_PROXY = os.environ.get("TOR_SOCKS_PROXY", "socks5h://172.28.0.25:9050")
+TOR_SOCKS_PROXY = os.environ.get("TOR_SOCKS_PROXY", "").strip()
+if not TOR_SOCKS_PROXY:
+    raise RuntimeError("TOR_SOCKS_PROXY is empty or unset; outbound is Tor only (#4146)")
 
-# Route XvB DONATION MINING through Tor by default too (#166), not just the stats fetch (#163): while
-# donating, the proxy connects to eu.xmrvsbeast.com, which would otherwise expose the host IP. The
-# algo controller sets this host:port as the XvB pool's per-pool `socks5` field (xmrig-proxy resolves
-# that pool's DNS proxy-side). `xvb.tor: false` opts out (direct, for max yield). The host:port is
-# derived from TOR_SOCKS_PROXY (so a custom subnet, #180, carries through) with the scheme stripped —
-# xmrig wants a bare host:port.
 XVB_TOR_ENABLED = os.environ.get("XVB_TOR_ENABLED", "true").lower() == "true"
+DONATION_ENABLED = os.environ.get("DONATION_ENABLED", "false").lower() == "true"
+DONATION_PERCENT = float(os.environ.get("DONATION_PERCENT", "0"))
+DONATION_TOR_ENABLED = os.environ.get("DONATION_TOR_ENABLED", "true").lower() == "true"
 XVB_TOR_SOCKS5 = TOR_SOCKS_PROXY.split("://", 1)[-1]
 
 # XvB raffle-registration endpoint (#263). Mining to the XvB pool isn't enough to enter the raffle —

@@ -6,6 +6,13 @@ from mining_dashboard.config.config import (
 )
 
 
+def worker_key(w):
+    name = w.get("name")
+    if str(name or "").strip() in ("", "-"):
+        return f"-@{w.get('ip')}"
+    return name
+
+
 class WorkerPresenceMonitor:
     """
     Per-worker, flap-protected offline/online tracker (Issue #121).
@@ -57,8 +64,8 @@ class WorkerPresenceMonitor:
     def update(self, workers, now=None):
         """Feed this cycle's worker rows; return the list of debounced transitions."""
         now = self._clock() if now is None else now
-        online = {w.get("name") for w in workers if w.get("status") == "online"}
-        present = {w.get("name") for w in workers}
+        online = {worker_key(w) for w in workers if w.get("status") == "online"}
+        present = {worker_key(w) for w in workers}
         primed = self._primed
         edges = []
 

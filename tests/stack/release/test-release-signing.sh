@@ -312,6 +312,11 @@ VER_OK="PATH=$VER/bin:\$PATH; COSIGN_ENABLED=1; COSIGN_KEY=$VER/box/cosign.key; 
 # shellcheck disable=SC1090
 assert_contains "the pin is read out of pithead" \
     "$(cd "$ROOT" && set -- && source "$REL" 2>/dev/null && cosign_image_pin)" "ghcr.io/sigstore/cosign/cosign@sha256:"
+# shellcheck disable=SC1090
+assert_eq "the shipped pin is the one in build/cosign/Dockerfile" \
+    "$(cd "$ROOT" && set -- && source "$REL" 2>/dev/null && cosign_image_pin)" "$(bash "$ROOT/scripts/cosign-image.sh")"
+assert_eq "no pinned cosign image literal exists outside build/cosign/Dockerfile" \
+    "$(git -C "$ROOT" grep -lE 'sigstore/cosign/cosign[:@][^[:space:]"]*sha256:[0-9a-f]{64}' -- . ':!build/cosign/Dockerfile')" ""
 vc="$(verifier_check "$VER/box" "$VER_OK")"
 assert_contains "a working verifier passes preflight" "$vc" "rc=0"
 assert_contains "the pass says the round trip actually ran" "$vc" "refuses a tampered blob"

@@ -14,6 +14,12 @@ from mining_dashboard.config.config import (
     HEALTHCHECKS_PING_URL,
     TOR_SOCKS_PROXY,
 )
+from mining_dashboard.helper.http import (
+    PROXY_PURPOSE_NOTIFY,
+    proxy_map,
+    purpose_proxy,
+    purpose_proxy_map,
+)
 
 logger = logging.getLogger("Healthchecks")
 
@@ -54,7 +60,7 @@ class PingFailure(requests.RequestException):
 def _fetch(url, timeout, deadline, proxies=None):
     request = {
         "url": url,
-        "proxy": (proxies or {}).get("https"),
+        "proxy": proxies.get("https") if proxies else None,
         "timeout": timeout,
         "deadline": deadline,
     }
@@ -67,7 +73,7 @@ def _fetch(url, timeout, deadline, proxies=None):
             timeout=_PING_HARD_LIMIT_SEC,
         )
     except subprocess.TimeoutExpired:
-        raise PingFailure("tor_socks" if proxies else "connect", "Timeout") from None
+        raise PingFailure("tor_socks" if request["proxy"] else "connect", "Timeout") from None
     try:
         out = json.loads(done.stdout)
     except ValueError:
@@ -91,7 +97,7 @@ class HealthchecksClient:
         self.enabled = bool(self.url)
         self.interval = max(0, int(interval_seconds or 0))
         self._tor_proxy = tor_proxy
-        self._proxies = {"http": tor_proxy, "https": tor_proxy} if tor_proxy else None
+        self._proxies = purpose_proxy_map(tor_proxy, PROXY_PURPOSE_NOTIFY)
         self._clock = clock
         self._record_failure = record_failure
         self._last_ping_ok = None
@@ -114,9 +120,8 @@ class HealthchecksClient:
 
     def _isolated_proxies(self):
         if not self._tor_proxy:
-            return None
-        proxy = self._tor_proxy.replace("://", f"://{uuid.uuid4().hex}:isolate@", 1)
-        return {"http": proxy, "https": proxy}
+            return self._proxies
+        return proxy_map(purpose_proxy(self._tor_proxy, uuid.uuid4().hex))
 
     def ping(self) -> bool:
         if not self.url:
@@ -148,7 +153,7 @@ class HealthchecksClient:
                 return False
             except requests.RequestException as e:
                 logger.debug("Healthchecks ping failed (offline?): %s", e)
-                self._record(_failure_class(e, proxies is not None), _failure_name(e))
+                self._record(_failure_class(e, bool(self._tor_proxy)), _failure_name(e))
             except Exception as e:  # pragma: no cover
                 logger.debug("Healthchecks unexpected error: %s", e)
                 self._record("connect", type(e).__name__)
