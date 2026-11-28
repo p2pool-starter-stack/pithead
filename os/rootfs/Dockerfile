@@ -40,7 +40,7 @@ RUN COMPOSE_VERSION="$(/tools/module-version.sh /tools/compose/go.mod github.com
     && go version /out/docker-compose | grep -qxF "/out/docker-compose: $(go env GOVERSION)" \
     && go version /out/cosign | grep -qxF "/out/cosign: $(go env GOVERSION)" \
     && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/klauspost/compress[[:space:]]+v1\.20\.1[[:space:]]' \
-    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/go-jose/go-jose/v4[[:space:]]+v4\.1\.6[[:space:]]'
+    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/go-jose/go-jose/v4[[:space:]]+v4\.1\.9[[:space:]]'
 
 # ---------------------------------------------------------------------------------------------
 # Pinned by digest (#135) so the debian:trixie-slim tag can't be silently re-pointed. The digest

@@ -55,7 +55,7 @@ selects x/mod v0.41.0 and grpc v1.85.0. `COSIGN_GO_RAISES` raises only x/net
 to v0.62.0: Cosign v3.1.5 already selects x/mod v0.42.0, grpc v1.84.0,
 klauspost/compress v1.20.1 (past the fix for
 [CVE-2026-63209](https://github.com/p2pool-starter-stack/pithead/issues/3585))
-and go-jose/v4 v4.1.9 (the fix for
+and go-jose/v4 v4.1.9 (past the fix for
 [CVE-2026-116587](https://github.com/p2pool-starter-stack/pithead/issues/3761)),
 and a raise below a selected version would downgrade it.
 Compose already selects compress v1.20.0 from its pinned upstream source.
