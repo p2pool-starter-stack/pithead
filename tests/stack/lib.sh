@@ -238,25 +238,17 @@ EOF
 # legacy-Keccak checksum — a well-shaped address with one mistyped character crashes p2pool at
 # startup, so "checksum" is its own verdict with its own operator message.
 #
-# Checksum-VALID fixtures are well-known PUBLIC addresses (never ours): XMRig's donation address
-# (primary) and the Monero project's donation address (subaddress). The integrated fixture is the
-# XMRig donation keys re-tagged with a zero payment id and a recomputed checksum — no public
-# project publishes a stable integrated donation address. The checksum-INVALID primary is the KVM
-# harness wallet that slipped the shape-only gate and crash-looped a provisioned appliance.
-VALID_PRIMARY="48edfHu7V9Z84YzzMa6fUueoELZ9ZRXq9VetWzYGzKt52XU5xvqgzYnDK9URnRoJMk1j8nLwEVsaSWJ4fhdUyZijBGUicoD"
+# Checksum-valid fixtures are public addresses; the integrated one re-tags the primary's keys with a
+# zero payment id and a recomputed checksum.
+VALID_PRIMARY="486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R"
 VALID_SUBADDR="888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H"
-VALID_INTEGRATED="4JMJg6ic6R584YzzMa6fUueoELZ9ZRXq9VetWzYGzKt52XU5xvqgzYnDK9URnRoJMk1j8nLwEVsaSWJ4fhdUyZijGDpDGTWtLM516v46mB"
+VALID_INTEGRATED="4HoFHatLJYXMkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVFCi65yWKXZjD14Kx6SW"
 
-# The Tari sibling of the gate above. Both Tari forms (base58 and emoji) carry a 1-byte DammSum
-# checksum; the decode and check order mirror tari's own from_bytes. The checksum-VALID fixture
-# is the dual mainnet address hardcoded in tari's OWN test suite (test_serialize_deserialize_
-# dual_address: one-sided, known view/spend keys) — reference-blessed, never ours. The emoji
-# fixture is that same address's byte-for-byte emoji form; the single-address fixture reuses the
-# reference spend key with a recomputed checksum (no project publishes a single-form address).
-# The invalid emoji strings are ALSO tari's own test vectors (invalid_emoji / invalid_checksum).
-VALID_TARI="126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5BJ"
-VALID_TARI_EMOJI="🐢📟🍼🌈🍓🚓➕🎸🍆🍷🎣🍗📿😂🥊⏰🍯👾🤔👒🍾👀🍼🌊🎷📟😈🚨👙🍈🌈🛵🤢🍔🔋👙🚽🤑🎽🎓🎓🐀🐜🐴🥄🚿📷💰👶👍🎉🍄🎢🔌🐋🚰🚑💅👢🦂🐬🐋🍗🍸🎹🏀🍄"
-VALID_TARI_SINGLE="1224yPceFvbksLKQ8JE6APDzVY2D6P3SpXwB5LLC3BH4F7oF"
+# The Tari sibling: the emoji and single forms are re-encoded from the dual address with a recomputed
+# DammSum checksum.
+VALID_TARI="122UBBqoZF1HPFbd1NMNfvCesDzhso9a8wDxVqQCkdUn9RCN8A1huPbyabT9W4o5bXzkxzYR2AC2kmgoLrbQKxQL4rG"
+VALID_TARI_EMOJI="🐢📟🌹👢🍾📡🍆🔥🎃💺🐪🎬🍞🚦💤📎🍔📷🐀🧲🍩💵🍑👕🐚🐶🍆👃🍁📷🐚🎱🐶⚽🚗📌🐝🚧⏰🚒🦂🏦🐣🔪👻🍄⚽🐭🧩🐋📱💅🐺🌽👅🍊📡💦🎸👶🐔💃🔧👘🍄🍎🎼"
+VALID_TARI_SINGLE="122FiWtcc6YtrGFkmGnVyqLMaWkLbMLGseF3xUNSQNEUofqV"
 
 stub_host_addrs() {
     HOST_ADDRS_STUB=$1 HOST_NAME_STUB=${2-$1}
@@ -335,7 +327,7 @@ EOF
     }
     # Defaulted, not assigned outright, so a domain file that set its own WALLET before calling
     # this keeps it. See build_control_sandbox for why both builders default it (#1305).
-    WALLET="${WALLET:-$VALID_PRIMARY}" # checksum-valid mainnet primary (the XMRig donation address) — #250 gates the type, #829 the checksum
+    WALLET="${WALLET:-$VALID_PRIMARY}" # checksum-valid mainnet primary (a public donation address) — #250 gates the type, #829 the checksum
 }
 
 # The control-channel sandbox: builds $C, defines CTRL_LOG, seed_control_env, control_config.

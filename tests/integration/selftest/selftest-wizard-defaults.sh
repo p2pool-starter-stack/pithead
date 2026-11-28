@@ -33,8 +33,8 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 fi
 CLI
 chmod +x "$IT_PITHEAD"
-monero='48edfHu7V9Z84YzzMa6fUueoELZ9ZRXq9VetWzYGzKt52XU5xvqgzYnDK9URnRoJMk1j8nLwEVsaSWJ4fhdUyZijBGUicoD'
-tari='126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5BJ'
+monero='486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R'
+tari='122UBBqoZF1HPFbd1NMNfvCesDzhso9a8wDxVqQCkdUn9RCN8A1huPbyabT9W4o5bXzkxzYR2AC2kmgoLrbQKxQL4rG'
 BASELINE_CONFIG=$(jq -n --arg m "$monero" --arg t "$tari" '{monero:{wallet_address:$m,data_dir:"fixture-monero"},tari:{wallet_address:$t,data_dir:"fixture-tari"},tor:{data_dir:"fixture-tor"}}')
 # Deliberately no BASELINE_JSON: run.sh's preflight only supplies BASELINE_CONFIG.
 unset BASELINE_JSON
