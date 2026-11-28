@@ -17,8 +17,92 @@
 # stands alone — the pre-#829 behaviour, degraded, not broken. Every config path routes through
 # here (setup/apply, the appliance wizard spool, the dashboard control runner), so this is the
 # one checksum gate for all of them.
+_payout_keys_go_python_live() {
+    local probe
+    probe=$(python3 -c 'print("ready")' 2>/dev/null && printf '.')
+    [ "$probe" = $'ready\n.' ]
+}
+
+_payout_keys_go_bin() {
+    local candidate
+    if [ -n "${PITHEAD_GO_BINARY:-}" ]; then
+        candidate="$PITHEAD_GO_BINARY"
+    elif [ -n "${SCRIPT_DIR:-}" ]; then
+        candidate="$SCRIPT_DIR/go/bin/pithead"
+    else
+        candidate="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/go/bin/pithead"
+    fi
+    [ -f "$candidate" ] && [ -x "$candidate" ] || return 1
+    _payout_keys_go_python_live || return 1
+    printf '%s\n' "$candidate"
+}
+
+_payout_keys_go_classify() {
+    local chain="$1" address="$2" binary verdict helper_rc extra key_only=0
+    case "$chain" in
+    monero) [ "${MONERO_ADDRESS_KEY_ONLY:-}" != 1 ] || key_only=1 ;;
+    tari) [ "${TARI_ADDRESS_KEY_ONLY:-}" != 1 ] || key_only=1 ;;
+    *) return 125 ;;
+    esac
+    binary=$(_payout_keys_go_bin) || return 125
+    {
+        IFS= read -r -d '' verdict && IFS= read -r -d '' helper_rc && [ "$helper_rc" = 0 ] &&
+            { ! IFS= read -r -d '' extra && [ -z "$extra" ]; }
+    } < <(
+        {
+            rc=0
+            {
+                printf '%s\0%s\0%s\0' "$chain" "$key_only" "$address"
+            } | PITHEAD_GO_HELPER=payout-keys-address PITHEAD_IMPL_LAUNCHED=1 "$binary" 2>/dev/null ||
+                rc=$?
+            printf '%d\0' "$rc"
+        } 2>/dev/null
+    ) || return 125
+    case "$chain:$key_only" in
+    monero:0)
+        case "$verdict" in
+        primary | integrated | subaddress | checksum | invalid) ;;
+        *) return 125 ;;
+        esac
+        ;;
+    monero:1)
+        case "$verdict" in
+        checksum | invalid) ;;
+        *)
+            [ "${#verdict}" -eq 64 ] || return 125
+            case "$verdict" in *[!0-9a-f]*) return 125 ;; esac
+            ;;
+        esac
+        ;;
+    tari:0)
+        case "$verdict" in
+        ok | checksum | network | invalid) ;;
+        *) return 125 ;;
+        esac
+        ;;
+    tari:1)
+        case "$verdict" in
+        checksum | network | invalid) ;;
+        *)
+            case "${#verdict}" in
+            66 | 130) ;;
+            *) return 125 ;;
+            esac
+            case "$verdict" in *[!0-9a-f]*) return 125 ;; esac
+            ;;
+        esac
+        ;;
+    esac
+    printf '%s\n' "$verdict"
+}
+
 monero_address_type() {
-    local shape
+    local shape verdict
+    if _pithead_impl_selected payout-keys &&
+        verdict=$(_payout_keys_go_classify monero "$1"); then
+        printf '%s\n' "$verdict"
+        return
+    fi
     case "$1" in
     4*) case "${#1}" in 95) shape=primary ;; 106) shape=integrated ;; *) shape=invalid ;; esac ;;
     8*) case "${#1}" in 95) shape=subaddress ;; *) shape=invalid ;; esac ;;
@@ -142,6 +226,12 @@ PYEOF
 # python3 does the math, same as the Monero gate above. Without it the address is "unchecked" —
 # accepted, the pre-gate behaviour, degraded, never a false reject.
 tari_address_type() {
+    local verdict
+    if _pithead_impl_selected payout-keys &&
+        verdict=$(_payout_keys_go_classify tari "$1"); then
+        printf '%s\n' "$verdict"
+        return
+    fi
     command -v python3 >/dev/null 2>&1 || {
         echo "unchecked"
         return
