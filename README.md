@@ -8,7 +8,7 @@
 
 [![CI](https://github.com/p2pool-starter-stack/pithead/actions/workflows/ci.yml/badge.svg)](https://github.com/p2pool-starter-stack/pithead/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-![Platform: appliance image or Ubuntu 24.04](https://img.shields.io/badge/Platform-appliance%20image%20%C2%B7%20Ubuntu%2024.04-E95420)
+![Platform: appliance image or Ubuntu 24.04 / 26.04](https://img.shields.io/badge/Platform-appliance%20image%20%C2%B7%20Ubuntu%2024.04%20%2F%2026.04-E95420)
 ![Tor](https://img.shields.io/badge/Networking-Tor--first-7D4698?logo=torproject&logoColor=white)
 
 Docker Compose stack for Monero + Tari merge-mining on [P2Pool](https://github.com/SChernykh/p2pool),
@@ -87,7 +87,7 @@ mining, and the **Compose stack** you run on a host you manage.
 | | What you get | Start here |
 |---|---|---|
 | **Pithead OS** — the appliance | A bootable USB image that installs itself on a dedicated machine: no Linux to set up, configured from a browser, updated as one signed OS image with A/B fallback. Fallback covers the OS image only; it cannot undo a one-way data migration such as Tari v6. | [The appliance guide](docs/appliance.md#updates) |
-| **The Compose stack** — DIY | The same stack on a host you manage (Ubuntu Server 24.04): you keep the OS, `pithead` drives Docker Compose. | The Quick Start below |
+| **The Compose stack** — DIY | The same stack on a host you manage (Ubuntu Server 24.04 or 26.04): you keep the OS, `pithead` drives Docker Compose. | The Quick Start below |
 
 Same stack, same dashboard, same configuration either way. The appliance is the short road;
 DIY is for a box that already does other things.
@@ -115,7 +115,7 @@ cd pithead
 > Release archives include the generated `pithead` executable and offline operator guides; source
 > clones build the executable with `make`.
 
-> NOTE: Prereqs are Ubuntu Server 24.04 LTS, 16 GB+ RAM, an SSD (600 GB+ in either prune mode
+> NOTE: Prereqs are Ubuntu Server 24.04 LTS or 26.04 LTS, 16 GB+ RAM, an SSD (600 GB+ in either prune mode
 > with both nodes local, or 370 GB+ with Tari remote; the chains grow ~100+ GB/year, so 2–4 TB
 > avoids a later resize),
 > and your Monero payout address (Tari is optional). Running a node on another machine cuts the disk budget —

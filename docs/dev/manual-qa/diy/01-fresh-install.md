@@ -4,7 +4,7 @@ This part tests the path a new user takes, from an empty machine to a stack that
 
 ## Before you start
 
-- **Machine:** the **fresh box**, Ubuntu Server 24.04 with nothing of Pithead on it (full spec in [What you need](../what-you-need.md)). It may be a virtual machine: see [sandbox-vm.md](sandbox-vm.md), and start from its *clean* snapshot.
+- **Machine:** the **fresh box**, Ubuntu Server 24.04 LTS or 26.04 LTS with nothing of Pithead on it (full spec in [What you need](../what-you-need.md)). It may be a virtual machine: see [sandbox-vm.md](sandbox-vm.md), and start from its *clean* snapshot.
 - **Earlier steps:** none. 1.1–1.11 are session 2 of the [Run sheet](../README.md#run-sheet). 1.12 runs partway through the sync, in the window when Monero has finished its first sync and Tari has not: check the dashboard a few times a day so you catch it. 1.13 waits for session 9, once both chains have synced.
 - **Have ready:** the candidate's full commit SHA; the QA Monero wallet's **primary** address and one **subaddress** of it; the Tari QA address; the laptop on the same network, with a browser.
 - **Why from source:** build the candidate from source, so a failure here does not spend the version tag.

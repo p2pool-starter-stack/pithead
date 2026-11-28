@@ -133,7 +133,7 @@ The test box holds real synced nodes and real keys. Treat it as production-sensi
 
 ## Provisioning the test box
 
-A one-time setup. Target the Ubuntu LTS releases the stack supports (22.04 / 24.04).
+A one-time setup. Target the Ubuntu LTS releases the stack supports (22.04 / 24.04 / 26.04).
 
 1. Install and deploy Pithead normally (see [Getting Started](../getting-started.md)) and let it
    fully sync. You want the box in steady state: all containers healthy, Monero + Tari synced,

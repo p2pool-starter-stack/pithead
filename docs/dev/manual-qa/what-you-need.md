@@ -21,7 +21,7 @@ Contents: [Fresh box](#fresh-box), [Upgrade box](#upgrade-box), [Appliance box](
 
 ## Fresh box
 
-- Ubuntu Server 24.04, AVX2 CPU, 16 GB RAM, 600 GB SSD, nothing of Pithead on it.
+- Ubuntu Server 24.04 LTS or 26.04 LTS, AVX2 CPU, 16 GB RAM, 600 GB SSD, nothing of Pithead on it.
 - Used in [section 1](diy/01-fresh-install.md).
 - A virtual machine is fine: see
   [Running the DIY boxes as virtual machines](diy/sandbox-vm.md).

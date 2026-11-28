@@ -163,6 +163,28 @@ os_missing="$(
 )"
 assert_eq "detect_os tolerates a missing file" "$os_missing" ""
 
+echo "== unit: supported OS versions =="
+for _ver in 24.04 26.04; do
+    osr="$SANDBOX/os-release-$_ver"
+    printf 'ID=ubuntu\nVERSION_ID="%s"\nPRETTY_NAME="Ubuntu %s LTS"\n' "$_ver" "$_ver" >"$osr"
+    out="$(
+        cd "$SANDBOX" && source "$STACK" 2>/dev/null
+        set +e
+        SKIP_DEPS=1 OS_RELEASE_FILE="$osr" check_prerequisites 2>&1 >/dev/null
+    )"
+    assert_not_contains "$_ver supported — no OS warning" "$out" "Officially supported"
+done
+for _ver in 22.04 20.04 debian; do
+    osr="$SANDBOX/os-release-$_ver"
+    printf 'ID=%s\nVERSION_ID="%s"\nPRETTY_NAME="%s"\n' "$_ver" "$_ver" "$_ver" >"$osr"
+    out="$(
+        cd "$SANDBOX" && source "$STACK" 2>/dev/null
+        set +e
+        SKIP_DEPS=1 OS_RELEASE_FILE="$osr" check_prerequisites 2>&1 >/dev/null
+    )"
+    assert_contains "non-supported $_ver — warns" "$out" "Officially supported"
+done
+
 # detect_host_timezone: an explicit IANA-shaped TZ wins; garbage falls back to Etc/UTC.
 # shellcheck disable=SC1090  # STACK path is dynamic by design
 tz_good="$(
