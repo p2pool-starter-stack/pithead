@@ -194,6 +194,7 @@ It adds and removes no Pithead configuration keys. It changes these defaults: `m
   message when none is available.
 - A hand-edited `dashboard.secure` of `"TRUE"`, `1` or `"yes"` now renders the TLS Caddyfile, matching
   `doctor`, instead of silently serving plain HTTP.
+- The rig role reserves no hugepages at boot — it releases the baked 6 GB reservation and leaves the pool to RigForge — and a rig renders RandomX mode `auto`, so a machine too small for the dataset mines in light mode instead of failing the miner unit (#4010).
 
 ### Security
 

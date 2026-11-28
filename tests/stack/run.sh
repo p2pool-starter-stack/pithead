@@ -373,11 +373,11 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-readonly-verbs-lock.sh" && domain_ran test-readonly-verbs-lock.sh "$_d0" "$?" || domain_ran test-readonly-verbs-lock.sh "$_d0" "$?"
     _d0=$((PASS + FAIL)) && source "$HERE/test-cli-verb-ledger-lock.sh" && domain_ran test-cli-verb-ledger-lock.sh "$_d0" "$?" || domain_ran test-cli-verb-ledger-lock.sh "$_d0" "$?"
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-identity-boot.sh" && domain_ran test-appliance-identity-boot.sh "$_d0" "$?" || domain_ran test-appliance-identity-boot.sh "$_d0" "$?"
+    _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-hugepages.sh" && domain_ran test-appliance-rig-hugepages.sh "$_d0" "$?" || domain_ran test-appliance-rig-hugepages.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-boot-verdicts.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-boot-verdicts.sh" && domain_ran test-appliance-boot-verdicts.sh "$_d0" "$?" || domain_ran test-appliance-boot-verdicts.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-machine-id-journal.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-machine-id-journal.sh" && domain_ran test-appliance-machine-id-journal.sh "$_d0" "$?" || domain_ran test-appliance-machine-id-journal.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/appliance/test-appliance-media.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-media.sh" && domain_ran test-appliance-media.sh "$_d0" "$?" || domain_ran test-appliance-media.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-media-console.sh disable=SC2015
