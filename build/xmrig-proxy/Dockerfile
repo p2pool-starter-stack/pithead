@@ -3,8 +3,8 @@ FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce
 
 # Define XMRig Proxy version and SHA256 hash for binary verification
 # Refer to https://github.com/xmrig/xmrig-proxy/releases for validation
-ARG XMRIG_PROXY_VERSION=6.26.0
-ARG XMRIG_PROXY_HASH=73cceb10be474ba8ce20faddb9d2c6af0cb50bce84e72f7d36a326f7147c01c4
+ARG XMRIG_PROXY_VERSION=6.27.0
+ARG XMRIG_PROXY_HASH=d04f45c6f9cf870f9a7d434cf629cda69dffe560ff8b06041d0574866eb9f763
 
 RUN for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && exit 1; sleep "$((attempt * 5))"; }; done && apt-get install -y \
     apt \
