@@ -65,10 +65,10 @@ run_recipe() {
 run_recipe
 
 jq -es --arg sha "$RECIPE_TEST_SHA" --arg base "$BASE" --arg prev "$PREV" '
-    length == 8 and
+    length == 9 and
     all(.[]; .repo == "pithead" and .commit == $sha and .ref == "release/" + $sha) and
-    (map(.idempotency_key) | unique | length == 8) and
-    all(.[0:7][]; .tier == "tier4-kvm" and .timeout_minutes == 240 and (.after // []) == [] and (.status_gate // false) == false) and
+    (map(.idempotency_key) | unique | length == 9) and
+    all(.[0:8][]; .tier == "tier4-kvm" and .timeout_minutes == 240 and (.after // []) == [] and (.status_gate // false) == false) and
     (.[0].options.phases == ["boot","update","install"]) and
     (.[1].options.phases == ["rig","rigmedia","media"]) and
     (.[2].options.phases == ["fault","reset"]) and
@@ -76,8 +76,9 @@ jq -es --arg sha "$RECIPE_TEST_SHA" --arg base "$BASE" --arg prev "$PREV" '
     (.[4].options.phases == ["stack"]) and
     (.[5].options == {phases:["provision","setup-defaults"],old_image_commit:$base} and .[5].local_only == true) and
     (.[6].options == {phases:["crossupdate"],old_image_commit:$prev} and .[6].local_only == true) and
-    (.[7].tier == "tier4-e2e" and .[7].status_gate == true and .[7].after == [1,2,3,4,5]) and
-    (.[7].options.mode == "targeted" and (.[7].options | has("no_rig") | not))
+    (.[7].options == {phases:["realupgrade"]} and (.[7] | has("local_only") | not)) and
+    (.[8].tier == "tier4-e2e" and .[8].status_gate == true and .[8].after == [1,2,3,4,5,8]) and
+    (.[8].options.mode == "targeted" and (.[8].options | has("no_rig") | not))
 ' "$RECIPE_TEST_DIR/jobs.jsonl" >/dev/null
 diff -u - "$RECIPE_TEST_DIR/urls" <<EOF
 POST https://bench.invalid/bench-ci/jobs
@@ -87,6 +88,7 @@ POST https://bench.invalid/bench-ci/jobs
 POST https://bench.invalid/bench-ci/jobs
 POST $PROV_URL/jobs
 POST $CROSS_URL/jobs
+POST https://bench.invalid/bench-ci/jobs
 GET $PROV_URL/jobs/6
 GET $CROSS_URL/jobs/7
 POST https://bench.invalid/bench-ci/jobs
@@ -97,7 +99,7 @@ if run_recipe; then
     echo 'recipe submitted the e2e gate after a failed crossupdate job' >&2
     exit 1
 fi
-[ "$(wc -l <"$RECIPE_TEST_DIR/jobs.jsonl")" -eq 7 ] || {
+[ "$(wc -l <"$RECIPE_TEST_DIR/jobs.jsonl")" -eq 8 ] || {
     echo 'a failed pinned leg still produced an e2e submission' >&2
     exit 1
 }
