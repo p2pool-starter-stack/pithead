@@ -66,6 +66,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/secure-boot-boot-verdict.sh"
 # shellcheck source=tests/os/host-egress-audit-boot-verdict.sh
 . "$SCRIPT_DIR/host-egress-audit-boot-verdict.sh"
+# shellcheck source=tests/os/host-egress-watchdog-boot-verdict.sh
+. "$SCRIPT_DIR/host-egress-watchdog-boot-verdict.sh"
 # shellcheck source=tests/os/failure-evidence.sh
 . "$SCRIPT_DIR/failure-evidence.sh"
 # shellcheck source=tests/os/staging-failure-evidence.sh

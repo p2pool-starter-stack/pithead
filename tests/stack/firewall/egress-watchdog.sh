@@ -74,3 +74,32 @@ assert_not_contains "a malformed port cell renders nothing, never raw text into 
     printf 'role\tdestination\ttoday\ttarget\troute\tenforcer\ttest\taudit\nappliance\tx\tallow\tallow\thost\tnone\tnone\tallowlisted tcp 443;flush\n' >"$EAU/map-bad.tsv"
     run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-bad.tsv" "" ""
 )" "flush"
+
+echo "== boot verdict: the KVM leg's watchdog judgement, fixture-tested so the boot phase cannot pass on noise (#4385) =="
+# shellcheck source=tests/os/host-egress-watchdog-boot-verdict.sh
+. "$ROOT/tests/os/host-egress-watchdog-boot-verdict.sh"
+EW_ALLOW_OK='host-audit: present (outside the allowlist 55 packets) watchdog=allowlisted (rise 0 since the last check)'
+EW_PROBE_OK='host-audit: present (outside the allowlist 80 packets) watchdog=leaking (rise 3 since the last check)'
+assert_eq "the watchdog token is read out of the check's line" "$(
+    host_egress_watchdog_state 'absent
+host-audit: present (outside the allowlist 55 packets) watchdog=leaking (rise 25 since the last check)'
+)" "leaking"
+assert_eq "the rise is read out of the same line" \
+    "$(host_egress_watchdog_rise 'host-audit: present (outside the allowlist 55 packets) watchdog=leaking (rise 25 since the last check)')" "25"
+assert_eq "a check that never saw the table has no rise to read" \
+    "$(host_egress_watchdog_rise 'host-audit: absent watchdog=not-observed')" ""
+assert_contains "allowlisted flow quiet and probe leaking passes the boot leg" \
+    "$(host_egress_watchdog_boot_verdict "$EW_ALLOW_OK" "$EW_PROBE_OK")" "read leaking on a deliberate clearnet probe"
+assert_contains "quiet only because the allowlisted flow was never counted is a boot failure" \
+    "$(host_egress_watchdog_boot_verdict 'host-audit: present (outside the allowlist 55 packets) watchdog=clean (rise 0 since the last check)' "$EW_PROBE_OK")" \
+    "never counted"
+assert_contains "the alert staying silent on the probe is a boot failure" \
+    "$(host_egress_watchdog_boot_verdict "$EW_ALLOW_OK" 'host-audit: present (outside the allowlist 55 packets) watchdog=clean (rise 0 since the last check)')" \
+    "left watchdog=clean"
+assert_contains "the allowlisted flow alerting is a boot failure" \
+    "$(host_egress_watchdog_boot_verdict 'host-audit: present (outside the allowlist 56 packets) watchdog=leaking (rise 1 since the last check)' "$EW_PROBE_OK")" \
+    "allowlisted TLS flow alerted"
+assert_contains "a leaking verdict with no counted rise is a boot failure" \
+    "$(host_egress_watchdog_boot_verdict "$EW_ALLOW_OK" 'host-audit: present watchdog=leaking (rise 0 since the last check)')" "no packet rise"
+assert_contains "no verdict at all on a booted appliance is a boot failure" \
+    "$(host_egress_watchdog_boot_verdict 'absent' "$EW_PROBE_OK")" "printed no watchdog verdict"
