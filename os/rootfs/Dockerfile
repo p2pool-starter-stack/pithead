@@ -116,11 +116,6 @@ COPY --from=gobuild /out/docker-compose /out/cosign /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
     && touch /etc/containers/nodocker
 
-# The built-in miner (#796): a pinned RigForge tree plus everything it needs, baked at image
-# build because nothing can be installed later — apt cannot run on the read-only root, and even
-# a rw-remount install leaves its /etc state (alternatives, ld.so.cache) on the volatile overlay
-# where the first reboot breaks the compiler. RIGFORGE_REF pins the commit of RigForge
-# v1.18.1 (8f06cb8d); pin releases by commit.
 # v1.16.0 is the floor for the HugePages pool ceiling: hugepages_pool_ceiling_mb (rigforge#398,
 # filed from #1103) is absent from v1.15.1's tree entirely, and declaring it into one fails OPEN —
 # parse_config never reads the key, so the rendered config would look capped and behave as today.
@@ -135,7 +130,7 @@ RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
 # msr-tools gives doctor its rdmsr probe; gettext-base is envsubst, which renders the unit on
 # every boot and is the ONLY tool a prebuilt tree strictly needs. Unsupported RigForge tests and their extra tool dependencies are not baked.
 COPY os/rootfs/fetch-archive.sh /usr/local/bin/fetch-archive
-ARG RIGFORGE_REF=8f06cb8df791f3cb16d47bbee85fde92103cbe0b
+ARG RIGFORGE_REF=04f8799955989120cf0a36121d3391cc5b5f5661
 RUN sh /usr/local/bin/fetch-archive \
         "https://github.com/p2pool-starter-stack/rigforge/archive/${RIGFORGE_REF}.tar.gz" /tmp/rigforge.tar.gz \
     && mkdir -p /opt/rigforge \

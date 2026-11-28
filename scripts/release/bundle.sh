@@ -12,6 +12,7 @@ append_bundle_sha256() { # <manifest> <bundle>
 
 publish() {
     stage "7/7  Publish GitHub Release $TAG"
+    require_gated_commit
     local manifest="$WORKDIR/ingredients-$TAG.md"
     write_manifest "$manifest"
     local packages="$WORKDIR/os-packages-$TAG.txt"
@@ -38,7 +39,7 @@ publish() {
             return 0
         }
 
-    run git tag -a "$TAG" -m "Pithead $TAG"
+    run git tag -a "$TAG" "$GIT_COMMIT" -m "Pithead $TAG"
     run git push origin "$TAG"
 
     # Move main to the released commit (docs/dev/releasing.md § Branch mechanics). A plain push can

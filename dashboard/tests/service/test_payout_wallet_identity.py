@@ -25,6 +25,9 @@ class _MoneroScan:
     def __init__(self):
         self.calls = []
 
+    def payout_addresses(self):
+        return [config.MONERO_WALLET_ADDRESS]
+
     def scan(self, min_height):
         wallet = config.MONERO_WALLET_ADDRESS
         self.calls.append((wallet, min_height))
@@ -36,6 +39,9 @@ class _TariScan:
     def __init__(self):
         self.calls = []
 
+    async def payout_addresses(self, expected=None):
+        return [config.TARI_WALLET_ADDRESS], True
+
     async def scan(self, min_height):
         wallet = config.TARI_WALLET_ADDRESS
         self.calls.append((wallet, min_height))
@@ -44,12 +50,18 @@ class _TariScan:
 
 
 class _SwitchingMoneroScan:
+    def payout_addresses(self):
+        return [config.MONERO_WALLET_ADDRESS]
+
     def scan(self, min_height):
         config.MONERO_WALLET_ADDRESS = _WALLET_B
         return ([_row(8, 800)], True)
 
 
 class _SwitchingTariScan:
+    async def payout_addresses(self, expected=None):
+        return [config.TARI_WALLET_ADDRESS], True
+
     async def scan(self, min_height):
         config.TARI_WALLET_ADDRESS = _WALLET_B
         return ([_row(8, 800)], True)
@@ -257,4 +269,29 @@ def test_failed_legacy_migration_rolls_back_without_losing_receipts():
         assert tables == {"payouts"}
     finally:
         store._conn = connection
+        store.close()
+
+
+@pytest.mark.parametrize("chain", ["monero", "tari"])
+def test_foreign_wallet_is_not_scanned_or_stored(monkeypatch, chain):
+    from mining_dashboard.service.storage_service import StateManager
+
+    _set_wallet(monkeypatch, chain, _WALLET_B)
+    scanner = _MoneroScan() if chain == "monero" else _TariScan()
+    if chain == "monero":
+        scanner.payout_addresses = lambda: [_WALLET_A]
+    else:
+
+        async def foreign(expected=None):
+            return [_WALLET_A], False
+
+        scanner.payout_addresses = foreign
+    store = StateManager(db_path=":memory:")
+    alert = AsyncMock()
+    sync = payout_sync.sync_monero if chain == "monero" else payout_sync.sync_tari
+    try:
+        assert asyncio.run(sync(store, scanner, alert)) is True
+        assert scanner.calls == []
+        alert.payout_confirmed_alert.assert_not_awaited()
+    finally:
         store.close()

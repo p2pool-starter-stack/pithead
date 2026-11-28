@@ -4,6 +4,7 @@ import math
 import mimetypes
 import os
 import re
+import uuid
 
 from aiohttp import web
 
@@ -171,11 +172,15 @@ async def handle_control_commit(request):
     _require_control_header(request)
     body = await config_request(request)
     try:
-        actor = request.headers.get("X-Auth-User", "")
         approval = approval_envelope(body)
+        if body.get("id"):
+            uuid.UUID(body["id"])
+    except Exception:
+        raise web.HTTPBadRequest(text="Body must be JSON with a valid intent 'id'.") from None
+    try:
         rid = control_service.submit(
             "commit",
-            actor=actor,
+            actor=request.headers.get("X-Auth-User", ""),
             intent_id=body.get("id"),
             # #719: the operator's typed confirmation for an in-scope disruptive change. It is
             # friction, not a secret — the host gate requires it before a CONFIRM row proceeds.
@@ -183,7 +188,8 @@ async def handle_control_commit(request):
             approval=approval,
         )
     except Exception:
-        raise web.HTTPBadRequest(text="Body must be JSON with a valid intent 'id'.") from None
+        logger.exception("Error submitting control commit")
+        return web.json_response({"error": "Failed to submit the commit request."}, status=500)
     # The preview result (same id) is still on disk; wait for the runner to overwrite it.
     res = await control_service.wait_result(rid, done=lambda r: r.get("status") != "previewed")
     if res is None:
