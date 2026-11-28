@@ -44,11 +44,9 @@ class TelemetryStoreMixin:
         donation_fraction: float = 0.0,
         mode: str = "",
     ) -> None:
-        """Record one XvB-scalars sample (#196), 30-day retention. The caller wall-clock-gates
-        this to ~5 min (DataService._sync_xvb_stats) so the cadence survives an UPDATE_INTERVAL
-        change, and only calls it on a genuine XvB fetch (never on a failed one)."""
         try:
             with self._db_lock:
+                self._xvb_rows = None
                 if not self._conn:
                     return
                 with self._conn:
@@ -67,19 +65,27 @@ class TelemetryStoreMixin:
         except sqlite3.Error as e:
             self._table_write_failed("xvb_history", "XvB History Insert Error", e)
 
+    _xvb_rows = None
+
     def get_xvb_history(self, since: float = 0.0) -> list[dict[str, Any]]:
-        """XvB-scalar samples at or after `since` (default: all), oldest first."""
         try:
             with self._db_lock:
                 if not self._conn:
                     return []
                 cursor = self._conn.cursor()
+                version = cursor.execute("PRAGMA data_version").fetchone()[0]
+                kept = self._xvb_rows
+                if since == 0.0 and kept and kept[0] is self._conn and kept[1] == version:
+                    return list(map(dict.copy, kept[2]))
                 cursor.execute(
                     "SELECT ts, avg_1h, avg_24h, fail_count, donation_fraction, mode "
                     "FROM xvb_history WHERE ts >= ? ORDER BY ts ASC",
                     (since,),
                 )
-                return [dict(row) for row in cursor.fetchall()]
+                rows = [dict(row) for row in cursor.fetchall()]
+                if since == 0.0:
+                    self._xvb_rows = (self._conn, version, list(map(dict.copy, rows)))
+                return rows
         except sqlite3.Error as e:
             self.logger.error(f"XvB History Read Error: {e}")
             return []
