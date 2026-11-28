@@ -19,6 +19,7 @@ case "$*" in
         if [ "$CASE" = interrupted ]; then kill -TERM "$PPID"; fi ;;
     'compose start p2pool') touch "$STATE/running" ;;
     'compose ps --services --status running') [ ! -f "$STATE/running" ] || echo p2pool ;;
+    'exec dashboard printenv DASHBOARD_PROXY_SECRET') echo fixture-secret ;;
     *) exit 1 ;;
 esac
 DOCKER
@@ -48,14 +49,15 @@ cat >"$td/bin/curl" <<'CURL'
 #!/usr/bin/env bash
 set -euo pipefail
 [ ! -f "$STATE/running" ] || exit 1
+[ "$1" = --header ] && [ "$(cat "${2#@}")" = 'X-Pithead-Proxy-Secret: fixture-secret' ] || exit 22
 case "${*: -1}" in
     */overview.mjs)
-        [ "$4" = -o ]
+        [ "$6" = -o ]
         if [ "$CASE" = missing-module ]; then
-            echo unrelated >"$5"
+            echo unrelated >"$7"
         else
-            echo 'P2Pool is syncing its sidechain' >"$5"
-            for ((i=0; i<1000; i++)); do echo 'padding ensures the served module is fully downloaded'; done >>"$5"
+            echo 'P2Pool is syncing its sidechain' >"$7"
+            for ((i=0; i<1000; i++)); do echo 'padding ensures the served module is fully downloaded'; done >>"$7"
         fi ;;
     */api/state)
         if [ "$CASE" = transient ] && [ ! -f "$STATE/first-api" ]; then touch "$STATE/first-api"; exit 1; fi

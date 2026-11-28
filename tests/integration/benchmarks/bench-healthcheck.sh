@@ -81,10 +81,7 @@ peers="$(printf '%s' "$p2p" | jq -r '(.connections // 0)')"
 [ "$strat" = null ] && problems="${problems}p2pool-no-stratum "
 [ "${peers:-0}" -gt 0 ] 2>/dev/null || warns="${warns}p2pool-0-peers "
 
-# 3. Miners connected — use proxy_workers (reliable). p2pool's hashrate_1h/15m is a SHARE-BASED
-# estimate, very jumpy on mini where shares are sparse, so it would false-WARN; it's display-only.
-# The dashboard is host-networked, so it's on 127.0.0.1:8000 of the box.
-workers="$(curl -fsS --max-time 5 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '.proxy_workers // empty' 2>/dev/null)"
+workers="$(sed -n 's/^DASHBOARD_PROXY_SECRET=/X-Pithead-Proxy-Secret: /p' "$DIR/.env" 2>/dev/null | curl -fsS --max-time 5 --header @- http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '.proxy_workers // empty' 2>/dev/null)"
 if [ -n "$workers" ]; then
     [ "$workers" -ge "$MIN_WORKERS" ] 2>/dev/null || warns="${warns}miners(${workers}/${MIN_WORKERS}+expected) "
 else
