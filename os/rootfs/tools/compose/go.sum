@@ -18,8 +18,8 @@ github.com/dlclark/regexp2 v1.11.0 h1:G/nrcoOa7ZXlpoa/91N3X7mM3r8eIlMBBJZvsz/mxK
 github.com/dlclark/regexp2 v1.11.0/go.mod h1:DHkYz0B9wPfa6wondMfaivmHpzrQ3v9q8cnmRbL6yW8=
 github.com/docker/cli v29.10.0+incompatible h1:lCL+clBUJnHsmjBCr6TwvfQFkmBidPxi5SkuXCoYxc0=
 github.com/docker/cli v29.10.0+incompatible/go.mod h1:JLrzqnKDaYBop7H2jaqPtU4hHvMKP+vjCwu2uszcLI8=
-github.com/docker/compose/v5 v5.7.2 h1:U3jkI9dDw7eX1fYpxtOottUrzmpo6j4HeADhr8qkV1Y=
-github.com/docker/compose/v5 v5.7.2/go.mod h1:nKcetZnXbdBUBrZtMvYmS6p+8oF+l/p9BUtZdS5bg2E=
+github.com/docker/compose/v5 v5.8.0 h1:UA+EN1bHwms7LQHftNyQp0cNN+Jj1z0FBx0IyCSAHms=
+github.com/docker/compose/v5 v5.8.0/go.mod h1:r/gf0BwwKvvleAWTXbhAZJHQ+TRcFE/nSMXc15fcLgg=
 github.com/docker/go-connections v0.8.2 h1:9d9DEokx5W7qlr0shkFXIxEA7+TTD+llwzcykSlxMNc=
 github.com/docker/go-connections v0.8.2/go.mod h1:no1qkHdjq7kLMGUXYAduOhYPSJxxvgWBh7ogVvptn3Q=
 github.com/docker/go-units v0.5.0 h1:69rxXcBk27SvSaaxTtLh/8llcHD8vYHT7WSdRZ/jvr4=

@@ -1,7 +1,7 @@
 FROM golang:1.27.4-trixie@sha256:f18c3d73a184fb0582828510722e723b63a93f7188d11dd223d9be6f6880e65d AS gobuild
 
-ARG COMPOSE_COMMIT=ed25575984c8dbd1ad137c93002d782f52478809
-ARG COSIGN_COMMIT=0e48502cf5ef34e2e60bbd3617aa19945712f705
+ARG COMPOSE_COMMIT=aee88dcde588d9dc7d8d2902f97b6b5502fdb771
+ARG COSIGN_COMMIT=e5a0818ca5729481095773409e9c1b60cc278e8d
 ARG COMPOSE_GO_RAISES="golang.org/x/net@v0.62.0"
 ARG COSIGN_GO_RAISES="golang.org/x/net@v0.62.0"
 ENV CGO_ENABLED=0
@@ -40,7 +40,7 @@ RUN COMPOSE_VERSION="$(/tools/module-version.sh /tools/compose/go.mod github.com
     && go version /out/docker-compose | grep -qxF "/out/docker-compose: $(go env GOVERSION)" \
     && go version /out/cosign | grep -qxF "/out/cosign: $(go env GOVERSION)" \
     && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/klauspost/compress[[:space:]]+v1\.20\.1[[:space:]]' \
-    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/go-jose/go-jose/v4[[:space:]]+v4\.1\.6[[:space:]]'
+    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/go-jose/go-jose/v4[[:space:]]+v4\.1\.9[[:space:]]'
 
 # ---------------------------------------------------------------------------------------------
 # Pinned by digest (#135) so the debian:trixie-slim tag can't be silently re-pointed. The digest
