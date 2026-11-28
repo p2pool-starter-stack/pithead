@@ -55,14 +55,14 @@ fault_firewall_boot_restore() {
     assert_eq "up installed and enabled the boot unit (#2460)" \
         "$(rx 'systemctl is-enabled pithead-egress.service 2>/dev/null')" "enabled"
     assert_contains "docker.service pulls the boot unit in (#2460)" \
-        "$(rx 'systemctl show -p Wants --value docker.service')" "pithead-egress.service"
+        "$(rx 'systemctl show -p Requires --value docker.service')" "pithead-egress.service"
     assert_contains "docker.service starts only after it (#2460)" \
         "$(rx 'systemctl show -p After --value docker.service')" "pithead-egress.service"
     rx 'bash -c "source ./pithead && remove_tor_egress_firewall" >/dev/null 2>&1' || true
     assert_eq "the rules are gone, as after a reboot" \
         "$(rx 'sudo iptables-save 2>/dev/null | grep -c pithead-tor-egress')" "0"
     local rc=0
-    rx 'sudo systemctl restart pithead-egress.service' >/dev/null 2>&1 || rc=$?
+    rx 'sudo systemctl --job-mode=ignore-dependencies restart pithead-egress.service' >/dev/null 2>&1 || rc=$?
     assert_rc "the boot unit starts cleanly on the real kernel (#2460)" "$rc" "0"
     rc=0
     rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1 || rc=$?
