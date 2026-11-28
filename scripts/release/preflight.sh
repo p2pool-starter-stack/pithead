@@ -11,15 +11,13 @@ fail_release_status_gate() {
 require_release_status_gate() {
     local context="${RELEASE_REQUIRED_STATUS_CONTEXT:-}" app_id statuses state
     local slug="${RELEASE_REQUIRED_STATUS_APP_SLUG:-}" expected="${RELEASE_REQUIRED_STATUS_APP_ID:-}"
-    # Optional gate: skip cleanly when all three settings are unset, so a release lane that has
-    # not provisioned its status-publishing App can still cut on the operator's attestation.
     if [ -z "$context" ] && [ -z "$expected" ] && [ -z "$slug" ]; then
         log "Release status gate skipped: RELEASE_REQUIRED_STATUS_CONTEXT, RELEASE_REQUIRED_STATUS_APP_ID and RELEASE_REQUIRED_STATUS_APP_SLUG are not set."
         return 0
     fi
     if [ -z "$context" ]; then
         fail_release_status_gate "RELEASE_REQUIRED_STATUS_CONTEXT must name the required commit-status context when the gate is enabled."
-        return 0 # without a context there is nothing left to look up
+        return 0
     fi
     if ! command -v gh >/dev/null 2>&1; then
         fail_release_status_gate "gh is required to read the $context status for release commit $GIT_COMMIT."
@@ -42,7 +40,6 @@ require_release_status_gate() {
         return 0
     fi
     # ponytail: reads only the first 100 statuses on the commit. A commit carrying more than that,
-    # with the status entry aged out of the page, reads as missing and REFUSES the release —
     # it fails closed, never open. Paginate if a release SHA ever collects that many statuses.
     if ! statuses="$(gh api "repos/p2pool-starter-stack/pithead/commits/$GIT_COMMIT/statuses?per_page=100")"; then
         fail_release_status_gate "Could not read the $context status for release commit $GIT_COMMIT."
@@ -204,7 +201,7 @@ apply_signing_defaults() {
 
 # Both signing calls pass `--tlog-upload=false`, which cosign v3 removed. A box that has drifted to
 # v3 passes every other check here and then dies at stage 6b with the tag pushed and the images
-# promoted (#960 — the release box had drifted exactly this way). Probe the flag rather than parse a
+# promoted (#960 — the bench box had drifted exactly this way). Probe the flag rather than parse a
 # version: the flag is the thing that actually has to work, and it stays true across future majors.
 cosign_flags_supported() { cosign sign-blob --help 2>&1 | grep -q -- '--tlog-upload'; }
 

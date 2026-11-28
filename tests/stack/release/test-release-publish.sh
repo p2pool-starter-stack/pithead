@@ -84,7 +84,7 @@ resume_out="$(cd "$ROOT" && bash "$REL" --resume-promote 2>&1)"
 assert_rc "--resume-promote refuses a replaced staging tag" "$?" "1"
 assert_contains "--resume-promote has no mutable-tag recovery path" "$resume_out" "Unknown option: --resume-promote"
 echo "== unit: release.sh requires the exact-SHA release status gate (#1996) =="
-release_status_gate() { # <statuses-json> [resolved-app-id] [expected-app-id] [app-slug] [dry-run] [context]
+release_status_gate() {
     local RELEASE_STATUSES="$1" RELEASE_RESOLVED_APP_ID="${2:-4242}"
     local RELEASE_EXPECTED_APP_ID="${3-4242}" RELEASE_APP_SLUG="${4-release-gate}" RELEASE_DRY_RUN="${5:-0}"
     local RELEASE_CONTEXT="${6-release-gate/suite}"
@@ -137,16 +137,12 @@ assert_contains "the invalid-slug refusal names its setting" "$gate_bad_slug" "R
 gate_no_slug="$(release_status_gate '[]' 4242 4242 '' 2>&1)"
 assert_rc "an unset App slug refuses the release" "$?" "1"
 assert_contains "the unset-slug refusal names its setting, not a defaulted App" "$gate_no_slug" "RELEASE_REQUIRED_STATUS_APP_SLUG"
-# Optional gate: with all three settings unset it skips, so a lane without a status-publishing App still cuts.
-# MUTATION PROOF: drop the skip branch (or default the context in preflight.sh) and these go red.
 gate_unset="$(release_status_gate '[]' 4242 '' '' 0 '' 2>&1)"
 assert_rc "all three settings unset skips the release" "$?" "0"
 assert_contains "the skip names the unset settings" "$gate_unset" "Release status gate skipped"
-# When any one is set, all three are required: the context cannot be omitted behind an App pin.
 gate_no_context="$(release_status_gate '[]' 4242 4242 release-gate 0 '' 2>&1)"
 assert_rc "an unset context refuses an enabled release gate" "$?" "1"
 assert_contains "the unset-context refusal names its setting" "$gate_no_context" "RELEASE_REQUIRED_STATUS_CONTEXT"
-# --dry-run previews the verdict instead of dying on it (#1108, signing). MUTATION PROOF: drop the DRY_RUN carve-out from require_release_status_gate and these go red.
 gate_dry_missing="$(release_status_gate '[]' 4242 4242 release-gate 1 2>&1)"
 assert_rc "a missing status only warns under --dry-run" "$?" "0"
 assert_contains "the dry-run warning still names the required context" "$gate_dry_missing" "release-gate/suite"
@@ -154,11 +150,6 @@ gate_dry_no_app_id="$(release_status_gate '[{"context":"release-gate/suite","sta
 assert_rc "an unpinned App id only warns under --dry-run" "$?" "0"
 assert_contains "the dry-run warning names the unset setting" "$gate_dry_no_app_id" "RELEASE_REQUIRED_STATUS_APP_ID"
 assert_contains "the dry run still performs the status lookup it can" "$gate_dry_no_app_id" "Release status gate passed"
-# The gate is only worth anything if it refuses BEFORE release bytes are built and promoted — a gate
-# that ran after stage_push would have already produced the artefacts it is meant to withhold. #2243
-# removed the --resume-promote branch this ordering was previously proven through, so drive the real
-# linear main() with each stage stubbed to a trace. MUTATION PROOF: move require_release_status_gate below
-# stage_push in release.sh and the expected order goes red.
 gate_order="$SANDBOX/gate-order"
 # shellcheck disable=SC1090,SC2034,SC2329  # dynamic source; stubs are called by the sourced main
 (
